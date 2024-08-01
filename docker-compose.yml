@@ -1,0 +1,3 @@
+services:
+  thermal-img-experiment:
+    build: .
