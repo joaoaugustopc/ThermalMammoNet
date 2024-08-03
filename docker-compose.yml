@@ -1,3 +1,15 @@
 services:
   thermal-img-experiment:
-    build: .
+    image: mamonet
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./output:/experiment/output
+    container_name: meu_container
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+
