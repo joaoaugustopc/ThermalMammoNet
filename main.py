@@ -21,7 +21,6 @@ def load_data():
 
     return imagens_train, labels_train, imagens_valid, labels_valid
 
-
 if __name__ == "__main__":
     print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
     tf.debugging.set_log_device_placement(True)
@@ -44,5 +43,4 @@ if __name__ == "__main__":
         history = model.fit(data_train, epochs = 50, validation_data= data_valid, callbacks= [checkpoint])
 
         model.save(f"modelos/ResNet34_{angulo}_model.keras")
-    
 
