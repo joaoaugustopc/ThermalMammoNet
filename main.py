@@ -3,6 +3,7 @@ import numpy as np
 import tensorflow as tf
 import os
 from src.models import ResNet34
+from src.models import googleLenet
 
 def load_data():
 

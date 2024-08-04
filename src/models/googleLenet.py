@@ -1,10 +1,11 @@
 import tensorflow as tf
 from tensorflow import keras
-
 import keras
-from keras.layers import Layer
+
 from keras.layers import Conv2D, MaxPool2D,Dropout, Dense, Input, concatenate,GlobalAveragePooling2D, AveragePooling2D,Flatten
 from keras.models import Model
+from keras.optimizers import SGD 
+
 
 def inception_module(x,filters_1x1,filters_3x3_reduce,filters_3x3,
  filters_5x5_reduce,filters_5x5,filters_pool_proj,name=None):
@@ -86,5 +87,10 @@ def googleLenet():
     x = Dense(10, activation='softmax', name='output')(x)
     
     model = Model(input_layer, [x, x1, x2], name='inception_v1')
+    
+    initial_lrate = 0.01
+  
+    sgd = SGD(lr=initial_lrate, momentum=0.9, nesterov=False)
+    model.compile(loss=['categorical_crossentropy', 'categorical_crossentropy', 'categorical_crossentropy'], loss_weights=[1, 0.3, 0.3], optimizer=sgd, metrics=['accuracy'])
     
     return model

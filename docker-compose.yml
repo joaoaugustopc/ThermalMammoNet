@@ -5,8 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - .:/experiment
-    container_name: meu_container
+      - .:/modelos
+    container_name: experimento-redes-neurais
     deploy:
       resources:
         reservations:

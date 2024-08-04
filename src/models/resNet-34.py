@@ -48,4 +48,5 @@ def ResNet34():
   model.compile(loss="sparse_categorical_crossentropy",
               optimizer="adam",
               metrics=["accuracy"])
+  
   return model
