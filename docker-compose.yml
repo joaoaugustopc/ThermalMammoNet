@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./output:/experiment/output
+      - .:/experiment
     container_name: meu_container
     deploy:
       resources:
