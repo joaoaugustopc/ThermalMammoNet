@@ -8,6 +8,10 @@ def preprocess(image):
     image -= np.mean(image)
     return image
 
+def extract_id(filename):
+    # Extrair o ID a partir do nome do arquivo
+    return filename.split('_')[0]
+
 
 def to_array(directory):
     arquivos = os.listdir(directory)
@@ -22,6 +26,7 @@ def to_array(directory):
 
     imagens = []
     labels = []
+    ids = []
 
     for arquivo in healthy:
         path = os.path.join(healthy_path, arquivo)
@@ -36,6 +41,7 @@ def to_array(directory):
           imagem = preprocess(imagem)
           imagens.append(imagem)
           labels.append(0)
+          ids.append(extract_id(arquivo))
         except ValueError as e:
           print(e)
           print(arquivo)
@@ -54,13 +60,29 @@ def to_array(directory):
           imagem = preprocess(imagem)
           imagens.append(imagem)
           labels.append(1)
+          ids.append(extract_id(arquivo))
         except ValueError as e:
           print(e)
           print(arquivo)
           continue
 
-    imagens = np.array(imagens)
-    labels = np.array(labels)
+    unique_ids = set()
+    ids_unicos = []
+    imagens_unicas = []
+    labels_unicos = []
+
+    for imagem, label, id in zip(imagens, labels, ids):
+        if id not in unique_ids:
+            ids_unicos.append(id)
+            imagens_unicas.append(imagem)
+            labels_unicos.append(label)
+            unique_ids.add(id)
+
+    
+
+    
+    imagens = np.array(imagens_unicas)
+    labels = np.array(labels_unicos)
 
     imagens_train, imagens_valid, labels_train, labels_valid = train_test_split(imagens, labels, test_size=0.3, shuffle = True)
 
