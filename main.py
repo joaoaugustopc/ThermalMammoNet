@@ -4,6 +4,41 @@ import tensorflow as tf
 import os
 from src.models import ResNet34
 from src.models import googleLenet
+from src.models import VGG_16
+from sklearn.metrics import accuracy_score
+import matplotlib.pyplot as plt
+
+#def variaveis
+epochs = 100
+verbose = 1
+batch_size = 6
+
+
+
+
+def plot_visualization(history, model_name, angulo, i):
+    plt.figure()
+    plt.plot(history.history['accuracy'], label='Training Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    plt.title(f'Accuracy for {model_name} - {angulo} - Iteration {i+1}')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(f"modelos/graficos/{model_name}_{angulo}_accuracy_plot_{i+1}.png")
+    plt.close()
+
+    plt.figure()
+    plt.plot(history.history['loss'], label='Training Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title(f'Loss for {model_name} - {angulo} - Iteration {i+1}')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(f"modelos/graficos/{model_name}_{angulo}_loss_plot_{i+1}.png")
+    plt.close()
+    
 
 def load_data():
 
@@ -14,34 +49,45 @@ def load_data():
         labels_train = np.load(f"dataset_np/labels_train_{angulo}.npy")
         imagens_valid = np.load(f"dataset_np/imagens_valid_{angulo}.npy")
         labels_valid = np.load(f"dataset_np/labels_valid_{angulo}.npy")
+        imagens_test = np.load(f"dataset_np/imagens_test_{angulo}.npy")
+        labels_test = np.load(f"dataset_np/labels_test_{angulo}.npy")
 
     print("Imagens_train :",imagens_train.shape)
     print("Labels_train:",labels_train.shape)
     print("Imagens valid:",imagens_valid.shape)
     print("labels_valid:",labels_valid.shape)
+    print("Imagens_test:",imagens_test.shape)
+    print("Labels_test:",labels_test.shape)
 
-    return imagens_train, labels_train, imagens_valid, labels_valid
+    return imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test
+
 
 if __name__ == "__main__":
     print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
     tf.debugging.set_log_device_placement(True)
+    
 
-    imagens_train, labels_train, imagens_valid, labels_valid = load_data()
-
-    data_train = tf.data.Dataset.from_tensor_slices((imagens_train, labels_train))
-    data_train = data_train.shuffle(buffer_size=len(labels_train)).batch(2).prefetch(tf.data.experimental.AUTOTUNE)
-
-    data_valid = tf.data.Dataset.from_tensor_slices((imagens_valid, labels_valid))
-    data_valid = data_valid.shuffle(buffer_size=len(labels_valid)).batch(2).prefetch(tf.data.experimental.AUTOTUNE)
+    imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data()
 
     list = ["frontal", "Left45", "Left90", "Right90","Right45" ]
+    models = [ResNet34, VGG_16]
 
     for angulo in list:
 
-        checkpoint = tf.keras.callbacks.ModelCheckpoint(f"modelos/ResNet34_{angulo}.keras", save_best_only=True, monitor = "val_accuracy")
+        for model in models:
 
-        model = ResNet34()
-        history = model.fit(data_train, epochs = 50, validation_data= data_valid, callbacks= [checkpoint])
+            model_name = model.__name__
 
-        model.save(f"modelos/ResNet34_{angulo}_model.keras")
+            for i in range(10):
 
+                checkpoint = tf.keras.callbacks.ModelCheckpoint(f"modelos/{model_name}_{angulo}_{i}.h5", monitor='val_loss', verbose=1, save_best_only=True, 
+                                                            save_weights_only=False, mode='auto', period=1)
+                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=20, verbose=1, mode='auto')
+
+                model = model()
+
+                history = model.fit(imagens_train, labels_train, epochs, validation_data= (imagens_valid, labels_valid), 
+                                    callbacks= [checkpoint,earlystop], batch_size = 6, verbose = 1, shuffle = True)
+
+                plot_visualization(history, model_name, angulo, i)
+                
