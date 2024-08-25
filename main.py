@@ -4,6 +4,7 @@ import tensorflow as tf
 from tensorflow import keras
 import os
 from src.models.resNet_34 import ResNet34
+from src.models import googleLenet
 from src.models.Vgg_16 import VGG_16
 from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt

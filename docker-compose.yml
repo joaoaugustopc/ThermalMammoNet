@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - .:/experiment
-    container_name: meu_container
+    container_name: experimento-redes-neurais
     deploy:
       resources:
         reservations:
