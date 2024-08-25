@@ -12,4 +12,4 @@ COPY . /experiment
 ENV PYTHONBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-CMD ["python" ,"-m", "main.py"]
+CMD ["python" ,"-m", "main"]

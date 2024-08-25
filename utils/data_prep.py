@@ -1,6 +1,7 @@
 from sklearn.model_selection import train_test_split
 import numpy as np
 import os
+import shutil
 
 
 def preprocess(image):
@@ -110,6 +111,4 @@ def format_data(directory_raw):
         np.save(f"dataset_np/labels_test_{directory.split("\\")[1]}.npy", labels_test)
 
 
-
-if __name__ == "__main__":
-    format_data("dataset_raw")
+        
