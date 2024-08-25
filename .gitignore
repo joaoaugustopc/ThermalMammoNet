@@ -1,10 +1,7 @@
 dataset_np/
 dataset/
-<<<<<<< HEAD
 raw_dataset/
 dataset\Frontal/
 dataset\Left45/
 *.zip
-=======
-*.zip
->>>>>>> f599d6a9f7b66b1f53b40557181c6e1397405e4d
+modelos/

@@ -9,6 +9,7 @@ from src.models.Vgg_16 import VGG_16
 from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt
 import time 
+import shutil
     
 
 #Arrays Numpy
@@ -21,12 +22,14 @@ def load_data(angulo):
     imagens_test = np.load(f"dataset_np/imagens_test_{angulo}.npy")
     labels_test = np.load(f"dataset_np/labels_test_{angulo}.npy")
 
+    """
     print("Imagens_train :",imagens_train.shape)
     print("Labels_train:",labels_train.shape)
     print("Imagens valid:",imagens_valid.shape)
     print("labels_valid:",labels_valid.shape)
     print("Imagens_test:",imagens_test.shape)
     print("Labels_test:",labels_test.shape)
+    """
 
     return imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test
 
@@ -83,11 +86,37 @@ def crate_dataset(imagens, labels, batch_size = 2, image_size = (480, 640)):
 
     return dataset
 
+def image_resize(imagens, labels):
+    imagens = tf.image.resize(imagens, (480, 640))
+    return imagens, labels
+
+def delete_folder(folder_path):
+    if os.path.exists(folder_path):
+        shutil.rmtree(folder_path)
+        print(f"Pasta {folder_path} deletada.")
+    else:
+        print(f"Pasta {folder_path} não encontrada.")
+
+def delete_file(file_path):
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        print(f"Arquivo {file_path} deletado.")
+    else:
+        print(f"Arquivo {file_path} não encontrado.")
+
+
     
 
 if __name__ == "__main__":
+        
+    """
+    for i in range(3):
+        delete_file(f"VGG_16_frontal_{i}_time.txt")
+
+    delete_folder("modelos")
 
     print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+    """
 
 
     list = ["frontal", "Left45", "Left90", "Right90","Right45" ]
@@ -95,48 +124,42 @@ if __name__ == "__main__":
 
     for angulo in list:
 
+        print(f"ANGULO: {angulo}")
+
         #train_ds, val_ds, test_ds = load_tf_data(f"dataset/{angulo}")
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
+        imagens_train = np.expand_dims(imagens_train, axis = -1)
+        imagens_valid = np.expand_dims(imagens_valid, axis = -1)
+        imagens_test = np.expand_dims(imagens_test, axis = -1)
 
-        data_train = crate_dataset(imagens_train, labels_train)
-        data_valid = crate_dataset(imagens_valid, labels_valid)
-        data_test = crate_dataset(imagens_test, labels_test)
+        imagens_train = tf.image.resize(imagens_train, (200, 200))
+        imagens_valid = tf.image.resize(imagens_valid, (200, 200))
+        imagens_test = tf.image.resize(imagens_test, (200, 200))
 
-        print("Train dataset: ", type(data_train))
-        print("Validation dataset: ", type(data_valid))
-        print("Test dataset: ", type(data_test))
+        for model_func in models:
 
-        """
-        normalization_layer = tf.keras.layers.Rescaling(1./255)
-        train_ds = train_ds.map(lambda x, y: (normalization_layer(x), y))
-        val_ds = val_ds.map(lambda x, y: (normalization_layer(x), y))
-        test_ds = test_ds.map(lambda x, y: (normalization_layer(x), y))
-
-        print("Train dataset: ", type(train_ds))
-        print("Validation dataset: ", type(val_ds))
-        print("Test dataset: ", type(test_ds))
-        """
-
-        for model in models:
-
-            model_name = model.__name__
+            model_name = model_func.__name__
 
             for i in range(10):
 
                 start_time = time.time()
 
                 checkpoint = tf.keras.callbacks.ModelCheckpoint(f"modelos/{model_name}_{angulo}_{i}.h5", monitor='val_loss', verbose=1, save_best_only=True, 
-                                                            save_weights_only=False, mode='auto', period=1)
-                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=20, verbose=1, mode='auto')
+                                                            save_weights_only=False, mode='auto')
+                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=10, verbose=1, mode='auto')
 
-                model = model()
+                model = model_func()
 
-                history = model.fit(data_train, epochs = 100, validation_data= data_valid, 
+                history = model.fit(imagens_train, labels_train, epochs = 100, validation_data= (imagens_valid, labels_valid),
                                     callbacks= [checkpoint,earlystop], batch_size = 1, verbose = 1, shuffle = True)
                 
                 end_time = time.time()
 
-                with open(f"{model_name}_{angulo}_{i}_time.txt", "a") as f:
+                with open(f"{model_name}_{angulo}_{i}_time.txt", "w") as f:
+                    f.write(f"Modelo: {model_name}\n")
                     f.write(f"Tempo de execução: {end_time - start_time}\n")
-
-                #plot_visualization(history, model_name, angulo, i)
+                    f.write(f"Loss: {history.history['loss']}\n")
+                    f.write(f"Val_loss: {history.history['val_loss']}\n")
+                    f.write(f"Accuracy: {history.history['accuracy']}\n")
+                    f.write(f"Val_accuracy: {history.history['val_accuracy']}\n")
+                    f.write("\n")

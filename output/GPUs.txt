@@ -1,1 +1,0 @@
-PhysicalDevice(name='/physical_device:GPU:0', device_type='GPU')
