@@ -79,7 +79,6 @@ def to_array(directory):
             labels_unicos.append(label)
             unique_ids.add(id)
 
-    
 
     
     imagens = np.array(imagens_unicas)
@@ -99,7 +98,7 @@ def format_data(directory_raw):
     if not os.path.exists("dataset_np"):
         os.makedirs("dataset_np")
 
-    directorys = [f"{directory_raw}\\Right45", f"{directory_raw}\\Left45", f"{directory_raw}\\Right90", f"{directory_raw}\\Left90",f"{directory_raw}\\frontal"]
+    directorys = [f"{directory_raw}\\Right45", f"{directory_raw}\\Left45", f"{directory_raw}\\Right90", f"{directory_raw}\\Left90", f"{directory_raw}\\frontal"]
 
     for directory in directorys:
         imagens_train, labels_train, imagens_valid, labels_valid,imagens_test, labels_test = to_array(directory)

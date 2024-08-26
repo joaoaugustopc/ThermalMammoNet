@@ -29,7 +29,7 @@ def googleLenet():
     kernel_init = keras.initializers.glorot_uniform()
     bias_init = keras.initializers.Constant(value=0.2)
     
-    input_layer = Input(shape=(224, 224, 3))
+    input_layer = Input(shape=(200, 200, 1)) #alterado
     
     x = Conv2D(64, (7, 7), padding='same', strides=(2, 2), activation='relu', name='conv_1_7x7/2', kernel_initializer=kernel_init, bias_initializer=bias_init)(input_layer)
     x = MaxPool2D((3, 3), padding='same', strides=(2, 2), name='max_pool_1_3x3/2')(x)
