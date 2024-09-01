@@ -3,13 +3,17 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 import os
-from src.models.resNet_34 import ResNet34
+from src.models.resNet_34 import ResNet34, ResidualUnit
 from src.models import googleLenet
 from src.models.Vgg_16 import VGG_16
+from src.models.vgg_16_trained import VGG16_trained
+from src.models.resNet_152 import ResNet152_trained
 from sklearn.metrics import accuracy_score
+from tensorflow.keras.applications import VGG16
 import matplotlib.pyplot as plt
 import time 
 import shutil
+from tensorflow.keras.utils import custom_object_scope
     
 
 #Arrays Numpy
@@ -22,14 +26,6 @@ def load_data(angulo):
     imagens_test = np.load(f"dataset_np/imagens_test_{angulo}.npy")
     labels_test = np.load(f"dataset_np/labels_test_{angulo}.npy")
 
-    """
-    print("Imagens_train :",imagens_train.shape)
-    print("Labels_train:",labels_train.shape)
-    print("Imagens valid:",imagens_valid.shape)
-    print("labels_valid:",labels_valid.shape)
-    print("Imagens_test:",imagens_test.shape)
-    print("Labels_test:",labels_test.shape)
-    """
 
     return imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test
 
@@ -86,9 +82,6 @@ def crate_dataset(imagens, labels, batch_size = 2, image_size = (480, 640)):
 
     return dataset
 
-def image_resize(imagens, labels):
-    imagens = tf.image.resize(imagens, (480, 640))
-    return imagens, labels
 
 def delete_folder(folder_path):
     if os.path.exists(folder_path):
@@ -96,6 +89,7 @@ def delete_folder(folder_path):
         print(f"Pasta {folder_path} deletada.")
     else:
         print(f"Pasta {folder_path} não encontrada.")
+
 
 def delete_file(file_path):
     if os.path.exists(file_path):
@@ -105,26 +99,54 @@ def delete_file(file_path):
         print(f"Arquivo {file_path} não encontrado.")
 
 
-    
+def move_files_to_folder(file_list, destination_folder):
+    if not os.path.exists(destination_folder):
+        os.makedirs(destination_folder)
+    for file in file_list:
+        if os.path.exists(file):
+            shutil.move(file, destination_folder)
 
-if __name__ == "__main__":
-        
+def test_model(model, imagens_test, labels_test):
     """
-    for i in range(3):
-        delete_file(f"VGG_16_frontal_{i}_time.txt")
-
-    delete_folder("modelos")
-
-    print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+    imagens_test = np.expand_dims(imagens_test, axis = -1)
+    imagens_test = np.repeat(imagens_test, 3, axis=-1)
+    #imagens_test = tf.image.resize(imagens_test, (200, 200))
     """
+   
+    loss, acc = model.evaluate(imagens_test, labels_test)
+
+    print(f"Loss: {loss}")
+    print(f"Accuracy: {acc}")
+
+    return loss, acc
+
+def bloxPlot(acc_data, loss_data, title, save_path):
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+
+    # Boxplot para acurácia
+    axs[0].boxplot(acc_data)
+    axs[0].set_title('Acurácia dos modelos')
+    axs[0].set_xlabel('Modelo')
+    axs[0].set_ylabel('Acurácia')
+
+    # Boxplot para loss
+    axs[1].boxplot(loss_data)
+    axs[1].set_title('Loss do modelo')
+    axs[1].set_xlabel('Modelo')
+    axs[1].set_ylabel('Loss')
+
+    plt.suptitle(title)
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
 
 
-    list = ["frontal", "Left45", "Left90", "Right90","Right45" ]
-    models = [VGG_16]
+
+def main_func(models_list):
+    list = ["frontal","Left90","Left45","Right90","Right45" ]
+    models = models_list
 
     for angulo in list:
-
-        print(f"ANGULO: {angulo}")
 
         #train_ds, val_ds, test_ds = load_tf_data(f"dataset/{angulo}")
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
@@ -132,10 +154,15 @@ if __name__ == "__main__":
         imagens_valid = np.expand_dims(imagens_valid, axis = -1)
         imagens_test = np.expand_dims(imagens_test, axis = -1)
 
+        imagens_train = np.repeat(imagens_train, 3, axis=-1)
+        imagens_valid = np.repeat(imagens_valid, 3, axis=-1)
+        imagens_test = np.repeat(imagens_test, 3, axis=-1)
+        
+        """
         imagens_train = tf.image.resize(imagens_train, (200, 200))
         imagens_valid = tf.image.resize(imagens_valid, (200, 200))
         imagens_test = tf.image.resize(imagens_test, (200, 200))
-
+        """
         for model_func in models:
 
             model_name = model_func.__name__
@@ -150,6 +177,8 @@ if __name__ == "__main__":
 
                 model = model_func()
 
+                model.summary()
+
                 history = model.fit(imagens_train, labels_train, epochs = 100, validation_data= (imagens_valid, labels_valid),
                                     callbacks= [checkpoint,earlystop], batch_size = 1, verbose = 1, shuffle = True)
                 
@@ -162,4 +191,43 @@ if __name__ == "__main__":
                     f.write(f"Val_loss: {history.history['val_loss']}\n")
                     f.write(f"Accuracy: {history.history['accuracy']}\n")
                     f.write(f"Val_accuracy: {history.history['val_accuracy']}\n")
-                    f.write("\n")
+                    f.write("\n") 
+
+
+def get_boxPlot():
+    list = ["frontal","Left90","Left45","Right90","Right45" ]
+
+    for angulo in list:
+        acc = []
+        loss = []
+        for i in range(10):
+            #with custom_object_scope({'ResidualUnit': ResidualUnit}):
+            model = tf.keras.models.load_model(f"modelos/VGG16_trained_{angulo}_{i}.h5")
+            
+            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data("frontal")
+
+            imagens_test = np.expand_dims(imagens_test, axis = -1)
+
+            imagens_test = np.repeat(imagens_test, 3, axis=-1)
+
+            #imagens_test = tf.image.resize(imagens_test, (200, 200))
+
+            loss_, acc_ = test_model(model, imagens_test, labels_test)
+
+            acc.append(acc_)
+            loss.append(loss_)
+        
+        bloxPlot(acc, loss, "ResNet34", f"VGG_trained_{angulo}.png")
+
+        print(f"Acurácia média: {np.mean(acc)}")
+        print(f"Loss médio: {np.mean(loss)}")
+        print(f"Desvio padrão da acurácia: {np.std(acc)}")
+        print(f"Desvio padrão do loss: {np.std(loss)}")
+        print(f"Mediana da acurácia: {np.median(acc)}")
+        print(f"Mediana do loss: {np.median(loss)}")
+    
+
+if __name__ == "__main__":
+    #main_func([VGG16_trained])
+    print("Iniciando boxplot")
+    
