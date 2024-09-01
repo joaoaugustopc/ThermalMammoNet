@@ -6,6 +6,7 @@ import os
 from src.models.resNet_34 import ResNet34, ResidualUnit
 from src.models import googleLenet
 from src.models.Vgg_16 import VGG_16
+from src.models.googleLenet import googleLenet
 from src.models.vgg_16_trained import VGG16_trained
 from src.models.resNet_152 import ResNet152_trained
 from sklearn.metrics import accuracy_score
@@ -13,6 +14,7 @@ from tensorflow.keras.applications import VGG16
 import matplotlib.pyplot as plt
 import time 
 import shutil
+from src.models.alexNet import alexnet
 from tensorflow.keras.utils import custom_object_scope
     
 
@@ -62,13 +64,13 @@ def load_tf_data(path):
 
     return train_ds, val_ds, test_ds
 
-
+#nao esta sendo usada
 def data_generator(imagens, labels):
     for img, label in zip(imagens, labels):
         img = np.expand_dims(img, axis = -1)
         yield img, label
 
-
+#nao esta sendo usada
 def crate_dataset(imagens, labels, batch_size = 2, image_size = (480, 640)):
 
     dataset = tf.data.Dataset.from_generator(lambda: data_generator(imagens, labels), 
