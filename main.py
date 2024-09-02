@@ -236,6 +236,7 @@ def apply_augmentation(train, labels):
         keras.layers.RandomZoom(height_factor=0.2, width_factor=0.2)
     ])
     
+    #pode alterar para usar o dataset todo de uma vez 
     BATCH_SIZE = 128
     
     train_aug = tf.data.Dataset.from_tensor_slices((train, labels))
@@ -244,7 +245,23 @@ def apply_augmentation(train, labels):
         train_aug.shuffle(BATCH_SIZE*100).batch(BATCH_SIZE).map(lambda x, y: (simple_aug(x),y), num_parallel_calls=tf.data.AUTOTUNE).prefetch(tf.data.AUTOTUNE)
     )
     
-    return train_aug
+    # Juntar todas as imagens em um único array
+    all_images = []
+    all_labels = []
+
+    for images, lbls in train_aug:
+        all_images.append(images.numpy())
+        all_labels.append(lbls.numpy())
+
+    # Concatenar todas as imagens e rótulos
+    all_images = np.concatenate(all_images, axis=0)
+    all_labels = np.concatenate(all_labels, axis=0)
+
+    print("Shape of all images:", all_images.shape)
+    print("Shape of all labels:", all_labels.shape)
+    
+    
+    return all_images, all_labels
    
 
 
@@ -270,29 +287,15 @@ def visualize_augmentation(original_images, augmented_dataset, num_images=5):
 
 if __name__ == "__main__":
     
-    train = np.load("np_dataset/imagens_train_Frontal.npy")
-    labels = np.load("np_dataset/labels_train_Frontal.npy")
+    train_original = np.load("np_dataset/imagens_train_Frontal.npy")
+    labels_original = np.load("np_dataset/labels_train_Frontal.npy")
     
-    print(train.shape)
-    print(labels.shape)
+    print(train_original.shape)
+    print(labels_original.shape)
     
                     
-    train_dataset = apply_augmentation(train, labels)
+    train, labels = apply_augmentation(train_original, labels_original)
     
-    # Juntar todas as imagens em um único array
-    all_images = []
-    all_labels = []
-
-    for images, lbls in train_dataset:
-        all_images.append(images.numpy())
-        all_labels.append(lbls.numpy())
-
-    # Concatenar todas as imagens e rótulos
-    all_images = np.concatenate(all_images, axis=0)
-    all_labels = np.concatenate(all_labels, axis=0)
-
-    print("Shape of all images:", all_images.shape)
-    print("Shape of all labels:", all_labels.shape)
     
     """
     #main_func([VGG16_trained])
