@@ -229,7 +229,7 @@ def get_boxPlot():
         print(f"Mediana do loss: {np.median(loss)}")
         
 def apply_augmentation(train, labels):
-      # Definir a sequência de augmentação de dados
+       # Definir a sequência de augmentação de dados
     simple_aug = keras.Sequential([
         keras.layers.RandomFlip("horizontal"),
         keras.layers.RandomRotation(factor=0.02),
@@ -237,18 +237,15 @@ def apply_augmentation(train, labels):
     ])
     
     BATCH_SIZE = 128
-    AUTO = tf.data.AUTOTUNE
     
-    # Criar o dataset e aplicar as transformações
-    train_original = tf.data.Dataset.from_tensor_slices((train, labels))
-    train_dataset = train_original.shuffle(BATCH_SIZE * 100)
-    train_dataset = train_dataset.batch(BATCH_SIZE)
-    train_dataset = train_dataset.map(lambda x, y: (simple_aug(x), y), num_parallel_calls=AUTO)
-    train_dataset = train_dataset.prefetch(AUTO)
+    train_aug = tf.data.Dataset.from_tensor_slices((train, labels))
     
-    train_original.concatenete(train_dataset)
+    train_aug = (
+        train_aug.shuffle(BATCH_SIZE*100).batch(BATCH_SIZE).map(lambda x, y: (simple_aug(x),y), num_parallel_calls=tf.data.AUTOTUNE).prefetch(tf.data.AUTOTUNE)
+    )
     
-    return train_original.concatenate(train_dataset)
+    return train_aug
+   
 
 
 def visualize_augmentation(original_images, augmented_dataset, num_images=5):
@@ -282,11 +279,20 @@ if __name__ == "__main__":
                     
     train_dataset = apply_augmentation(train, labels)
     
-     # Verifique o formato do dataset
-    for images, labels in train_dataset.take(1):
-        
-        print(images.shape)
-        print(labels.shape)
+    # Juntar todas as imagens em um único array
+    all_images = []
+    all_labels = []
+
+    for images, lbls in train_dataset:
+        all_images.append(images.numpy())
+        all_labels.append(lbls.numpy())
+
+    # Concatenar todas as imagens e rótulos
+    all_images = np.concatenate(all_images, axis=0)
+    all_labels = np.concatenate(all_labels, axis=0)
+
+    print("Shape of all images:", all_images.shape)
+    print("Shape of all labels:", all_labels.shape)
     
     """
     #main_func([VGG16_trained])
