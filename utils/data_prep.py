@@ -2,7 +2,9 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 import os
 import shutil
-
+import tensorflow as tf
+import keras
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 def preprocess(image):
     # Normalizar a imagem
@@ -142,6 +144,3 @@ def format_data(directory_raw):
         np.save(f"dataset_np/labels_valid_{directory.split('/')[1]}.npy", labels_valid)
         np.save(f"dataset_np/imagens_test_{directory.split('/')[1]}.npy", imagens_test)
         np.save(f"dataset_np/labels_test_{directory.split('/')[1]}.npy", labels_test)
-
-
-        

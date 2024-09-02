@@ -31,12 +31,12 @@ def load_data(angulo):
 
     return imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test
 
-
+#nao esta sendo usada
 def preprocess_image(image, label):
     image = tf.cast(image, tf.float32) / 255.0  # Normalizar a imagem
     return image, label
 
-# text_dataset_from_directory, retorna um tf.Dataset
+# nao esta sendo usada text_dataset_from_directory, retorna um tf.Dataset
 def load_tf_data(path):
     train_path = os.path.join(path, "train")
 
@@ -227,12 +227,70 @@ def get_boxPlot():
         print(f"Desvio padrão do loss: {np.std(loss)}")
         print(f"Mediana da acurácia: {np.median(acc)}")
         print(f"Mediana do loss: {np.median(loss)}")
+        
+def apply_augmentation(train, labels):
+      # Definir a sequência de augmentação de dados
+    simple_aug = keras.Sequential([
+        keras.layers.RandomFlip("horizontal"),
+        keras.layers.RandomRotation(factor=0.02),
+        keras.layers.RandomZoom(height_factor=0.2, width_factor=0.2)
+    ])
     
+    BATCH_SIZE = 128
+    AUTO = tf.data.AUTOTUNE
+    
+    # Criar o dataset e aplicar as transformações
+    train_original = tf.data.Dataset.from_tensor_slices((train, labels))
+    train_dataset = train_original.shuffle(BATCH_SIZE * 100)
+    train_dataset = train_dataset.batch(BATCH_SIZE)
+    train_dataset = train_dataset.map(lambda x, y: (simple_aug(x), y), num_parallel_calls=AUTO)
+    train_dataset = train_dataset.prefetch(AUTO)
+    
+    train_original.concatenete(train_dataset)
+    
+    return train_original.concatenate(train_dataset)
+
+
+def visualize_augmentation(original_images, augmented_dataset, num_images=5):
+    augmented_images, labels = next(iter(augmented_dataset))
+    augmented_images = augmented_images[:num_images]
+    
+    plt.figure(figsize=(15, 6))
+    for i in range(num_images):
+        # Imagem Original
+        plt.subplot(2, num_images, i + 1)
+        plt.imshow(original_images[i].astype("uint8"))
+        plt.title("Original")
+        plt.axis("off")
+        
+        # Imagem Augmentada
+        plt.subplot(2, num_images, i + 1 + num_images)
+        plt.imshow(augmented_images[i].numpy().astype("uint8"))
+        plt.title("Augmentada")
+        plt.axis("off")
+    plt.show()
+
 
 if __name__ == "__main__":
+    
+    train = np.load("np_dataset/imagens_train_Frontal.npy")
+    labels = np.load("np_dataset/labels_train_Frontal.npy")
+    
+    print(train.shape)
+    print(labels.shape)
+    
+                    
+    train_dataset = apply_augmentation(train, labels)
+    
+     # Verifique o formato do dataset
+    for images, labels in train_dataset.take(1):
+        
+        print(images.shape)
+        print(labels.shape)
+    
+    """
     #main_func([VGG16_trained])
     for angle in ["Frontal", "Right45", "Right90", "Left45", "Left90"]:
-        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"raw_dataset/{angle}")
 
         print("ANGLE:",angle)
         print("Train shape:",imagens_train.shape)
@@ -260,3 +318,4 @@ if __name__ == "__main__":
         np.save(f"np_dataset/labels_test_{angle}.npy", labels_test)
     
     
+    """
