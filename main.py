@@ -14,8 +14,8 @@ from tensorflow.keras.applications import VGG16
 import matplotlib.pyplot as plt
 import time 
 import shutil
-from src.models.alexNet import alexnet
 from tensorflow.keras.utils import custom_object_scope
+from utils.data_prep import to_array
     
 
 #Arrays Numpy
@@ -152,17 +152,17 @@ def main_func(models_list):
 
         #train_ds, val_ds, test_ds = load_tf_data(f"dataset/{angulo}")
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
-        imagens_train = np.expand_dims(imagens_train, axis = -1)
-        imagens_valid = np.expand_dims(imagens_valid, axis = -1)
-        imagens_test = np.expand_dims(imagens_test, axis = -1)
+        imagens_train = np.expand_dims(imagens_train, axis = -1)  # Add uma dimensão para o canal de cor
+        imagens_valid = np.expand_dims(imagens_valid, axis = -1) #
+        imagens_test = np.expand_dims(imagens_test, axis = -1)  # 
 
-        imagens_train = np.repeat(imagens_train, 3, axis=-1)
+        imagens_train = np.repeat(imagens_train, 3, axis=-1) # Repete a imagem para 3 canais ( Não fazer isso )
         imagens_valid = np.repeat(imagens_valid, 3, axis=-1)
         imagens_test = np.repeat(imagens_test, 3, axis=-1)
         
         """
         imagens_train = tf.image.resize(imagens_train, (200, 200))
-        imagens_valid = tf.image.resize(imagens_valid, (200, 200))
+        imagens_valid = tf.image.resize(imagens_valid, (200, 200)) #Resize das imagens ( fazer para tamanhos proporcionais )
         imagens_test = tf.image.resize(imagens_test, (200, 200))
         """
         for model_func in models:
@@ -231,5 +231,32 @@ def get_boxPlot():
 
 if __name__ == "__main__":
     #main_func([VGG16_trained])
-    print("Iniciando boxplot")
+    for angle in ["Frontal", "Right45", "Right90", "Left45", "Left90"]:
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"raw_dataset/{angle}")
+
+        print("ANGLE:",angle)
+        print("Train shape:",imagens_train.shape)
+        print(labels_train.shape)
+        print("valid shape:",imagens_valid.shape)
+        print(labels_valid.shape)
+        print("test shape:",imagens_test.shape)
+        print(labels_test.shape)
+
+        print("Train Healthy:",len(labels_train[labels_train == 0]))
+        print("Train Sick:",len(labels_train[labels_train == 1]))
+        print("Valid Healthy:",len(labels_valid[labels_valid == 0]))
+        print("Valid Sick:",len(labels_valid[labels_valid == 1]))
+        print("Test Healthy:",len(labels_test[labels_test == 0]))
+        print("Test Sick:",len(labels_test[labels_test == 1]))
+
+        if not os.path.exists("np_dataset"):
+            os.makedirs("np_dataset")
+
+        np.save(f"np_dataset/imagens_train_{angle}.npy", imagens_train)
+        np.save(f"np_dataset/labels_train_{angle}.npy", labels_train)
+        np.save(f"np_dataset/imagens_valid_{angle}.npy", imagens_valid)
+        np.save(f"np_dataset/labels_valid_{angle}.npy", labels_valid)
+        np.save(f"np_dataset/imagens_test_{angle}.npy", imagens_test)
+        np.save(f"np_dataset/labels_test_{angle}.npy", labels_test)
+    
     
