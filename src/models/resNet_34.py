@@ -32,7 +32,7 @@ class ResidualUnit(keras.layers.Layer):
 
 def ResNet34():
   model = keras.models.Sequential()
-  model.add(keras.layers.Conv2D(64, 7, strides=2, input_shape=[200, 200,1],
+  model.add(keras.layers.Conv2D(64, 7, strides=2, input_shape=[480, 640,1],
 	                              padding="same", use_bias=False))
   model.add(keras.layers.BatchNormalization())
   model.add(keras.layers.Activation("relu"))
