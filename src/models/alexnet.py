@@ -1,7 +1,12 @@
 from tensorflow import keras
 import tensorflow as tf
+from tensorflow.keras import mixed_precision
 
 def alexnet():
+    
+    #add mixed precision: layers use float16 computations and float32 variables.
+    mixed_precision.set_global_policy('mixed_float16')
+    
     model = keras.Sequential([
     #primeiro bloco : 96 neurônios 
     #entrada da rede: 227 x 227               
@@ -41,8 +46,8 @@ def alexnet():
     keras.layers.Dense(4096, activation = "relu", kernel_regularizer = keras.regularizers.l2(0.0001)), 
     keras.layers.BatchNormalization(),
     keras.layers.Dropout(0.5),  
-    #camada de saída
-    keras.layers.Dense(2, activation = "softmax", kernel_regularizer = keras.regularizers.l2(0.0001))])
+    #camada de saída: especificar para float32 -> output
+    keras.layers.Dense(2, activation = "softmax", dtype="float32", kernel_regularizer = keras.regularizers.l2(0.0001))])
     
     
     optimizer = tf.keras.optimizers.Adam() #melhorar

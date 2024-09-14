@@ -100,40 +100,27 @@ def get_boxPlot():
         print(f"Mediana do loss: {np.median(loss)}")
         
 def apply_augmentation(train, labels):
-       # Definir a sequência de augmentação de dados
+    # definir a sequência de aug de dados
     simple_aug = keras.Sequential([
         keras.layers.RandomFlip("horizontal"),
-        keras.layers.RandomRotation(factor=0.02),
-        keras.layers.RandomZoom(height_factor=0.2, width_factor=0.2)
+        keras.layers.RandomRotation(0.02),
+        keras.layers.RandomZoom(0.2, 0.2)
     ])
     
-    #pode alterar para usar o dataset todo de uma vez 
-    BATCH_SIZE = 128
+    # Usar um batch size fixo
+    BATCH_SIZE = len(train)
     
-    train_aug = tf.data.Dataset.from_tensor_slices((train, labels))
+    # Criar o dataset e aplicar a augmentação
+    train_aug = tf.data.Dataset.from_tensor_slices((train, labels)) \
+        .shuffle(len(train)).batch(BATCH_SIZE) \
+        .map(lambda x, y: (simple_aug(x), y), num_parallel_calls=tf.data.AUTOTUNE) \
+        .prefetch(tf.data.AUTOTUNE)
     
-    train_aug = (
-        train_aug.shuffle(BATCH_SIZE*100).batch(BATCH_SIZE).map(lambda x, y: (simple_aug(x),y), num_parallel_calls=tf.data.AUTOTUNE).prefetch(tf.data.AUTOTUNE)
-    )
-    
-    # Juntar todas as imagens em um único array
-    all_images = []
-    all_labels = []
+    # Juntar todas as imagens e rótulos em arrays únicos
+    all_images, all_labels = zip(*[(img.numpy(), lbl.numpy()) for img, lbl in train_aug])
 
-    for images, lbls in train_aug:
-        all_images.append(images.numpy())
-        all_labels.append(lbls.numpy())
-
-    # Concatenar todas as imagens e rótulos
-    all_images = np.concatenate(all_images, axis=0)
-    all_labels = np.concatenate(all_labels, axis=0)
-
-    print("Shape of all images:", all_images.shape)
-    print("Shape of all labels:", all_labels.shape)
-    
-    
-    return all_images, all_labels
-   
+    # Concatenar as listas em arrays finais
+    return np.concatenate(all_images), np.concatenate(all_labels)
 
 
 def visualize_augmentation(original_images, augmented_dataset, num_images=5):
