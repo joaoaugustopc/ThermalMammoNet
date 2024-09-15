@@ -45,7 +45,10 @@ def ResNet34():
   model.add(keras.layers.GlobalAvgPool2D())
   model.add(keras.layers.Flatten())
   model.add(keras.layers.Dense(2, activation="softmax"))
+
+  opt = keras.optimizers.Adam(learning_rate=0.0001)
+
   model.compile(loss="sparse_categorical_crossentropy",
-              optimizer="adam",
+              optimizer=opt,
               metrics=["accuracy"])
   return model
