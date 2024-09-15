@@ -7,6 +7,7 @@ from src.models.resNet_34 import ResNet34, ResidualUnit
 from src.models import googleLenet
 from src.models.Vgg_16 import VGG_16
 from src.models.googleLenet import googleLenet
+from src.models.alexnet import alexnet
 from src.models.vgg_16_trained import VGG16_trained
 from src.models.resNet_152 import ResNet152_trained
 from sklearn.metrics import accuracy_score
@@ -50,6 +51,7 @@ def main_func(models_list):
     for angulo in list:
 
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
+        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 3)
         
         imagens_train = np.expand_dims(imagens_train, axis = -1)  # Add uma dimensão para o canal de cor
         imagens_valid = np.expand_dims(imagens_valid, axis = -1) 
@@ -97,69 +99,76 @@ def main_func(models_list):
                     f.write("\n")
                 
                 plot_convergence(history, model_name, angulo, i)
-        
 
 
-def apply_augmentation(train, labels):
-       # Definir a sequência de augmentação de dados
+"""
+    Params:
+    train: conjuntos de imagens de treino original
+    labels: conjunto de labels de treino original
+    num_augmented_copies: números de vezes para expandir o dataset
+    
+    return:
+    all_imagens, all_labels : imagens e labels originais + aug
+"""
+def apply_augmentation_and_expand(train, labels, num_augmented_copies):
+    train = np.expand_dims(train, axis=-1)
+    
     simple_aug = keras.Sequential([
         keras.layers.RandomFlip("horizontal"),
-        keras.layers.RandomRotation(factor=0.02),
-        keras.layers.RandomZoom(height_factor=0.2, width_factor=0.2)
+        keras.layers.RandomRotation(0.01),
+        keras.layers.RandomZoom(0.2, 0.2),
+        keras.layers.RandomBrightness(factor=(0.01), value_range=(0.0, 1.0)),  # ajuste conforme necessário
+        keras.layers.RandomContrast(factor=0.1)  # ajuste conforme necessário
     ])
     
-    #pode alterar para usar o dataset todo de uma vez 
-    BATCH_SIZE = 128
-    
-    train_aug = tf.data.Dataset.from_tensor_slices((train, labels))
-    
-    train_aug = (
-        train_aug.shuffle(BATCH_SIZE*100).batch(BATCH_SIZE).map(lambda x, y: (simple_aug(x),y), num_parallel_calls=tf.data.AUTOTUNE).prefetch(tf.data.AUTOTUNE)
-    )
-    
-    # Juntar todas as imagens em um único array
+    # listas para armazenar as imagens e labels
     all_images = []
     all_labels = []
-
-    for images, lbls in train_aug:
-        all_images.append(images.numpy())
-        all_labels.append(lbls.numpy())
-
-    # Concatenar todas as imagens e rótulos
-    all_images = np.concatenate(all_images, axis=0)
-    all_labels = np.concatenate(all_labels, axis=0)
-
-    print("Shape of all images:", all_images.shape)
-    print("Shape of all labels:", all_labels.shape)
+    
+    #adicionar as imagens e labels originais
+    for image, label in zip(train, labels):
+        all_images.append(image)
+        all_labels.append(label)
+    
+    # copias aug de acordo com a entrada num
+    for _ in range(num_augmented_copies):
+        for image, label in zip(train, labels):
+            augmented_image = simple_aug(image)
+            all_images.append(augmented_image)
+            all_labels.append(label)
+    
+    #convertendo em np
+    all_images = np.array([img for img in all_images])
+    all_labels = np.array(all_labels)
     
     
-    return all_images, all_labels
-   
+    #teste
+    #visualize_augmentation(all_images[:5], all_images[156:161])
+    
+    return all_images, all_labels    
 
-
-def visualize_augmentation(original_images, augmented_dataset, num_images=5):
-    augmented_images, labels = next(iter(augmented_dataset))
-    augmented_images = augmented_images[:num_images]
+def visualize_augmentation(original_img, aug_img, num_images=5):
     
     plt.figure(figsize=(15, 6))
     for i in range(num_images):
         # Imagem Original
         plt.subplot(2, num_images, i + 1)
-        plt.imshow(original_images[i].astype("uint8"))
+        plt.imshow(original_img[i].astype('float32'))
         plt.title("Original")
         plt.axis("off")
         
         # Imagem Augmentada
         plt.subplot(2, num_images, i + 1 + num_images)
-        plt.imshow(augmented_images[i].numpy().astype("uint8"))
+        plt.imshow(aug_img[i].astype("float32"))
         plt.title("Augmentada")
         plt.axis("off")
-    plt.show()
+    plt.savefig("foto_aug/")
 
 
 if __name__ == "__main__":
+        
     
-    main_func([VGG_16])
+    main_func([alexnet])
 
 
     """
