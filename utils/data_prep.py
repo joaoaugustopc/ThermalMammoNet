@@ -165,10 +165,8 @@ def get_boxPlot(modelo):
         print(f"Mediana da acurácia: {np.median(acc)}")
         print(f"Mediana do loss: {np.median(loss)}")
 
-def preprocess(image):
+def preprocess(image, max, min):
     # Normalizar a imagem
-    max = np.max(image)
-    min = np.min(image)
     image = (image - min) / (max - min)
     return image
 
@@ -191,6 +189,8 @@ def to_array(directory):
     imagens = []
     labels = []
     ids = []
+    max_value = 0
+    min_value = 1000
 
     for arquivo in healthy:
         path = os.path.join(healthy_path, arquivo)
@@ -202,7 +202,9 @@ def to_array(directory):
             else:
               delimiter = ' '
           imagem = np.loadtxt(path, delimiter=delimiter)
-          imagem = preprocess(imagem)
+          max_value = max(max_value, np.max(imagem))
+          min_value = min(min_value, np.min(imagem))
+          #imagem = preprocess(imagem)
           imagens.append(imagem)
           labels.append(0)
           ids.append(extract_id(arquivo))
@@ -221,7 +223,9 @@ def to_array(directory):
             else:
               delimiter = ' '
           imagem = np.loadtxt(path, delimiter=delimiter)
-          imagem = preprocess(imagem)
+          max_value = max(max_value, np.max(imagem))
+          min_value = min(min_value, np.min(imagem))
+          #imagem = preprocess(imagem)
           imagens.append(imagem)
           labels.append(1)
           ids.append(extract_id(arquivo))
@@ -230,6 +234,14 @@ def to_array(directory):
           print(arquivo)
           continue
 
+  
+    print("Max value:",max_value)
+    print("Min value:",min_value)
+
+    for i in range(len(imagens)):
+        imagens[i] = preprocess(imagens[i], max_value, min_value)
+  
+    unique_ids = set()
     ids_unicos = []
     imagens_unicas = []
     labels_unicos = []
@@ -257,6 +269,7 @@ def to_array(directory):
             mult_consultas_img.append(imagem)
             mult_consultas_label.append(label)
             mult_consultas_id.append(id)
+
       
     total_imgs = len(imagens)
     total_imgs_unicas = len(imagens_unicas)
@@ -270,12 +283,12 @@ def to_array(directory):
     labels_unicos = np.array(labels_unicos)
 
     # Primeiro split: 60% treino, 40% restante
+
     imagens_train, imagens_rest, labels_train, labels_rest = train_test_split(imagens_unicas, labels_unicos, test_size= 1 - train_percent, shuffle = True)
 
     imagens_train = np.concatenate((imagens_train, mult_consultas_img), axis=0)
     labels_train = np.concatenate((labels_train, mult_consultas_label), axis=0)
 
-    # Embaralhar os dados de treino
     permutation = np.random.permutation(len(imagens_train))
     imagens_train = imagens_train[permutation]
     labels_train = labels_train[permutation]

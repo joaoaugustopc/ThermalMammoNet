@@ -65,39 +65,6 @@ def main_func(models_list):
                     f.write(f"Accuracy: {history.history['accuracy']}\n")
                     f.write(f"Val_accuracy: {history.history['val_accuracy']}\n")
                     f.write("\n") 
-
-
-def get_boxPlot():
-    list = ["frontal","Left90","Left45","Right90","Right45" ]
-
-    for angulo in list:
-        acc = []
-        loss = []
-        for i in range(10):
-            #with custom_object_scope({'ResidualUnit': ResidualUnit}):
-            model = tf.keras.models.load_model(f"modelos/VGG16_trained_{angulo}_{i}.h5")
-            
-            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data("frontal")
-
-            imagens_test = np.expand_dims(imagens_test, axis = -1)
-
-            imagens_test = np.repeat(imagens_test, 3, axis=-1)
-
-            #imagens_test = tf.image.resize(imagens_test, (200, 200))
-
-            loss_, acc_ = test_model(model, imagens_test, labels_test)
-
-            acc.append(acc_)
-            loss.append(loss_)
-        
-        bloxPlot(acc, loss, "ResNet34", f"VGG_trained_{angulo}.png")
-
-        print(f"Acurácia média: {np.mean(acc)}")
-        print(f"Loss médio: {np.mean(loss)}")
-        print(f"Desvio padrão da acurácia: {np.std(acc)}")
-        print(f"Desvio padrão do loss: {np.std(loss)}")
-        print(f"Mediana da acurácia: {np.median(acc)}")
-        print(f"Mediana do loss: {np.median(loss)}")
         
 def apply_augmentation(train, labels):
        # Definir a sequência de augmentação de dados
