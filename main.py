@@ -97,54 +97,79 @@ def main_func(models_list):
                     f.write("\n")
                 
                 plot_convergence(history, model_name, angulo, i)
-        
 
 
-def apply_augmentation(train, labels):
-    # definir a sequência de aug de dados
+"""
+    Params:
+    train: conjuntos de imagens de treino original
+    labels: conjunto de labels de treino original
+    num_augmented_copies: números de vezes para expandir o dataset
+    
+    return:
+    all_imagens, all_labels : imagens e labels originais + aug
+"""
+def apply_augmentation_and_expand(train, labels, num_augmented_copies):
+    train = np.expand_dims(train, axis=-1)
+    
     simple_aug = keras.Sequential([
         keras.layers.RandomFlip("horizontal"),
-        keras.layers.RandomRotation(0.02),
-        keras.layers.RandomZoom(0.2, 0.2)
+        keras.layers.RandomRotation(0.01),
+        keras.layers.RandomZoom(0.2, 0.2),
+        keras.layers.RandomBrightness(factor=(0.01), value_range=(0.0, 1.0)),  # ajuste conforme necessário
+        keras.layers.RandomContrast(factor=0.1)  # ajuste conforme necessário
     ])
     
-    # Usar um batch size fixo
-    BATCH_SIZE = len(train)
+    # listas para armazenar as imagens e labels
+    all_images = []
+    all_labels = []
     
-    # Criar o dataset e aplicar a augmentação
-    train_aug = tf.data.Dataset.from_tensor_slices((train, labels)) \
-        .shuffle(len(train)).batch(BATCH_SIZE) \
-        .map(lambda x, y: (simple_aug(x), y), num_parallel_calls=tf.data.AUTOTUNE) \
-        .prefetch(tf.data.AUTOTUNE)
+    #adicionar as imagens e labels originais
+    for image, label in zip(train, labels):
+        all_images.append(image)
+        all_labels.append(label)
     
-    # Juntar todas as imagens e rótulos em arrays únicos
-    all_images, all_labels = zip(*[(img.numpy(), lbl.numpy()) for img, lbl in train_aug])
+    # copias aug de acordo com a entrada num
+    for _ in range(num_augmented_copies):
+        for image, label in zip(train, labels):
+            augmented_image = simple_aug(image)
+            all_images.append(augmented_image)
+            all_labels.append(label)
+    
+    #convertendo em np
+    all_images = np.array([img for img in all_images])
+    all_labels = np.array(all_labels)
+    
+    #teste
+    #visualize_augmentation(all_images[:5], all_images[156:161])
+    
+    return all_images, all_labels    
 
-    # Concatenar as listas em arrays finais
-    return np.concatenate(all_images), np.concatenate(all_labels)
-
-
-def visualize_augmentation(original_images, augmented_dataset, num_images=5):
-    augmented_images, labels = next(iter(augmented_dataset))
-    augmented_images = augmented_images[:num_images]
+def visualize_augmentation(original_img, aug_img, num_images=5):
+    
     
     plt.figure(figsize=(15, 6))
     for i in range(num_images):
         # Imagem Original
         plt.subplot(2, num_images, i + 1)
-        plt.imshow(original_images[i].astype("uint8"))
+        plt.imshow(original_img[i].astype('float32'))
         plt.title("Original")
         plt.axis("off")
         
         # Imagem Augmentada
         plt.subplot(2, num_images, i + 1 + num_images)
-        plt.imshow(augmented_images[i].numpy().astype("uint8"))
+        plt.imshow(aug_img[i].astype("float32"))
         plt.title("Augmentada")
         plt.axis("off")
-    plt.show()
+    plt.savefig("foto_aug/")
 
 
 if __name__ == "__main__":
+    
+    imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data("Frontal")
+    imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2)
+    print(imagens_train.shape)
+    print(labels_train.shape)
+        
     
     #main_func([ResNet34])
 
