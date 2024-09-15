@@ -7,6 +7,7 @@ from src.models.resNet_34 import ResNet34, ResidualUnit
 from src.models import googleLenet
 from src.models.Vgg_16 import VGG_16
 from src.models.googleLenet import googleLenet
+from src.models.alexnet import alexnet
 from src.models.vgg_16_trained import VGG16_trained
 from src.models.resNet_152 import ResNet152_trained
 from sklearn.metrics import accuracy_score
@@ -50,6 +51,7 @@ def main_func(models_list):
     for angulo in list:
 
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
+        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 3)
         
         """
         imagens_train = np.expand_dims(imagens_train, axis = -1)  # Add uma dimensão para o canal de cor
@@ -139,13 +141,13 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies):
     all_images = np.array([img for img in all_images])
     all_labels = np.array(all_labels)
     
+    
     #teste
     #visualize_augmentation(all_images[:5], all_images[156:161])
     
     return all_images, all_labels    
 
 def visualize_augmentation(original_img, aug_img, num_images=5):
-    
     
     plt.figure(figsize=(15, 6))
     for i in range(num_images):
@@ -164,14 +166,9 @@ def visualize_augmentation(original_img, aug_img, num_images=5):
 
 
 if __name__ == "__main__":
-    
-    imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data("Frontal")
-    imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2)
-    print(imagens_train.shape)
-    print(labels_train.shape)
         
     
-    #main_func([ResNet34])
+    main_func([alexnet])
 
 
     """

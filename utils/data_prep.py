@@ -329,4 +329,3 @@ def format_data(directory_raw):
         np.save(f"np_dataset/imagens_test_{angle}.npy", imagens_test)
         np.save(f"np_dataset/labels_test_{angle}.npy", labels_test)
 
-    

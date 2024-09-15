@@ -11,18 +11,18 @@ def alexnet():
     #primeiro bloco : 96 neurônios 
     #entrada da rede: 227 x 227               
     #fix canais     
-    keras.layers.Conv2D(96, input_shape = (227, 227, 3), kernel_size=(11, 11), 
+    keras.layers.Conv2D(96, input_shape = (227, 227, 1), kernel_size=(11, 11), 
     strides=(4, 4), padding = "valid", activation="relu", kernel_regularizer = keras.regularizers.l2(0.0001)),
     keras.layers.BatchNormalization(),
     keras.layers.MaxPool2D(pool_size=(3, 3), strides=(2, 2)),
-    #keras.layers.Dropout(0.25),   
+    keras.layers.Dropout(0.25),   
     
     #segundo bloco
     keras.layers.Conv2D(256, kernel_size = (5, 5), padding = "same", activation = "relu", 
                         kernel_regularizer = keras.regularizers.l2(0.0001)),
     keras.layers.BatchNormalization(),
     keras.layers.MaxPool2D(pool_size=(3, 3), strides=(2, 2)),
-    #keras.layers.Dropout(0.25),
+    keras.layers.Dropout(0.25),
     
     #terceiro bloco: 3 camadas convolucionais e batch normalization
     keras.layers.Conv2D(384, kernel_size = (3, 3), padding = "same", 
@@ -35,7 +35,7 @@ def alexnet():
                         activation = "relu", kernel_regularizer = keras.regularizers.l2(0.0001)),
     keras.layers.BatchNormalization(), 
     keras.layers.MaxPool2D(pool_size=(3, 3), strides=(2, 2)), 
-    #keras.layers.Dropout(0.25),    
+    keras.layers.Dropout(0.25),    
     
     #quarto bloco
     keras.layers.Flatten(), #transformando em vetor
