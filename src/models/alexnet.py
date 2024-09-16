@@ -10,7 +10,7 @@ def alexnet():
     model = keras.Sequential([
     #primeiro bloco : 96 neurônios 
     #entrada da rede: 227 x 227               
-    #fix canais     
+    #fix canais
     keras.layers.Conv2D(96, input_shape = (227, 227, 1), kernel_size=(11, 11), 
     strides=(4, 4), padding = "valid", activation="relu", kernel_regularizer = keras.regularizers.l2(0.0001)),
     keras.layers.BatchNormalization(),
@@ -43,14 +43,14 @@ def alexnet():
     keras.layers.BatchNormalization(),
     keras.layers.Dropout(0.5),  
     #sexto bloco
-    keras.layers.Dense(4096, activation = "relu", kernel_regularizer = keras.regularizers.l2(0.0001)), 
+    keras.layers.Dense(4096, activation = "relu", kernel_regularizer = keras.regularizers.l2(0.0001)),  #TODO: olhar os regularizadores
     keras.layers.BatchNormalization(),
     keras.layers.Dropout(0.5),  
     #camada de saída: especificar para float32 -> output
     keras.layers.Dense(2, activation = "softmax", dtype="float32", kernel_regularizer = keras.regularizers.l2(0.0001))])
     
     
-    optimizer = tf.keras.optimizers.Adam() #melhorar
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001) #melhorar
     model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
     
     model.summary()

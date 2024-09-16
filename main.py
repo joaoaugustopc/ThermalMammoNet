@@ -45,13 +45,23 @@ def plot_convergence(history, model_name, angulo, i):
 
 def main_func(models_list):
     
-    list = ["Frontal","Left90","Left45","Right90","Right45" ]
+    list = ["Frontal","Left45","Right90","Right45" ]
     models = models_list
 
     for angulo in list:
 
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
-        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 3)
+        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2, resize=True, target_size=227)
+        
+        imagens_valid = np.expand_dims(imagens_valid, axis=-1)
+        imagens_valid = tf.image.resize_with_pad(imagens_valid, 227, 227, method="bicubic")
+        imagens_valid = np.squeeze(imagens_valid, axis=-1)
+        print(imagens_valid.shape)
+        
+        imagens_test = np.expand_dims(imagens_test, axis=-1)
+        imagens_test = tf.image.resize_with_pad(imagens_test, 227, 227, method="bicubic")
+        imagens_test = np.squeeze(imagens_test, axis=-1)
+        print(imagens_test.shape)
         
         """
         imagens_train = np.expand_dims(imagens_train, axis = -1)  # Add uma dimensão para o canal de cor
@@ -78,7 +88,7 @@ def main_func(models_list):
                 checkpoint = tf.keras.callbacks.ModelCheckpoint(f"modelos/{model_name}_{angulo}_{i}.h5", monitor='val_loss', verbose=1, save_best_only=True, 
                                                             save_weights_only=False, mode='auto')
                 
-                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=10, verbose=1, mode='auto')
+                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=50, verbose=1, mode='auto') #alterei patience
 
                 model = model_func()
 
@@ -89,6 +99,9 @@ def main_func(models_list):
                 
                 end_time = time.time()
 
+                # Avaliação do modelo com conjunto de teste
+                test_loss, test_accuracy = model.evaluate(imagens_test, labels_test, verbose=1)
+
                 with open(f"{model_name}_{angulo}_{i}_time.txt", "w") as f:
                     f.write(f"Modelo: {model_name}\n")
                     f.write(f"Tempo de execução: {end_time - start_time}\n")
@@ -96,29 +109,38 @@ def main_func(models_list):
                     f.write(f"Val_loss: {history.history['val_loss']}\n")
                     f.write(f"Accuracy: {history.history['accuracy']}\n")
                     f.write(f"Val_accuracy: {history.history['val_accuracy']}\n")
+                    f.write(f"Test Loss: {test_loss}\n")
+                    f.write(f"Test Accuracy: {test_accuracy}\n")
                     f.write("\n")
-                
+
+                    
                 plot_convergence(history, model_name, angulo, i)
 
+#TODO: olhar a direção do treino - métrica 
 
 """
     Params:
     train: conjuntos de imagens de treino original
     labels: conjunto de labels de treino original
     num_augmented_copies: números de vezes para expandir o dataset
+    resize: bool -> para redimensionar
+    targert_size: int -> novo tamanho para redimensionar
     
     return:
     all_imagens, all_labels : imagens e labels originais + aug
 """
-def apply_augmentation_and_expand(train, labels, num_augmented_copies):
+def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=False, target_size=0):
     train = np.expand_dims(train, axis=-1)
     
+    #TODO: olhar como foi utilizado - usar separado -> melhorar o dataset
     simple_aug = keras.Sequential([
         keras.layers.RandomFlip("horizontal"),
-        keras.layers.RandomRotation(0.01),
-        keras.layers.RandomZoom(0.2, 0.2),
-        keras.layers.RandomBrightness(factor=(0.01), value_range=(0.0, 1.0)),  # ajuste conforme necessário
-        keras.layers.RandomContrast(factor=0.1)  # ajuste conforme necessário
+        keras.layers.RandomRotation(0.05),
+        keras.layers.RandomZoom(0.4, 0.4),
+        keras.layers.RandomBrightness(factor=(0.1), value_range=(0.0, 1.0)),  # ajuste conforme necessário
+        keras.layers.RandomContrast(factor=0.3)  # ajuste conforme necessário
+        #TODO: arrumar o fundo - azul
+        #TODO: olhar o opencv - transformar em 3 canais (comparar)
     ])
     
     # listas para armazenar as imagens e labels
@@ -141,15 +163,31 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies):
     all_images = np.array([img for img in all_images])
     all_labels = np.array(all_labels)
     
+    #se passado como parametro
+    if resize:
+        all_images = tf.image.resize_with_pad(all_images, target_size, target_size, method="bicubic")
+    
+    
+    all_images = np.squeeze(all_images, axis=-1)    
+    print(all_images.shape)
     
     #teste
-    #visualize_augmentation(all_images[:5], all_images[156:161])
+    visualize_augmentation(all_images[:10], all_images[156:166], 10)
     
     return all_images, all_labels    
 
+"""
+Params:
+    original_img: dataset original
+    aug_img: dataset alterado (aug e resize)
+    num_images: imagens visualizadas
+    
+    Return:
+    void -> mas as imagens são salvas
+"""
 def visualize_augmentation(original_img, aug_img, num_images=5):
     
-    plt.figure(figsize=(15, 6))
+    plt.figure(figsize=(15, 6))         
     for i in range(num_images):
         # Imagem Original
         plt.subplot(2, num_images, i + 1)
