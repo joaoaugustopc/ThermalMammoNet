@@ -63,18 +63,18 @@ def main_func(models_list):
         imagens_test = np.squeeze(imagens_test, axis=-1)
         print(imagens_test.shape)
         
-        """
         imagens_train = np.expand_dims(imagens_train, axis = -1)  # Add uma dimensão para o canal de cor
         imagens_valid = np.expand_dims(imagens_valid, axis = -1) 
         imagens_test = np.expand_dims(imagens_test, axis = -1)
         
 
-        imagens_train = tf.image.resize(imagens_train, (120,160), method='bicubic')
-        imagens_valid = tf.image.resize(imagens_valid, (120,160), method='bicubic')
+        imagens_train = tf.image.resize(imagens_train, (240,320), method='bicubic')
+        imagens_valid = tf.image.resize(imagens_valid, (240,320), method='bicubic')
 
         print(f"Imagens de treino: {imagens_train.shape}")
         print(f"Imagens de validação: {imagens_valid.shape}")
 
+        """
         """
         
         for model_func in models:
@@ -95,7 +95,7 @@ def main_func(models_list):
                 model.summary()
 
                 history = model.fit(imagens_train, labels_train, epochs = 100, validation_data= (imagens_valid, labels_valid),
-                                    callbacks= [checkpoint,earlystop], batch_size = 1, verbose = 1, shuffle = True)
+                                    callbacks= [checkpoint,earlystop], batch_size = 2, verbose = 1, shuffle = True)
                 
                 end_time = time.time()
 

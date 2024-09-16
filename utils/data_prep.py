@@ -202,8 +202,8 @@ def to_array(directory):
             else:
               delimiter = ' '
           imagem = np.loadtxt(path, delimiter=delimiter)
-          max_value = max(max_value, np.max(imagem))
-          min_value = min(min_value, np.min(imagem))
+          #max_value = max(max_value, np.max(imagem))
+          #min_value = min(min_value, np.min(imagem))
           #imagem = preprocess(imagem)
           imagens.append(imagem)
           labels.append(0)
@@ -223,8 +223,8 @@ def to_array(directory):
             else:
               delimiter = ' '
           imagem = np.loadtxt(path, delimiter=delimiter)
-          max_value = max(max_value, np.max(imagem))
-          min_value = min(min_value, np.min(imagem))
+          #max_value = max(max_value, np.max(imagem))
+          #min_value = min(min_value, np.min(imagem))
           #imagem = preprocess(imagem)
           imagens.append(imagem)
           labels.append(1)
@@ -235,11 +235,13 @@ def to_array(directory):
           continue
 
   
-    print("Max value:",max_value)
-    print("Min value:",min_value)
+    #print("Max value:",max_value)
+    #print("Min value:",min_value)
 
+    """
     for i in range(len(imagens)):
         imagens[i] = preprocess(imagens[i], max_value, min_value)
+    """
   
     unique_ids = set()
     ids_unicos = []
@@ -296,6 +298,21 @@ def to_array(directory):
     # Segundo split: 50% validação, 50% teste do restante (que é 20% cada do total original)
 
     imagens_valid, imagens_test, labels_valid, labels_test = train_test_split(imagens_rest, labels_rest, test_size=0.5, shuffle = True)
+
+
+    for i in range(len(imagens_train)):
+        max_value = max(max_value, np.max(imagens_train[i]))
+        min_value = min(min_value, np.min(imagens_train[i]))
+
+
+    for i in range(len(imagens_train)):
+        imagens_train[i] = preprocess(imagens_train[i], max_value, min_value)
+
+    for i in range(len(imagens_valid)):
+        imagens_valid[i] = preprocess(imagens_valid[i], max_value, min_value)
+
+    for i in range(len(imagens_test)):
+        imagens_test[i] = preprocess(imagens_test[i], max_value, min_value)
 
     return imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test
 
