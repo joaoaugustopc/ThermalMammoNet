@@ -87,9 +87,22 @@ def main_func(models_list):
     models = models_list
     
         
+    
+        
     for angulo in list:
 
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
+        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2, resize=True, target_size=227)
+        
+        imagens_valid = np.expand_dims(imagens_valid, axis=-1)
+        imagens_valid = tf.image.resize_with_pad(imagens_valid, 227, 227, method="bicubic")
+        imagens_valid = np.squeeze(imagens_valid, axis=-1)
+        print(imagens_valid.shape)
+        
+        imagens_test = np.expand_dims(imagens_test, axis=-1)
+        imagens_test = tf.image.resize_with_pad(imagens_test, 227, 227, method="bicubic")
+        imagens_test = np.squeeze(imagens_test, axis=-1)
+        print(imagens_test.shape)
         imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2, resize=True, target_size=227)
         
         imagens_valid = np.expand_dims(imagens_valid, axis=-1)
