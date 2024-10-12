@@ -17,8 +17,9 @@ import time
 import re
 import shutil
 from tensorflow.keras.utils import custom_object_scope
-from utils.data_prep import to_array, load_data, get_boxPlot, move_files_to_folder,delete_folder, delete_file
+from src.models.utils.data_prep import to_array, load_data, get_boxPlot, move_files_to_folder,delete_folder, delete_file
 from PIL import Image
+import random
 
 
 def apply_mask():
@@ -57,7 +58,7 @@ def apply_mask():
     np.save('imagens_train_Frontal_masked.npy', masked_array)
 
 
-def plot_convergence(history, model_name, angulo, i):
+def plot_convergence(history, model_name, angulo, i, mensagem = ""):
     # Gráfico de perda de treinamento
     plt.figure(figsize=(10, 6))
     plt.plot(history.history['loss'], label='Training Loss')
@@ -66,7 +67,7 @@ def plot_convergence(history, model_name, angulo, i):
     plt.ylabel('Loss')
     plt.legend()
     plt.grid(True)
-    plt.savefig(f"{model_name}_{angulo}_{i}_training_loss_convergence.png")
+    plt.savefig(f"history/{model_name}/{mensagem}_{angulo}_{i}_training_loss_convergence.png")
     plt.close()
 
     # Gráfico de perda de validação
@@ -77,47 +78,40 @@ def plot_convergence(history, model_name, angulo, i):
     plt.ylabel('Loss')
     plt.legend()
     plt.grid(True)
-    plt.savefig(f"{model_name}_{angulo}_{i}_validation_loss_convergence.png")
+    plt.savefig(f"history/{model_name}/{mensagem}_{angulo}_{i}_validation_loss_convergence.png")
     plt.close()
 
 
-def main_func(models_list):
+def main_func(models_list, mensagem = ""):
     
     list = ["Frontal"]
     models = models_list
     
         
-    
         
     for angulo in list:
 
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
-        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2, resize=True, target_size=227)
+        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2, resize=False)
+        print(imagens_train.shape)
         
-        imagens_valid = np.expand_dims(imagens_valid, axis=-1)
-        imagens_valid = tf.image.resize_with_pad(imagens_valid, 227, 227, method="bicubic")
-        imagens_valid = np.squeeze(imagens_valid, axis=-1)
-        print(imagens_valid.shape)
+        print(labels_train[labels_train == 1].shape)
+        print(labels_train[labels_train == 0].shape)
+
+        #imagens_valid = np.expand_dims(imagens_valid, axis=-1) # Add uma dimensão para o canal de cor para o tf.image.resize_with_pad
+        #imagens_valid = tf.image.resize_with_pad(imagens_valid, 224, 224, method="bicubic")
+        #imagens_valid = np.squeeze(imagens_valid, axis=-1)  # Remover a dimensão do canal de cor
+        #print(imagens_valid.shape)
         
-        imagens_test = np.expand_dims(imagens_test, axis=-1)
-        imagens_test = tf.image.resize_with_pad(imagens_test, 227, 227, method="bicubic")
-        imagens_test = np.squeeze(imagens_test, axis=-1)
-        print(imagens_test.shape)
-        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2, resize=True, target_size=227)
+        #imagens_test = np.expand_dims(imagens_test, axis=-1)
+        #imagens_test = tf.image.resize_with_pad(imagens_test, 224, 224, method="bicubic")
+        #imagens_test = np.squeeze(imagens_test, axis=-1)
+        #print(imagens_test.shape)
         
-        imagens_valid = np.expand_dims(imagens_valid, axis=-1)
-        imagens_valid = tf.image.resize_with_pad(imagens_valid, 227, 227, method="bicubic")
-        imagens_valid = np.squeeze(imagens_valid, axis=-1)
-        print(imagens_valid.shape)
         
-        imagens_test = np.expand_dims(imagens_test, axis=-1)
-        imagens_test = tf.image.resize_with_pad(imagens_test, 227, 227, method="bicubic")
-        imagens_test = np.squeeze(imagens_test, axis=-1)
-        print(imagens_test.shape)
-        
-        imagens_train = np.expand_dims(imagens_train, axis = -1)  # Add uma dimensão para o canal de cor
-        imagens_valid = np.expand_dims(imagens_valid, axis = -1) 
-        imagens_test = np.expand_dims(imagens_test, axis = -1)
+        #imagens_train = np.expand_dims(imagens_train, axis = -1)  # Add uma dimensão para o canal de cor
+        #imagens_valid = np.expand_dims(imagens_valid, axis = -1) 
+        #imagens_test = np.expand_dims(imagens_test, axis = -1)
 
         
         for model_func in models:
@@ -128,24 +122,26 @@ def main_func(models_list):
 
                 start_time = time.time()
 
-                checkpoint = tf.keras.callbacks.ModelCheckpoint(f"modelos/{model_name}_{angulo}_{i}.h5", monitor='val_loss', verbose=1, save_best_only=True, 
+                checkpoint = tf.keras.callbacks.ModelCheckpoint(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5", monitor='val_loss', verbose=1, save_best_only=True, 
                                                             save_weights_only=False, mode='auto')
                 
-                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=50, verbose=1, mode='auto') #alterei patience
+                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=50, verbose=1, mode='auto') #alterei patience
 
                 model = model_func()
 
                 model.summary()
 
-                history = model.fit(imagens_train, labels_train, epochs = 100, validation_data= (imagens_valid, labels_valid),
+                history = model.fit(imagens_train, labels_train, epochs = 500, validation_data= (imagens_valid, labels_valid),
                                     callbacks= [checkpoint,earlystop], batch_size = 4, verbose = 1, shuffle = True)
                 
                 end_time = time.time()
 
-                # Avaliação do modelo com conjunto de teste
-                test_loss, test_accuracy = model.evaluate(imagens_test, labels_test, verbose=1)
+                best_model = keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5")
 
-                with open(f"{model_name}_{angulo}_{i}_time.txt", "w") as f:
+                # Avaliação do modelo com conjunto de teste
+                test_loss, test_accuracy = best_model.evaluate(imagens_test, labels_test, verbose=1)
+
+                with open(f"history/{model_name}/{mensagem}_{angulo}_{i}_time.txt", "w") as f:
                     f.write(f"Modelo: {model_name}\n")
                     f.write(f"Tempo de execução: {end_time - start_time}\n")
                     f.write(f"Loss: {history.history['loss']}\n")
@@ -157,10 +153,9 @@ def main_func(models_list):
                     f.write("\n")
 
                     
-                plot_convergence(history, model_name, angulo, i)
+                plot_convergence(history, model_name, angulo, i, mensagem)
 
 #TODO: olhar a direção do treino - métrica 
-
 
 # Funções lambda para cada transformação separada
 random_flip = lambda: keras.layers.RandomFlip("horizontal")
@@ -172,23 +167,6 @@ random_contrast = lambda: keras.layers.RandomContrast(factor=0.3)
 # Função para aplicar as transformações individualmente
 def apply_transformation(image, transformation):
     return transformation()(image)
-
-
-def resize_images(all_images, target_size, resize=False):
-    if resize:
-        # Usando keras.layers.Resizing
-        resizing_layer = keras.layers.Resizing(
-            height=target_size,
-            width=target_size,
-            interpolation="bicubic",
-            crop_to_aspect_ratio=False,
-            pad_to_aspect_ratio=True,  # Equivalente ao comportamento de resize_with_pad
-            fill_mode="constant",
-            fill_value=0.0,
-            data_format=None
-        )
-        all_images = resizing_layer(all_images)
-    return all_images
 
 """
     Params:
@@ -204,6 +182,7 @@ def resize_images(all_images, target_size, resize=False):
 #TODO: olhar como foi utilizado - usar separado -> melhorar o dataset
 #TODO: arrumar o fundo - azul
 #TODO: olhar o opencv - transformar em 3 canais (comparar)
+
 def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=False, target_size=0):
     train = np.expand_dims(train, axis=-1)
     
@@ -215,6 +194,7 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
     for image, label in zip(train, labels):
         all_images.append(image)
         all_labels.append(label)
+    
     transformations = [random_rotation, random_zoom, random_brightness, random_contrast]
 
     #aplicar cada transformação separado
@@ -245,7 +225,7 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
     print(all_images.shape)
     
     #teste
-    visualize_augmentation(all_images[:10], all_images[156:166], 10)
+    #visualize_augmentation(all_images[:10], all_images[156:166], 10)
     
     return all_images, all_labels    
 
@@ -277,78 +257,61 @@ def visualize_augmentation(original_img, aug_img, num_images=5):
 
 
 if __name__ == "__main__":
-    #apply_mask()
 
-    imagens_train = np.load("RGB/imagens_train_Frontal.npy")
-    labels_train = np.load("RGB/labels_train_Frontal.npy")
-    imagens_valid = np.load("RGB/imagens_valid_Frontal.npy")
-    labels_valid = np.load("RGB/labels_valid_Frontal.npy")
-    imagens_test = np.load("RGB/imagens_test_Frontal.npy")
-    labels_test = np.load("RGB/labels_test_Frontal.npy")
+    angulos = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
 
-    imagens_test = tf.image.resize(imagens_test, (224,224), method='bicubic')
+    for angulo in angulos:
+        train = np.load(f"np_dataset/imagens_train_{angulo}.npy")
+        valid = np.load(f"np_dataset/imagens_valid_{angulo}.npy")
+        test = np.load(f"np_dataset/imagens_test_{angulo}.npy")
 
-    model = VGG16( weights='imagenet', include_top=True, classes = 1000)
+        labels_train = np.load(f"np_dataset/labels_train_{angulo}.npy")
+        labels_valid = np.load(f"np_dataset/labels_valid_{angulo}.npy")
+        labels_test = np.load(f"np_dataset/labels_test_{angulo}.npy")
 
-    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+        print(f"Train {angulo}: {train.shape}")
+        print(f"Valid {angulo}: {valid.shape}")
+        print(f"Test {angulo}: {test.shape}")
 
-    loss, acc = model.evaluate(imagens_test, labels_test, verbose=2)
+        print(f"Healthy train {angulo}: {labels_train[labels_train == 0].shape}")
+        print(f"Sick train {angulo}: {labels_train[labels_train == 1].shape}")
+        print(f"Healthy valid {angulo}: {labels_valid[labels_valid == 0].shape}")
+        print(f"Sick valid {angulo}: {labels_valid[labels_valid == 1].shape}")
+        print(f"Healthy test {angulo}: {labels_test[labels_test == 0].shape}")
+        print(f"Sick test {angulo}: {labels_test[labels_test == 1].shape}")
 
-    print("Model, accuracy: {:5.2f}%".format(100*acc))
+        rndImg1 = random.randint(0, train.shape[0] - 1)
 
+        max_value = np.max(train[rndImg1])
+        min_value = np.min(train[rndImg1])
 
+        print(f"Max value train 1: {max_value}")
+        print(f"Min value train 1: {min_value}")
 
+        rndImg2 = random.randint(0, train.shape[0] - 1)
 
+        max_value = np.max(train[rndImg2])
+        min_value = np.min(train[rndImg2])
 
+        print(f"Max value train 2: {max_value}")
+        print(f"Min value train 2: {min_value}")
 
+        plt.figure(figsize=(15, 6))
+        plt.subplot(1, 2, 1)
+        plt.imshow(train[rndImg1], cmap='gray')
+        plt.title(f"Random Image 1 - {angulo}")
+        plt.axis("off")
 
+        plt.subplot(1, 2, 2)
+        plt.imshow(train[rndImg2], cmap='gray')
+        plt.title(f"Random Image 2 - {angulo}")
+        plt.axis("off")
+        plt.savefig(f"random_images_{angulo}.png")
+        plt.close()
 
+        print("---------------------------------------------------------------------------")
 
-    #main_func([VGG16_trained])
+    #main_func([ResNet34])
+    #get_boxPlot("ResNet34")
 
-        
     
-
-    """
-    for angle in ["Frontal", "Right45", "Right90", "Left45", "Left90"]:
-        
-        train = np.load(f"np_dataset/imagens_train_{angle}.npy")
-        valid = np.load(f"np_dataset/imagens_valid_{angle}.npy")
-        test = np.load(f"np_dataset/imagens_test_{angle}.npy")
-
-        labels_train = np.load(f"np_dataset/labels_train_{angle}.npy")
-        labels_valid = np.load(f"np_dataset/labels_valid_{angle}.npy")
-        labels_test = np.load(f"np_dataset/labels_test_{angle}.npy")
-
-        print("ANGLE:",angle)
-        print("Train shape:",train.shape)
-        print(labels_train.shape)
-        print("valid shape:",valid.shape)
-        print(labels_valid.shape)
-        print("test shape:",test.shape)
-        print(labels_test.shape)
-
-        print("Train Healthy:",len(labels_train[labels_train == 0]))
-        print("Train Sick:",len(labels_train[labels_train == 1]))
-
-    #main_func([alexnet])
-
-    list = ["Frontal","Left90","Left45","Right90","Right45" ]
-
-    for angulo in list:
-        files = [f"ResNet34_{angulo}_{i}_time.txt" for i in range(10)]
-
-        move_files_to_folder(files, f"history/ResNet34/{angulo}")
-    """
-    
-    
-    """
-    train_original = np.load("np_dataset/imagens_train_Frontal.npy")
-    labels_original = np.load("np_dataset/labels_train_Frontal.npy")
-    
-    print(train_original.shape)
-    print(labels_original.shape)
-    
-                    
-    train, labels = apply_augmentation(train_original, labels_original)
-    """

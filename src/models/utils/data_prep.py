@@ -144,14 +144,14 @@ def get_boxPlot(modelo):
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
         
         #mudança para encaixar na rede
-        imagens_test = np.expand_dims(imagens_test, axis=-1)
-        imagens_test = tf.image.resize_with_pad(imagens_test, 227, 227, method="bicubic")
-        imagens_test = np.squeeze(imagens_test, axis=-1)
+        #imagens_test = np.expand_dims(imagens_test, axis=-1)
+        #imagens_test = tf.image.resize_with_pad(imagens_test, 224, 224, method="bicubic")
+        #imagens_test = np.squeeze(imagens_test, axis=-1)
         #fim mudança        
         
         for i in range(10):
             with custom_object_scope({'ResidualUnit': ResidualUnit}):
-              model = tf.keras.models.load_model(f"modelos/{modelo}_{angulo}_{i}.h5")
+              model = tf.keras.models.load_model(f"modelos/{modelo}_{angulo}_{i+1}.h5")
             
             #imagens_test = np.expand_dims(imagens_test, axis = -1)
 
@@ -165,7 +165,7 @@ def get_boxPlot(modelo):
             loss.append(loss_)
         
         #alterei
-        bloxPlot(acc, loss, "Alexnet", f"Alexnet{angulo}.png")
+        bloxPlot(acc, loss, "ResNet34", f"ResNet34{angulo}.png")
 
         print(f"Acurácia média: {np.mean(acc)}")
         print(f"Loss médio: {np.mean(loss)}")
@@ -354,4 +354,31 @@ def format_data(directory_raw):
         np.save(f"np_dataset/labels_valid_{angle}.npy", labels_valid)
         np.save(f"np_dataset/imagens_test_{angle}.npy", imagens_test)
         np.save(f"np_dataset/labels_test_{angle}.npy", labels_test)
+
+    
+    
+    
+
+def data_distribution():
+    for angle in ["Frontal", "Right45", "Right90", "Left45", "Left90"]:
+        
+        train = np.load(f"np_dataset/imagens_train_{angle}.npy")
+        valid = np.load(f"np_dataset/imagens_valid_{angle}.npy")
+        test = np.load(f"np_dataset/imagens_test_{angle}.npy")
+
+        labels_train = np.load(f"np_dataset/labels_train_{angle}.npy")
+        labels_valid = np.load(f"np_dataset/labels_valid_{angle}.npy")
+        labels_test = np.load(f"np_dataset/labels_test_{angle}.npy")
+
+        print("ANGLE:",angle)
+        print("Train shape:",train.shape)
+        print(labels_train.shape)
+        print("valid shape:",valid.shape)
+        print(labels_valid.shape)
+        print("test shape:",test.shape)
+        print(labels_test.shape)
+
+        print("Train Healthy:",len(labels_train[labels_train == 0]))
+        print("Train Sick:",len(labels_train[labels_train == 1]))
+
 
