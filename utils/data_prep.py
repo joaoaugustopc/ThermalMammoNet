@@ -1,13 +1,4 @@
-from sklearn.model_selection import train_test_split
-import numpy as np
-import os
-import shutil
-import tensorflow as tf
-from tensorflow import keras
-import matplotlib.pyplot as plt
-from tensorflow.keras.utils import custom_object_scope
-from src.models.resNet_34 import ResNet34, ResidualUnit
-
+from include.imports import *
 
 #Arrays Numpy
 def load_data(angulo):
@@ -23,159 +14,7 @@ def load_data(angulo):
     return imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test
 
 
-def preprocess_image(image, label):
-    image = tf.cast(image, tf.float32) / 255.0  # Normalizar a imagem
-    return image, label
-
-# text_dataset_from_directory, retorna um tf.Dataset
-def load_tf_data(path):
-    train_path = os.path.join(path, "train")
-
-    train_ds = keras.utils.text_dataset_from_directory(
-        train_path,
-        labels="inferred",
-        label_mode="int",
-        shuffle=True,
-        seed=123,
-        batch_size = None
-    )
-
-    test_path = os.path.join(path, "test")
-
-    val_ds, test_ds = keras.utils.text_dataset_from_directory(
-        test_path,
-        labels="inferred",
-        label_mode="int",
-        shuffle=True,
-        seed=123,
-        validation_split=0.5,
-        subset="both",
-        batch_size = None
-    )
-
-    return train_ds, val_ds, test_ds
-
-#nao esta sendo usada
-def data_generator(imagens, labels):
-    for img, label in zip(imagens, labels):
-        img = np.expand_dims(img, axis = -1)
-        yield img, label
-
-#nao esta sendo usada
-def crate_dataset(imagens, labels, batch_size = 2, image_size = (480, 640)):
-
-    dataset = tf.data.Dataset.from_generator(lambda: data_generator(imagens, labels), 
-            output_signature=( tf.TensorSpec(shape=(None, None, 1), dtype=tf.float32), 
-            tf.TensorSpec(shape=(), dtype=tf.int32))
-    )
-
-    dataset = dataset.map(lambda x, y: preprocess_image(x, y))
-
-    dataset = dataset.batch(batch_size)
-
-    return dataset
-
-
-def delete_folder(folder_path):
-    if os.path.exists(folder_path):
-        shutil.rmtree(folder_path)
-        print(f"Pasta {folder_path} deletada.")
-    else:
-        print(f"Pasta {folder_path} não encontrada.")
-
-
-def delete_file(file_path):
-    if os.path.exists(file_path):
-        os.remove(file_path)
-        print(f"Arquivo {file_path} deletado.")
-    else:
-        print(f"Arquivo {file_path} não encontrado.")
-
-
-def move_files_to_folder(file_list, destination_folder):
-    if not os.path.exists(destination_folder):
-        os.makedirs(destination_folder)
-    for file in file_list:
-        if os.path.exists(file):
-            shutil.move(file, destination_folder)
-
-def test_model(model, imagens_test, labels_test):
-    """
-    imagens_test = np.expand_dims(imagens_test, axis = -1)
-    imagens_test = np.repeat(imagens_test, 3, axis=-1)
-    #imagens_test = tf.image.resize(imagens_test, (200, 200))
-    """
-   
-    loss, acc = model.evaluate(imagens_test, labels_test)
-
-    print(f"Loss: {loss}")
-    print(f"Accuracy: {acc}")
-
-    return loss, acc
-
-
-def bloxPlot(acc_data, loss_data, title, save_path):
-    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-
-    # Boxplot para acurácia
-    axs[0].boxplot(acc_data)
-    axs[0].set_title('Acurácia dos modelos')
-    axs[0].set_xlabel('Modelo')
-    axs[0].set_ylabel('Acurácia')
-
-    # Boxplot para loss
-    axs[1].boxplot(loss_data)
-    axs[1].set_title('Loss do modelo')
-    axs[1].set_xlabel('Modelo')
-    axs[1].set_ylabel('Loss')
-
-    plt.suptitle(title)
-    plt.tight_layout()
-    plt.savefig(save_path)
-    plt.close()
-
-#função alterada
-def get_boxPlot(modelo):
-    list = ["Frontal"] #alterei os angulos -> completar dps
-
-    for angulo in list:
-        acc = []
-        loss = []
-        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
-        
-        #mudança para encaixar na rede
-        imagens_test = np.expand_dims(imagens_test, axis=-1)
-        imagens_test = tf.image.resize_with_pad(imagens_test, 227, 227, method="bicubic")
-        imagens_test = np.squeeze(imagens_test, axis=-1)
-        #fim mudança        
-        
-        for i in range(10):
-            with custom_object_scope({'ResidualUnit': ResidualUnit}):
-              model = tf.keras.models.load_model(f"modelos/{modelo}_{angulo}_{i}.h5")
-            
-            #imagens_test = np.expand_dims(imagens_test, axis = -1)
-
-            #imagens_test = np.repeat(imagens_test, 3, axis=-1)
-
-            #imagens_test = tf.image.resize(imagens_test, (200, 200))
-
-            loss_, acc_ = test_model(model, imagens_test, labels_test)
-
-            acc.append(acc_)
-            loss.append(loss_)
-        
-        #alterei
-        bloxPlot(acc, loss, "Alexnet", f"Alexnet{angulo}.png")
-
-        print(f"Acurácia média: {np.mean(acc)}")
-        print(f"Loss médio: {np.mean(loss)}")
-        print(f"Desvio padrão da acurácia: {np.std(acc)}")
-        print(f"Desvio padrão do loss: {np.std(loss)}")
-        print(f"Mediana da acurácia: {np.median(acc)}")
-        print(f"Mediana do loss: {np.median(loss)}")
-
 def preprocess(image, max, min):
-    # Normalizar a imagem
     image = (image - min) / (max - min)
     return image
 
@@ -183,14 +22,19 @@ def extract_id(filename):
     # Extrair o ID a partir do nome do arquivo
     return filename.split('_')[0]
 
-
+"""
+Função para converter os arquivos de texto em arrays numpy
+"""
 def to_array(directory):
+
+    np.random.seed(42)
+
     arquivos = os.listdir(directory)
 
     print(arquivos)
 
-    sick_path = os.path.join(directory, arquivos[1])
-    healthy_path = os.path.join(directory, arquivos[0])
+    healthy_path = os.path.join(directory, 'healthy')
+    sick_path = os.path.join(directory, 'sick')
 
     healthy = os.listdir(healthy_path)
     sick = os.listdir(sick_path)
@@ -211,9 +55,6 @@ def to_array(directory):
             else:
               delimiter = ' '
           imagem = np.loadtxt(path, delimiter=delimiter)
-          #max_value = max(max_value, np.max(imagem))
-          #min_value = min(min_value, np.min(imagem))
-          #imagem = preprocess(imagem)
           imagens.append(imagem)
           labels.append(0)
           ids.append(extract_id(arquivo))
@@ -231,10 +72,8 @@ def to_array(directory):
               delimiter = ';'
             else:
               delimiter = ' '
+            f.seek(0)
           imagem = np.loadtxt(path, delimiter=delimiter)
-          #max_value = max(max_value, np.max(imagem))
-          #min_value = min(min_value, np.min(imagem))
-          #imagem = preprocess(imagem)
           imagens.append(imagem)
           labels.append(1)
           ids.append(extract_id(arquivo))
@@ -243,14 +82,6 @@ def to_array(directory):
           print(arquivo)
           continue
 
-  
-    #print("Max value:",max_value)
-    #print("Min value:",min_value)
-
-    """
-    for i in range(len(imagens)):
-        imagens[i] = preprocess(imagens[i], max_value, min_value)
-    """
   
     unique_ids = set()
     ids_unicos = []
@@ -288,13 +119,12 @@ def to_array(directory):
 
     mult_porcent = (total_mult_imgs / total_imgs)
 
-    train_percent = 0.6 - mult_porcent
+    train_percent = max(0.0,0.6 - mult_porcent)
 
     imagens_unicas = np.array(imagens_unicas)
     labels_unicos = np.array(labels_unicos)
 
     # Primeiro split: 60% treino, 40% restante
-
     imagens_train, imagens_rest, labels_train, labels_rest = train_test_split(imagens_unicas, labels_unicos, test_size= 1 - train_percent, shuffle = True)
 
     imagens_train = np.concatenate((imagens_train, mult_consultas_img), axis=0)
@@ -353,5 +183,145 @@ def format_data(directory_raw):
         np.save(f"np_dataset/imagens_valid_{angle}.npy", imagens_valid)
         np.save(f"np_dataset/labels_valid_{angle}.npy", labels_valid)
         np.save(f"np_dataset/imagens_test_{angle}.npy", imagens_test)
-        np.save(f"np_dataset/labels_test_{angle}.npy", labels_test)
+        np.save(f"np_dataset/labels_test_{angle}.npy", labels_test)    
+    
 
+
+
+
+def apply_mask():
+    masks = os.listdir('masks')
+
+    regex = re.compile(r'.*1\.S.*')
+
+    mascaras = [mask for mask in masks if regex.match(mask)]
+
+    max_value = 0
+    img_max = None
+
+    for mask in mascaras:
+        img = Image.open(os.path.join('masks', mask))
+        img = np.array(img)
+
+        n_true = np.count_nonzero(img)
+
+        if n_true > max_value:
+            max_value = n_true
+            img_max = img
+
+
+    imagens_train = np.load('np_dataset/imagens_train_Frontal.npy')
+
+    lista = []
+
+    for imagem in imagens_train:
+
+        masked = np.ma.masked_array(imagem, ~img_max)
+        filled = np.ma.filled(masked, 0)
+        lista.append(filled)
+
+    masked_array = np.array(lista)
+
+    np.save('imagens_train_Frontal_masked.npy', masked_array)
+
+    
+
+#TODO: olhar a direção do treino - métrica 
+
+# Funções lambda para cada transformação separada
+random_flip = lambda: keras.layers.RandomFlip("horizontal")
+random_rotation = lambda: keras.layers.RandomRotation(0.05)
+random_zoom = lambda: keras.layers.RandomZoom(0.4, 0.4)
+random_brightness = lambda: keras.layers.RandomBrightness(factor=0.3, value_range=(0.0, 1.0))
+random_contrast = lambda: keras.layers.RandomContrast(factor=0.3)
+
+# Função para aplicar as transformações individualmente
+def apply_transformation(image, transformation):
+    return transformation()(image)
+
+"""
+    Params:
+    train: conjuntos de imagens de treino original
+    labels: conjunto de labels de treino original
+    num_augmented_copies: números de vezes para expandir o dataset
+    resize: bool -> para redimensionar
+    targert_size: int -> novo tamanho para redimensionar
+    
+    return:
+    all_imagens, all_labels : imagens e labels originais + aug
+"""
+#TODO: olhar como foi utilizado - usar separado -> melhorar o dataset
+#TODO: arrumar o fundo - azul
+#TODO: olhar o opencv - transformar em 3 canais (comparar)
+
+def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=False, target_size=0):
+    train = np.expand_dims(train, axis=-1)
+    
+    # listas para armazenar as imagens e labels
+    all_images = []
+    all_labels = []
+    
+    #adicionar as imagens e labels originais
+    for image, label in zip(train, labels):
+        all_images.append(image)
+        all_labels.append(label)
+    
+    transformations = [random_rotation, random_zoom, random_brightness, random_contrast]
+
+    #aplicar cada transformação separado
+    for _ in range(num_augmented_copies):
+        for image, label in zip(train, labels):
+            for transformation in transformations:  # Aplicar cada transformação separadamente
+                augmented_image = apply_transformation(image, transformation)
+                
+                # Aleatoriamente decidir se vai aplicar random_flip
+                if random.random() > 0.5:  # 50% de chance de aplicar o flip
+                    augmented_image = apply_transformation(augmented_image, random_flip)
+                
+                
+                all_images.append(augmented_image)
+                all_labels.append(label)
+                
+    
+    #convertendo em np
+    all_images = np.array([img for img in all_images])
+    all_labels = np.array(all_labels)
+    
+    #se passado como parametro
+    if resize:
+        all_images = tf.image.resize_with_pad(all_images, target_size, target_size, method="bicubic")
+    
+    
+    all_images = np.squeeze(all_images, axis=-1)    
+    print(all_images.shape)
+    
+    #teste
+    #visualize_augmentation(all_images[:10], all_images[156:166], 10)
+    
+    return all_images, all_labels    
+
+"""
+Params:
+    original_img: dataset original
+    aug_img: dataset alterado (aug e resize)
+    num_images: imagens visualizadas
+    
+    Return:
+    void -> mas as imagens são salvas
+"""
+def visualize_augmentation(original_img, aug_img, num_images=5):
+    
+    plt.figure(figsize=(15, 6))         
+    for i in range(num_images):
+        # Imagem Original
+        plt.subplot(2, num_images, i + 1)
+        plt.imshow(original_img[i].astype('float32'))
+        plt.title("Original")
+        plt.axis("off")
+        
+        # Imagem Augmentada
+        plt.subplot(2, num_images, i + 1 + num_images)
+        plt.imshow(aug_img[i].astype("float32"))
+        plt.title("Augmentada")
+        plt.axis("off")
+    plt.savefig("foto_aug/")
