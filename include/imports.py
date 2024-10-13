@@ -23,6 +23,6 @@ import numpy as np
 import os
 import shutil
 
-from utils.data_prep import apply_augmentation_and_expand, load_data
+from utils.data_prep import apply_augmentation_and_expand, load_data, create_aug_dataset
 from utils.files_manipulation import delete_folder, delete_file, move_files_to_folder
 from utils.stats import plot_convergence, test_model, get_boxPlot, data_distribution

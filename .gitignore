@@ -10,11 +10,9 @@ foto_aug/
 alexnet-0.0001-8b/
 alexnet-0.0001-32batch/
 alexnet-result/
-<<<<<<< HEAD
 alexnet-result-fontal valid/
 alexnet-result-right45-same/
 alexnet-result-right90-same/
-=======
 alexnet-0.0001-8b/
 alexnet-0.0001-32batch/
 alexnet-result/
@@ -23,4 +21,4 @@ alexnet-0.0001-32batch/
 alexnet-result/
 masks/
 RGB/
->>>>>>> 20045670d3bd1b9b92f2153d511ca33b8cf839f6
+dataset_aug/
