@@ -229,6 +229,8 @@ if __name__ == "__main__":
         
     
     main_func([alexnet])
+    
+    delete_folder("modelos_original")
 
 
     """
