@@ -193,6 +193,8 @@ def format_data(directory_raw):
     
 
 
+
+
 def apply_mask():
     masks = os.listdir('masks')
 
@@ -243,7 +245,7 @@ def save_numpy_data(images, labels, output_dir, position):
 # Funções lambda para cada transformação separada
 random_flip = lambda: keras.layers.RandomFlip("horizontal")
 random_rotation = lambda: keras.layers.RandomRotation(0.05)
-random_zoom = lambda: keras.layers.RandomZoom(0.4, 0.4)
+random_zoom = lambda: keras.layers.RandomZoom(0.3, 0.5)
 random_brightness = lambda: keras.layers.RandomBrightness(factor=0.3, value_range=(0.0, 1.0))
 random_contrast = lambda: keras.layers.RandomContrast(factor=0.3)
 
@@ -263,6 +265,9 @@ def apply_transformation(image, transformation):
     all_imagens, all_labels : imagens e labels originais + aug
 """
 def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=False, target_size=0):
+
+    np.random.seed(42)
+
     train = np.expand_dims(train, axis=-1)
     
     # listas para armazenar as imagens e labels
@@ -278,6 +283,7 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
 
     #aplicar cada transformação separado
     for _ in range(num_augmented_copies):
+        i = 0
         for image, label in zip(train, labels):
             for transformation in transformations:  # Aplicar cada transformação separadamente
                 augmented_image = apply_transformation(image, transformation)
@@ -286,10 +292,27 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
                 if random.random() > 0.5:  # 50% de chance de aplicar o flip
                     augmented_image = apply_transformation(augmented_image, random_flip)
                 
-                
+
                 all_images.append(augmented_image)
                 all_labels.append(label)
                 
+                # Teste para verificar se estava aplicando a mesma transformação em todas as imagens e verficar
+                # Reprodutiilidade da transformação com uma mesma sememente
+                """
+                if transformation == random_rotation and i < 10:
+                    plt.subplot(1, 2, 1)
+                    plt.imshow(image)
+                    plt.axis("off")
+                    plt.title("Original Image")
+                    
+                    plt.subplot(1, 2, 2)
+                    plt.imshow(augmented_image)
+                    plt.axis("off")
+                    plt.title("Rotated Image")
+                    plt.savefig(f"foto_aug3.{i}.png")
+
+                    i += 1
+                """
     
     #convertendo em np
     all_images = np.array([img for img in all_images])
@@ -300,8 +323,11 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
         all_images = tf.image.resize_with_pad(all_images, target_size, target_size, method="bicubic")
     
     
-    all_images = np.squeeze(all_images, axis=-1)    
-    # print(all_images.shape)
+    all_images = np.squeeze(all_images, axis=-1)
+        
+    print(all_images.shape)
+    print(all_labels[all_labels == 1].shape)
+    print(all_labels[all_labels == 0].shape)
     
     #teste
     #visualize_augmentation(all_images[:10], all_images[156:166], 10)

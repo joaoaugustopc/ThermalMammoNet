@@ -74,5 +74,42 @@ def main_func(models_list, mensagem = ""):
 
 if __name__ == "__main__":
 
+    #main_func([ResNet34])
+    #get_boxPlot("ResNet34")
+
+    
+    list = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
+
+    for angulo in list:
+
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
+        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2, resize=False)
+
+        #Salvar dataset com o augmentation
+
+        if not os.path.exists("aug_dataset"):
+            os.makedirs("aug_dataset")
+
+        np.save(f"aug_dataset/imagens_train_{angulo}.npy", imagens_train)
+        np.save(f"aug_dataset/labels_train_{angulo}.npy", labels_train)
+
+        np.save(f"aug_dataset/imagens_valid_{angulo}.npy", imagens_valid)
+        np.save(f"aug_dataset/labels_valid_{angulo}.npy", labels_valid)
+
+        np.save(f"aug_dataset/imagens_test_{angulo}.npy", imagens_test)
+        np.save(f"aug_dataset/labels_test_{angulo}.npy", labels_test)
+    
+
+    
+
+
+
+    
+
+
+
+
+
+    
     main_func()        
     

@@ -51,7 +51,7 @@ def ResNet34():
   #model.add(keras.layers.Dense(4096, activation="relu"))
   #model.add(keras.layers.Dropout(0.5))
 
-  model.add(keras.layers.Dense(2, dtype="float32", activation="softmax"))
+  model.add(keras.layers.Dense(1, activation = "sigmoid", dtype='float32'))
 
   opt = keras.optimizers.Adam(learning_rate=0.00001)
 
