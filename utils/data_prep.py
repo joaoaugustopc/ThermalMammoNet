@@ -1,8 +1,10 @@
 from include.imports import *
 
-np.random.seed(42)
-random.seed(42)
-tf.random.set_seed(42)
+# Definir a semente para garantir reprodutibilidade
+SEED = 42
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
+random.seed(SEED)
 
 #Arrays Numpy
 def load_data(angulo):
@@ -229,8 +231,16 @@ def apply_mask():
     np.save('imagens_train_Frontal_masked.npy', masked_array)
 
     
+# Função para salvar imagens e rótulos em arquivos NumPy
+def save_numpy_data(images, labels, output_dir, position):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # Salvar imagens e labels em arquivos separados
+    np.save(os.path.join(output_dir, f"imagens_train_aug_{position}"), images)
+    np.save(os.path.join(output_dir, f"labels_train_aug_{position}"), labels)
+    print(f"Imagens e labels salvos em {output_dir}")
 
-#TODO: olhar a direção do treino - métrica 
 
 # Funções lambda para cada transformação separada
 random_flip = lambda: keras.layers.RandomFlip("horizontal")
@@ -254,10 +264,6 @@ def apply_transformation(image, transformation):
     return:
     all_imagens, all_labels : imagens e labels originais + aug
 """
-#TODO: olhar como foi utilizado - usar separado -> melhorar o dataset
-#TODO: arrumar o fundo - azul
-#TODO: olhar o opencv - transformar em 3 canais (comparar)
-
 def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=False, target_size=0):
 
     np.random.seed(42)
@@ -326,6 +332,7 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
     #teste
     #visualize_augmentation(all_images[:10], all_images[156:166], 10)
     
+    
     return all_images, all_labels    
 
 """
@@ -353,3 +360,29 @@ def visualize_augmentation(original_img, aug_img, num_images=5):
         plt.title("Augmentada")
         plt.axis("off")
     plt.savefig("foto_aug/")
+
+
+def create_aug_dataset(val_aug, output_dir="dataset_aug"):
+    
+    angles_list = ["Frontal", "Left45", "Left90", "Right45", "Right90"]
+    
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    for position in angles_list:
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(position)
+        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, val_aug, resize=False)
+        
+        #salvar imagens e labels em arquivos separados
+        np.save(os.path.join(output_dir, f"imagens_train_{position}"), imagens_train)
+        np.save(os.path.join(output_dir, f"labels_train_{position}"), labels_train)
+                
+        np.save(os.path.join(output_dir, f"imagens_valid_{position}"), imagens_valid)
+        np.save(os.path.join(output_dir, f"labels_valid_{position}"), labels_valid)
+        
+        np.save(os.path.join(output_dir, f"imagens_test_{position}"), imagens_test)
+        np.save(os.path.join(output_dir, f"labels_test_{position}"), labels_test)
+        
+        #verificação
+        print(imagens_train.shape)
+        print(labels_train.shape)

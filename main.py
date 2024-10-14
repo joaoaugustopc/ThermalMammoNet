@@ -8,7 +8,7 @@ def main_func(models_list, mensagem = ""):
     for angulo in list:
 
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
-        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2, resize=False)
+        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2, resize=True, target_size=227)
         print(imagens_train.shape)
         
         print(labels_train[labels_train == 1].shape)
@@ -17,14 +17,14 @@ def main_func(models_list, mensagem = ""):
         
         #Caso resize = True no apply_augmentation_and_expand
         # Add uma dimensão para o canal de cor para o tf.image.resize_with_pad
-        #imagens_valid = np.expand_dims(imagens_valid, axis=-1) 
-        #imagens_valid = tf.image.resize_with_pad(imagens_valid, 224, 224, method="bicubic")
-        #imagens_test = np.expand_dims(imagens_test, axis=-1)
-        #imagens_test = tf.image.resize_with_pad(imagens_test, 224, 224, method="bicubic")
+        imagens_valid = np.expand_dims(imagens_valid, axis=-1) 
+        imagens_valid = tf.image.resize_with_pad(imagens_valid, 227, 227, method="bicubic")
+        imagens_test = np.expand_dims(imagens_test, axis=-1)
+        imagens_test = tf.image.resize_with_pad(imagens_test, 227, 227, method="bicubic")
         
         # Remover a dimensão do canal de cor
-        #imagens_valid = np.squeeze(imagens_valid, axis=-1)       
-        #imagens_test = np.squeeze(imagens_test, axis=-1)
+        imagens_valid = np.squeeze(imagens_valid, axis=-1)       
+        imagens_test = np.squeeze(imagens_test, axis=-1)
 
         for model_func in models:
 
@@ -65,7 +65,6 @@ def main_func(models_list, mensagem = ""):
                     f.write("\n")
                     
                 plot_convergence(history, model_name, angulo, i, mensagem)
-
 
 
 if __name__ == "__main__":
