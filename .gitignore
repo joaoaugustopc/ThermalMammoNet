@@ -23,3 +23,5 @@ masks/
 RGB/
 aug_dataset/
 dataset_aug/
+modelos/
+history/

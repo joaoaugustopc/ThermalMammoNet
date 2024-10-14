@@ -2,51 +2,65 @@ from tensorflow import keras
 import tensorflow as tf
 from tensorflow.keras import mixed_precision
 
-def alexnet():
-    
-    #TODO: olhar a distribuição dos valid e same
-    #add mixed precision: layers use float16 computations and float32 variables.
-    mixed_precision.set_global_policy('mixed_float16')
-    
-    model = keras.Sequential([
-    #primeiro bloco : 96 neurônios 
-    #entrada da rede: 227 x 227               
-    #fix canais
-    keras.layers.Conv2D(96, input_shape = (227, 227, 1), kernel_size=(11, 11), 
-    strides=(4, 4), padding = "valid", activation="relu", kernel_regularizer = keras.regularizers.l2(0.001)),
-    keras.layers.BatchNormalization(),
-    keras.layers.MaxPool2D(pool_size=(3, 3), strides=(2, 2), padding='valid'),
-    
-    #segundo bloco
-    keras.layers.Conv2D(256, kernel_size = (5, 5), padding = "same", activation = "relu", 
-                        kernel_regularizer = keras.regularizers.l2(0.001)),
-    keras.layers.BatchNormalization(),
-    keras.layers.MaxPool2D(pool_size=(3, 3), strides=(2, 2), padding='valid'),
-    
-    #terceiro bloco: 3 camadas convolucionais e batch normalization
-    keras.layers.Conv2D(384, kernel_size = (3, 3), padding = "same", 
-                        activation = "relu", kernel_regularizer = keras.regularizers.l2(0.001)),
-    keras.layers.Conv2D(384, kernel_size = (3, 3), padding = "same", 
-                        activation = "relu", kernel_regularizer = keras.regularizers.l2(0.001)),
-    keras.layers.Conv2D(256, kernel_size = (3, 3), padding = "same", 
-                        activation = "relu", kernel_regularizer = keras.regularizers.l2(0.001)),
-    keras.layers.MaxPool2D(pool_size=(3, 3), strides=(2, 2), padding='valid'), 
-    
-    #quarto bloco
-    keras.layers.Flatten(), #transformando em vetor
-    keras.layers.Dense(4096, activation = "relu", kernel_regularizer = keras.regularizers.l2(0.001)), 
-    keras.layers.Dropout(0.5),  
-    #sexto bloco
-    keras.layers.Dense(4096, activation = "relu", kernel_regularizer = keras.regularizers.l2(0.001)),  #TODO: olhar os regularizadores
-    keras.layers.Dropout(0.5),  
-    #camada de saída: especificar para float32 -> output
-    keras.layers.Dense(2, activation = "softmax", dtype="float32", kernel_regularizer = keras.regularizers.l2(0.001))])
-    
-    
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.00001) #melhorar
-    model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-    
-    model.summary()
-    
-    return model
-     
+
+class AlexNetModel:
+    def __init__(self, input_shape=(227, 227, 1), num_classes=2, learning_rate=0.00001):
+        # Configura a política de precisão misturada
+        mixed_precision.set_global_policy('mixed_float16')
+        
+        # Inicializa os atributos
+        self.input_shape = input_shape
+        self.num_classes = num_classes
+        self.learning_rate = learning_rate
+        self.model = self.build_model()
+
+    def build_model(self):
+        model = keras.Sequential([
+            keras.layers.Conv2D(96, input_shape=self.input_shape, kernel_size=(11, 11), strides=(4, 4), 
+                                padding="valid", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.BatchNormalization(),
+            keras.layers.MaxPool2D(pool_size=(3, 3), strides=(2, 2), padding='valid'),
+            keras.layers.Conv2D(256, kernel_size=(5, 5), padding="same", activation="relu", 
+                                kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.BatchNormalization(),
+            keras.layers.MaxPool2D(pool_size=(3, 3), strides=(2, 2), padding='valid'),
+            keras.layers.Conv2D(384, kernel_size=(3, 3), padding="same", activation="relu", 
+                                kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Conv2D(384, kernel_size=(3, 3), padding="same", activation="relu", 
+                                kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Conv2D(256, kernel_size=(3, 3), padding="same", activation="relu", 
+                                kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.MaxPool2D(pool_size=(3, 3), strides=(2, 2), padding='valid'),
+            keras.layers.Flatten(),
+            keras.layers.Dense(4096, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Dropout(0.5),
+            keras.layers.Dense(4096, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Dropout(0.5),
+            keras.layers.Dense(self.num_classes, activation="sigmoid", dtype="float32", 
+                               kernel_regularizer=keras.regularizers.l2(0.001))
+        ])
+
+        optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
+        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
+        
+        model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+        
+        return model
+
+    def summary(self):
+        self.model.summary()
+
+
+def AlexNet(input_shape=(227, 227, 1), num_classes=2, learning_rate=0.00001):
+    """
+    Função para criar e retornar uma instância do modelo AlexNet.
+
+    Params:
+    - input_shape: Tamanho da imagem de entrada (dim, dim, channels)
+    - num_classes: Número de categorias para a classificação
+    - learning_rate: Taxa de aprendizado para o otimizador
+
+    Return: instância do modelo AlexNet
+    """
+    model_instance = AlexNetModel(input_shape=input_shape, num_classes=num_classes, learning_rate=learning_rate)
+    return model_instance.model  # Retorna apenas o modelo compilado

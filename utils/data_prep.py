@@ -7,14 +7,14 @@ tf.random.set_seed(SEED)
 random.seed(SEED)
 
 #Arrays Numpy
-def load_data(angulo):
+def load_data(angulo, folder = "np_dataset"):
 
-    imagens_train = np.load(f"np_dataset/imagens_train_{angulo}.npy")
-    labels_train = np.load(f"np_dataset/labels_train_{angulo}.npy")
-    imagens_valid = np.load(f"np_dataset/imagens_valid_{angulo}.npy")
-    labels_valid = np.load(f"np_dataset/labels_valid_{angulo}.npy")
-    imagens_test = np.load(f"np_dataset/imagens_test_{angulo}.npy")
-    labels_test = np.load(f"np_dataset/labels_test_{angulo}.npy")
+    imagens_train = np.load(f"{folder}/imagens_train_{angulo}.npy")
+    labels_train = np.load(f"{folder}/labels_train_{angulo}.npy")
+    imagens_valid = np.load(f"{folder}/imagens_valid_{angulo}.npy")
+    labels_valid = np.load(f"{folder}/labels_valid_{angulo}.npy")
+    imagens_test = np.load(f"{folder}/imagens_test_{angulo}.npy")
+    labels_test = np.load(f"{folder}/labels_test_{angulo}.npy")
 
 
     return imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test
