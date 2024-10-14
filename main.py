@@ -7,7 +7,7 @@ def main_func(models_list, mensagem = ""):
                 
     for angulo in list:
 
-        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo, "aug__dataset")
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo, "aug_dataset")
         print(imagens_train.shape)
         
         print(labels_train[labels_train == 1].shape)
@@ -78,10 +78,7 @@ def main_func(models_list, mensagem = ""):
 
 if __name__ == "__main__":
 
-    #main_func([ResNet34])
-    #get_boxPlot("ResNet34")
 
-    
     list = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
 
     for angulo in list:
@@ -104,16 +101,5 @@ if __name__ == "__main__":
         np.save(f"aug_dataset/labels_test_{angulo}.npy", labels_test)
     
 
-    
-
-
-
-    
-
-
-
-
-
-    
-    main_func()        
+       
     

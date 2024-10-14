@@ -201,3 +201,64 @@ def generate_metrics_boxplots(metrics, model_name):
         plt.savefig(f"history/{model_name}/boxplots/{metric_name}_boxplot.png")
         plt.close()
 
+def get_auc_roc(model_name, dataset="np_dataset", resize=False, target=0):
+
+    angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
+
+    # Dicionário para armazenar as AUCs para cada ângulo
+    auc_scores = {angle: [] for angle in angles}
+
+    for angle in angles:
+        # Carregar os dados de teste
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angle, dataset)
+
+        # Pré-processamento das imagens de teste (se necessário)
+        if resize:
+            imagens_test = np.expand_dims(imagens_test, axis=-1)
+            imagens_test = tf.image.resize_with_pad(imagens_test, target, target, method="bicubic")
+            imagens_test = np.squeeze(imagens_test, axis=-1)
+
+        for i in range(10):
+            # Carregar o modelo
+            model = tf.keras.models.load_model(f"modelos/{model_name}/{model_name}_{angle}_{i}.h5")
+
+            # Fazer previsões no conjunto de teste
+            y_pred_prob = model.predict(imagens_test).flatten()  # Probabilidades preditas
+
+            # Obter os labels verdadeiros
+            y_true = labels_test
+
+            # Calcular a AUC
+            auc = roc_auc_score(y_true, y_pred_prob)
+            auc_scores[angle].append(auc)
+
+            print(f"AUC para o modelo {i} no ângulo {angle}: {auc:.4f}")
+
+            # Plotar a Curva ROC
+            fpr, tpr, thresholds = roc_curve(y_true, y_pred_prob)
+
+            plt.figure()
+            plt.plot(fpr, tpr, label=f'Curva ROC (AUC = {auc:.2f})')
+            plt.plot([0, 1], [0, 1], 'k--')  # Linha de referência (modelo aleatório)
+            plt.xlabel('Taxa de Falsos Positivos')
+            plt.ylabel('Taxa de Verdadeiros Positivos')
+            plt.title(f'Curva ROC - {model_name} - {angle} - Modelo {i}')
+            plt.legend(loc='lower right')
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(f"history/{model_name}/roc_curve_{angle}_{i}.png")
+            plt.close()
+
+    plt.figure(figsize=(10, 6))
+    data = [auc_scores[angle] for angle in angles]
+    plt.boxplot(data, labels=angles)
+    plt.title(f'Boxplot das AUCs para todos os ângulos - {model_name}')
+    plt.ylabel('AUC')
+    plt.xlabel('Ângulo')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(f"history/{model_name}/auc_boxplot_all_angles.png")
+    plt.close()
+
+
+
