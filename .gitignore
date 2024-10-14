@@ -22,3 +22,5 @@ alexnet-result/
 masks/
 RGB/
 dataset_aug/
+modelos/
+history/

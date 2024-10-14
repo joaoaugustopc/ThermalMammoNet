@@ -2,13 +2,12 @@ from include.imports import *
 
 def main_func(models_list, mensagem = ""):
     
-    list = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
+    list = ["Right45", "Left90", "Right90"]
     models = models_list
-            
+                
     for angulo in list:
 
-        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
-        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2, resize=True, target_size=227)
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo, "dataset_aug")
         print(imagens_train.shape)
         
         print(labels_train[labels_train == 1].shape)
@@ -16,6 +15,9 @@ def main_func(models_list, mensagem = ""):
 
         
         #Caso resize = True no apply_augmentation_and_expand
+        imagens_train = np.expand_dims(imagens_train, axis=-1)
+        imagens_train = tf.image.resize_with_pad(imagens_train, 227, 227, method="bicubic")
+        
         # Add uma dimensão para o canal de cor para o tf.image.resize_with_pad
         imagens_valid = np.expand_dims(imagens_valid, axis=-1) 
         imagens_valid = tf.image.resize_with_pad(imagens_valid, 227, 227, method="bicubic")
@@ -25,10 +27,13 @@ def main_func(models_list, mensagem = ""):
         # Remover a dimensão do canal de cor
         imagens_valid = np.squeeze(imagens_valid, axis=-1)       
         imagens_test = np.squeeze(imagens_test, axis=-1)
-
+        imagens_train = np.squeeze(imagens_train, axis=-1)
+        
         for model_func in models:
 
             model_name = model_func.__name__
+
+            os.makedirs(f"history/{model_name}", exist_ok=True)
 
             for i in range(10):
 
@@ -69,8 +74,5 @@ def main_func(models_list, mensagem = ""):
 
 if __name__ == "__main__":
 
-    #main_func([ResNet34])
-    #get_boxPlot("ResNet34")
-    
-    # create_aug_dataset(2)
+    main_func()        
     

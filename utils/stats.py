@@ -35,8 +35,48 @@ def bloxPlot(acc_data, loss_data, title, save_path):
     plt.savefig(save_path)
     plt.close()
 
+"""
+Params:
+modelo: modelo para faer boxplot
+dataset: nome do folder do datasetr utilizado
+resize: se o dataset precisa ser redimensionado para entrar na rede
+target: tamanho da foto redimensionada
+"""
+def get_boxPlot(model_name, dataset="np_dataset", resize=False, target=0):
+    list = ["Frontal", "Left45"] #alterei os angulos -> completar dps
+
+    for angulo in list:
+        acc = []
+        loss = []
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo, dataset)
+        
+        # mudança para encaixar na rede
+        if resize:
+            imagens_test = np.expand_dims(imagens_test, axis=-1)
+            imagens_test = tf.image.resize_with_pad(imagens_test, target, target, method="bicubic")
+            imagens_test = np.squeeze(imagens_test, axis=-1)
+        #fim mudança        
+        
+        for i in range(10):
+            model = tf.keras.models.load_model(f"modelos/{model_name}/{model_name}_{angulo}_{i}.h5")
+
+            loss_, acc_ = test_model(model, imagens_test, labels_test)
+
+            acc.append(acc_)
+            loss.append(loss_)
+        
+        bloxPlot(acc, loss, f"{model_name}", f"history/{model_name}/boxplot_{angulo}.png")
+
+        print(f"Acurácia média: {np.mean(acc)}")
+        print(f"Loss médio: {np.mean(loss)}")
+        print(f"Desvio padrão da acurácia: {np.std(acc)}")
+        print(f"Desvio padrão do loss: {np.std(loss)}")
+        print(f"Mediana da acurácia: {np.median(acc)}")
+        print(f"Mediana do loss: {np.median(loss)}")
+
+
 #função alterada
-def get_boxPlot(modelo):
+def get_boxPlot_aux(modelo):
     list = ["Frontal"] #alterei os angulos -> completar dps
 
     for angulo in list:
