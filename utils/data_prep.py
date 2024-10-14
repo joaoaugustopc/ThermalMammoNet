@@ -192,9 +192,6 @@ def format_data(directory_raw):
         np.save(f"np_dataset/labels_test_{angle}.npy", labels_test)    
     
 
-
-
-
 def apply_mask():
     masks = os.listdir('masks')
 

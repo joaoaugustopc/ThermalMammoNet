@@ -43,7 +43,7 @@ resize: se o dataset precisa ser redimensionado para entrar na rede
 target: tamanho da foto redimensionada
 """
 def get_boxPlot(model_name, dataset="np_dataset", resize=False, target=0):
-    list = ["Frontal", "Left45"] #alterei os angulos -> completar dps
+    list = ["Frontal","Left45","Right45", "Left90", "Right90"] #alterei os angulos -> completar dps
 
     for angulo in list:
         acc = []
@@ -66,47 +66,6 @@ def get_boxPlot(model_name, dataset="np_dataset", resize=False, target=0):
             loss.append(loss_)
         
         bloxPlot(acc, loss, f"{model_name}", f"history/{model_name}/boxplot_{angulo}.png")
-
-        print(f"Acurácia média: {np.mean(acc)}")
-        print(f"Loss médio: {np.mean(loss)}")
-        print(f"Desvio padrão da acurácia: {np.std(acc)}")
-        print(f"Desvio padrão do loss: {np.std(loss)}")
-        print(f"Mediana da acurácia: {np.median(acc)}")
-        print(f"Mediana do loss: {np.median(loss)}")
-
-
-#função alterada
-def get_boxPlot_aux(modelo):
-    list = ["Frontal"] #alterei os angulos -> completar dps
-
-    for angulo in list:
-        acc = []
-        loss = []
-        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
-        
-        #mudança para encaixar na rede
-        #imagens_test = np.expand_dims(imagens_test, axis=-1)
-        #imagens_test = tf.image.resize_with_pad(imagens_test, 224, 224, method="bicubic")
-        #imagens_test = np.squeeze(imagens_test, axis=-1)
-        #fim mudança        
-        
-        for i in range(10):
-            with custom_object_scope({'ResidualUnit': ResidualUnit}):
-              model = tf.keras.models.load_model(f"modelos/{modelo}_{angulo}_{i+1}.h5")
-            
-            #imagens_test = np.expand_dims(imagens_test, axis = -1)
-
-            #imagens_test = np.repeat(imagens_test, 3, axis=-1)
-
-            #imagens_test = tf.image.resize(imagens_test, (200, 200))
-
-            loss_, acc_ = test_model(model, imagens_test, labels_test)
-
-            acc.append(acc_)
-            loss.append(loss_)
-        
-        #alterei
-        bloxPlot(acc, loss, "ResNet34", f"ResNet34{angulo}.png")
 
         print(f"Acurácia média: {np.mean(acc)}")
         print(f"Loss médio: {np.mean(loss)}")
@@ -159,3 +118,86 @@ def plot_convergence(history, model_name, angulo, i, mensagem = ""):
         plt.grid(True)
         plt.savefig(f"history/{model_name}/{mensagem}_{angulo}_{i}_validation_loss_convergence.png")
         plt.close()
+
+def get_confusion_matrices(model_name, dataset="np_dataset", resize=False, target=0):
+
+    angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
+
+    # Dicionários para armazenar as métricas para cada ângulo
+    metrics = {angle: {'accuracy': [], 'precision': [], 'recall': [], 'f1_score': []} for angle in angles}
+
+    for angle in angles:
+        # Carregar os dados de teste
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angle, dataset)
+
+        # Mudança para encaixar na rede (se necessário)
+        if resize:
+            imagens_test = np.expand_dims(imagens_test, axis=-1)
+            imagens_test = tf.image.resize_with_pad(imagens_test, target, target, method="bicubic")
+            imagens_test = np.squeeze(imagens_test, axis=-1)
+
+        # Lista para armazenar as matrizes de confusão
+
+        for i in range(10):
+            # Carregar o modelo
+            model = tf.keras.models.load_model(f"modelos/{model_name}/{model_name}_{angle}_{i}.h5")
+
+            # Fazer previsões no conjunto de teste
+            y_pred_prob = model.predict(imagens_test)
+            y_pred = (y_pred_prob >= 0.5).astype(int).flatten()
+
+            # Obter os labels verdadeiros
+            y_true = labels_test
+
+            # Gerar a matriz de confusão
+            cm = confusion_matrix(y_true, y_pred)
+
+            # Calcular as métricas para este modelo
+            TN, FP, FN, TP = cm.ravel()
+            accuracy = (TP + TN) / (TP + TN + FP + FN)
+            precision = TP / (TP + FP) if (TP + FP) > 0 else 0
+            recall = TP / (TP + FN) if (TP + FN) > 0 else 0
+            f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+
+            # Printar as métricas
+            print(f"Modelo {i} - {angle}")
+            print(f"Acurácia: {accuracy}")
+            print(f"Precision: {precision}")
+            print(f"Recall: {recall}")
+            print(f"F1 Score: {f1_score}")
+
+            # Armazenar as métricas
+            metrics[angle]['accuracy'].append(accuracy)
+            metrics[angle]['precision'].append(precision)
+            metrics[angle]['recall'].append(recall)
+            metrics[angle]['f1_score'].append(f1_score)
+
+            # Plotar e salvar a matriz de confusão para este modelo
+            classes = ['Healthy', 'Sick']
+            plt.figure(figsize=(6, 4))
+            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                        xticklabels=classes, yticklabels=classes)
+            plt.title(f'Matriz de Confusão - {model_name} - {angle} - Modelo {i}')
+            plt.ylabel('Classe Real')
+            plt.xlabel('Classe Predita')
+            plt.tight_layout()
+            plt.savefig(f"history/{model_name}/confusion_matrix_{angle}_{i}.png")
+            plt.close()
+
+    generate_metrics_boxplots(metrics, model_name)
+
+def generate_metrics_boxplots(metrics, model_name):
+
+    os.makedirs(f"history/{model_name}/boxplots", exist_ok=True)
+
+    for metric_name in ['accuracy', 'precision', 'recall', 'f1_score']:
+        plt.figure(figsize=(10, 6))
+        data = [metrics[angle][metric_name] for angle in metrics.keys()]
+        plt.boxplot(data, labels=metrics.keys())
+        plt.title(f'Boxplot da {metric_name.capitalize()} para cada ângulo - {model_name}')
+        plt.ylabel(metric_name.capitalize())
+        plt.xlabel('Ângulo')
+        plt.grid(True)
+        plt.savefig(f"history/{model_name}/boxplots/{metric_name}_boxplot.png")
+        plt.close()
+

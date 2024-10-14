@@ -2,32 +2,32 @@ from include.imports import *
 
 def main_func(models_list, mensagem = ""):
     
-    list = ["Right45", "Left90", "Right90"]
+    list = ["Frontal","Left45","Right45", "Left90", "Right90"]
     models = models_list
                 
     for angulo in list:
 
-        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo, "dataset_aug")
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo, "aug__dataset")
         print(imagens_train.shape)
         
         print(labels_train[labels_train == 1].shape)
         print(labels_train[labels_train == 0].shape)
 
         
-        #Caso resize = True no apply_augmentation_and_expand
-        imagens_train = np.expand_dims(imagens_train, axis=-1)
-        imagens_train = tf.image.resize_with_pad(imagens_train, 227, 227, method="bicubic")
-        
+        # Para ajustar a dimensão das imagens para o modelo
         # Add uma dimensão para o canal de cor para o tf.image.resize_with_pad
+        imagens_train = np.expand_dims(imagens_train, axis=-1)
         imagens_valid = np.expand_dims(imagens_valid, axis=-1) 
-        imagens_valid = tf.image.resize_with_pad(imagens_valid, 224, 224, method="bicubic")
         imagens_test = np.expand_dims(imagens_test, axis=-1)
+
+        imagens_train = tf.image.resize_with_pad(imagens_train, 224, 224, method="bicubic")
+        imagens_valid = tf.image.resize_with_pad(imagens_valid, 224, 224, method="bicubic")
         imagens_test = tf.image.resize_with_pad(imagens_test, 224, 224, method="bicubic")
         
         # Remover a dimensão do canal de cor
+        imagens_train = np.squeeze(imagens_train, axis=-1)
         imagens_valid = np.squeeze(imagens_valid, axis=-1)       
         imagens_test = np.squeeze(imagens_test, axis=-1)
-        imagens_train = np.squeeze(imagens_train, axis=-1)
         
         for model_func in models:
 
@@ -53,7 +53,7 @@ def main_func(models_list, mensagem = ""):
                 model.summary()
 
                 history = model.fit(imagens_train, labels_train, epochs = 500, validation_data= (imagens_valid, labels_valid),
-                                    callbacks= [checkpoint,earlystop, reduce_lr], batch_size = 8, verbose = 1, shuffle = True)
+                                    callbacks= [checkpoint, earlystop, reduce_lr], batch_size = 8, verbose = 1, shuffle = True)
                 
                 end_time = time.time()
 

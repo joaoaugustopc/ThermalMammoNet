@@ -59,4 +59,5 @@ def ResNet34():
   model.compile(loss="binary_crossentropy",
               optimizer=opt,
               metrics=["accuracy"])
+  
   return model
