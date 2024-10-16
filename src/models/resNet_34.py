@@ -9,11 +9,11 @@ class ResidualUnit(keras.layers.Layer):
         self.activation = keras.activations.get(activation)
         self.main_layers = [
             keras.layers.Conv2D(filters, 3, strides=strides,
-                                padding="same", use_bias=True, kernel_regularizer=keras.regularizers.l2(0.001)),
+                                padding="same", use_bias=True, kernel_regularizer=keras.regularizers.l2(0.01)),
             keras.layers.BatchNormalization(),
             self.activation,
             keras.layers.Conv2D(filters, 3, strides=1,
-                                padding="same", use_bias=True, kernel_regularizer=keras.regularizers.l2(0.001)),
+                                padding="same", use_bias=True, kernel_regularizer=keras.regularizers.l2(0.01)),
             keras.layers.BatchNormalization()]
         self.skip_layers = []
         if strides > 1:
@@ -35,7 +35,7 @@ def ResNet34():
   mixed_precision.set_global_policy('mixed_float16')
 
   model = keras.models.Sequential()
-  model.add(keras.layers.Conv2D(64, 7, strides=2, input_shape=[224, 224,1],
+  model.add(keras.layers.Conv2D(64, 7, strides=2, input_shape=[480, 640,1],
 	                              padding="same", use_bias=True))
   model.add(keras.layers.BatchNormalization())
   model.add(keras.layers.Activation("relu"))
@@ -54,7 +54,7 @@ def ResNet34():
 
   model.add(keras.layers.Dense(1, activation = "sigmoid", dtype='float32'))
 
-  opt = keras.optimizers.Adam(learning_rate=0.001)
+  opt = keras.optimizers.Adam(learning_rate=0.0001)
 
   model.compile(loss="binary_crossentropy",
               optimizer=opt,

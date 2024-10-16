@@ -2,7 +2,7 @@ from include.imports import *
 
 def main_func(models_list, mensagem = ""):
     
-    list = ["Frontal","Left45","Right45", "Left90", "Right90"]
+    list = ["Left45","Right45", "Left90", "Right90"]
     models = models_list
                 
     for angulo in list:
@@ -37,15 +37,16 @@ def main_func(models_list, mensagem = ""):
 
             for i in range(10):
 
+                
                 start_time = time.time()
 
                 checkpoint = tf.keras.callbacks.ModelCheckpoint(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5", monitor='val_loss', verbose=1, save_best_only=True, 
                                                             save_weights_only=False, mode='auto')
                 
-                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=50, verbose=1, mode='auto')
+                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
 
                 reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.1,
-                                              patience=10, min_lr=1e-6)
+                                              patience=10, min_lr=1e-5)
 
 
                 model = model_func()
@@ -57,7 +58,11 @@ def main_func(models_list, mensagem = ""):
                 
                 end_time = time.time()
 
-                best_model = keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5")
+                if model_name == "ResNet34":
+                    with custom_object_scope({'ResidualUnit': ResidualUnit}):
+                        best_model = keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5")
+                else:
+                    best_model = keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5")
 
                 # Avaliação do modelo com conjunto de teste
                 test_loss, test_accuracy = best_model.evaluate(imagens_test, labels_test, verbose=1)
@@ -78,27 +83,7 @@ def main_func(models_list, mensagem = ""):
 
 if __name__ == "__main__":
 
-
-    list = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
-
-    for angulo in list:
-
-        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo)
-        imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, 2, resize=False)
-
-        #Salvar dataset com o augmentation
-
-        if not os.path.exists("aug_dataset"):
-            os.makedirs("aug_dataset")
-
-        np.save(f"aug_dataset/imagens_train_{angulo}.npy", imagens_train)
-        np.save(f"aug_dataset/labels_train_{angulo}.npy", labels_train)
-
-        np.save(f"aug_dataset/imagens_valid_{angulo}.npy", imagens_valid)
-        np.save(f"aug_dataset/labels_valid_{angulo}.npy", labels_valid)
-
-        np.save(f"aug_dataset/imagens_test_{angulo}.npy", imagens_test)
-        np.save(f"aug_dataset/labels_test_{angulo}.npy", labels_test)
+    main_func([ResNet34], "ResNet34_224x224")
     
 
        
