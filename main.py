@@ -126,14 +126,11 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
                 
                 start_time = time.time()
                 
-                checkpoint_path = f"modelos/{model_func.__name__}/{model_func.__name__}{message}_{angulo}_{i}.h5"
+                checkpoint_path = f"modelos/{model_func.__name__}/{model_func.__name__}_{message}_{angulo}_{i}.h5"
                 checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True, 
                                                             save_weights_only=False, mode='auto')
                 
                 earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
-
-                reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.1,
-                                              patience=10, min_lr=1e-5)
 
                 #criando objeto e usando o modelo
                 model = model_func().model
@@ -141,7 +138,7 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
                 model.summary()
 
                 history = model.fit(imagens_train, labels_train, epochs = 500, validation_data= (imagens_valid, labels_valid),
-                                    callbacks= [checkpoint, earlystop, reduce_lr], batch_size = 8, verbose = 1, shuffle = True)
+                                    callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
                 
                 end_time = time.time()
                 
@@ -165,9 +162,8 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
 
 if __name__ == "__main__":
 
-    delete_file("modelos/AlexNet/Teste_Frontal_0.h5")
 
-    # train_models([AlexNet], "dataset_aug", resize=True, target=227, message="Teste")
+    train_models([Vgg_16], "dataset_aug", resize=True, target=224)
 
     # main_func([ResNet34], "ResNet34_224x224")
     
