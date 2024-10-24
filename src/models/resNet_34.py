@@ -35,7 +35,7 @@ def ResNet34():
   mixed_precision.set_global_policy('mixed_float16')
 
   model = keras.models.Sequential()
-  model.add(keras.layers.Conv2D(64, 7, strides=2, input_shape=[480, 640,1],
+  model.add(keras.layers.Conv2D(64, 7, strides=2, input_shape=[224, 224,1],
 	                              padding="same", use_bias=True))
   model.add(keras.layers.BatchNormalization())
   model.add(keras.layers.Activation("relu"))

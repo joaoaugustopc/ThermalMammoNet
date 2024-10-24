@@ -42,7 +42,7 @@ dataset: nome do folder do datasetr utilizado
 resize: se o dataset precisa ser redimensionado para entrar na rede
 target: tamanho da foto redimensionada
 """
-def get_boxPlot(model_name, dataset="np_dataset", resize=False, target=0):
+def get_boxPlot(model_name, mensagem ="", dataset="np_dataset", resize=False, target=0):
     list = ["Frontal","Left45","Right45", "Left90", "Right90"] #alterei os angulos -> completar dps
 
     for angulo in list:
@@ -58,14 +58,19 @@ def get_boxPlot(model_name, dataset="np_dataset", resize=False, target=0):
         #fim mudança        
         
         for i in range(10):
-            model = tf.keras.models.load_model(f"modelos/{model_name}/{model_name}_{angulo}_{i}.h5")
+            i = i + 1
+            if model_name == "ResNet34":
+                with custom_object_scope({'ResidualUnit': ResidualUnit}):
+                    model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5")
+            else:
+                model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5")
 
             loss_, acc_ = test_model(model, imagens_test, labels_test)
 
             acc.append(acc_)
             loss.append(loss_)
         
-        bloxPlot(acc, loss, f"{model_name}", f"history/{model_name}/boxplot_{angulo}.png")
+        bloxPlot(acc, loss, f"{model_name}", f"{mensagem}_boxplot_{angulo}.png")
 
         print(f"Acurácia média: {np.mean(acc)}")
         print(f"Loss médio: {np.mean(loss)}")
@@ -105,7 +110,7 @@ def plot_convergence(history, model_name, angulo, i, mensagem = ""):
         plt.ylabel('Loss')
         plt.legend()
         plt.grid(True)
-        plt.savefig(f"history/{model_name}/{mensagem}_{angulo}_{i}_training_loss_convergence.png")
+        plt.savefig(f"history/{model_name}/{angulo}/treinamento/{mensagem}_{angulo}_{i}_training_loss_convergence.png")
         plt.close()
 
         # Gráfico de perda de validação
@@ -116,10 +121,13 @@ def plot_convergence(history, model_name, angulo, i, mensagem = ""):
         plt.ylabel('Loss')
         plt.legend()
         plt.grid(True)
-        plt.savefig(f"history/{model_name}/{mensagem}_{angulo}_{i}_validation_loss_convergence.png")
+        plt.savefig(f"history/{model_name}/{angulo}/treinamento/{mensagem}_{angulo}_{i}_validation_loss_convergence.png")
         plt.close()
 
-def get_confusion_matrices(model_name, dataset="np_dataset", resize=False, target=0):
+def get_confusion_matrices(model_name, mensagem="", dataset="np_dataset", resize=False, target=0):
+
+    from sklearn.metrics import confusion_matrix
+    import seaborn as sns
 
     angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
 
@@ -139,8 +147,13 @@ def get_confusion_matrices(model_name, dataset="np_dataset", resize=False, targe
         # Lista para armazenar as matrizes de confusão
 
         for i in range(10):
+            i = i + 1
             # Carregar o modelo
-            model = tf.keras.models.load_model(f"modelos/{model_name}/{model_name}_{angle}_{i}.h5")
+            if model_name == "ResNet34":
+                with custom_object_scope({'ResidualUnit': ResidualUnit}):
+                    model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
+            else:
+                model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
 
             # Fazer previsões no conjunto de teste
             y_pred_prob = model.predict(imagens_test)
@@ -160,17 +173,20 @@ def get_confusion_matrices(model_name, dataset="np_dataset", resize=False, targe
             f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
 
             # Printar as métricas
-            print(f"Modelo {i} - {angle}")
-            print(f"Acurácia: {accuracy}")
-            print(f"Precision: {precision}")
-            print(f"Recall: {recall}")
-            print(f"F1 Score: {f1_score}")
+            with open(f"history/{model_name}/{angle}/{mensagem}_{angle}_metrics.txt", "a") as f:
+                f.write(f"Modelo: {model_name} - {i} - {angle}\n")
+                f.write(f"Acurácia: {accuracy}\n")
+                f.write(f"Precision: {precision}\n")
+                f.write(f"Recall: {recall}\n")
+                f.write(f"F1 Score: {f1_score}\n\n\n")
 
             # Armazenar as métricas
             metrics[angle]['accuracy'].append(accuracy)
             metrics[angle]['precision'].append(precision)
             metrics[angle]['recall'].append(recall)
             metrics[angle]['f1_score'].append(f1_score)
+
+            os.makedirs(f"history/{model_name}/{angle}/confusion_matrices/", exist_ok=True)
 
             # Plotar e salvar a matriz de confusão para este modelo
             classes = ['Healthy', 'Sick']
@@ -181,16 +197,17 @@ def get_confusion_matrices(model_name, dataset="np_dataset", resize=False, targe
             plt.ylabel('Classe Real')
             plt.xlabel('Classe Predita')
             plt.tight_layout()
-            plt.savefig(f"history/{model_name}/confusion_matrix_{angle}_{i}.png")
+            plt.savefig(f"history/{model_name}/{angle}/confusion_matrices/{mensagem}_confusion_matrix_{angle}_{i}.png")
             plt.close()
 
-    generate_metrics_boxplots(metrics, model_name)
+    generate_metrics_boxplots(metrics, model_name, mensagem)
 
-def generate_metrics_boxplots(metrics, model_name):
+def generate_metrics_boxplots(metrics, model_name, mensagem=""):
 
-    os.makedirs(f"history/{model_name}/boxplots", exist_ok=True)
+    #os.makedirs(f"history/{model_name}/boxplots", exist_ok=True)
 
     for metric_name in ['accuracy', 'precision', 'recall', 'f1_score']:
+        os.makedirs(f"boxplots/{model_name}", exist_ok=True)
         plt.figure(figsize=(10, 6))
         data = [metrics[angle][metric_name] for angle in metrics.keys()]
         plt.boxplot(data, labels=metrics.keys())
@@ -198,10 +215,12 @@ def generate_metrics_boxplots(metrics, model_name):
         plt.ylabel(metric_name.capitalize())
         plt.xlabel('Ângulo')
         plt.grid(True)
-        plt.savefig(f"history/{model_name}/boxplots/{metric_name}_boxplot.png")
+        plt.savefig(f"boxplots/{model_name}/{mensagem}_boxplots_{metric_name}_boxplot.png")
         plt.close()
 
-def get_auc_roc(model_name, dataset="np_dataset", resize=False, target=0):
+def get_auc_roc(model_name,mensagem ="", dataset="np_dataset", resize=False, target=0):
+
+    from sklearn.metrics import roc_auc_score, roc_curve
 
     angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
 
@@ -219,8 +238,13 @@ def get_auc_roc(model_name, dataset="np_dataset", resize=False, target=0):
             imagens_test = np.squeeze(imagens_test, axis=-1)
 
         for i in range(10):
+            i = i + 1
             # Carregar o modelo
-            model = tf.keras.models.load_model(f"modelos/{model_name}/{model_name}_{angle}_{i}.h5")
+            if model_name == "ResNet34":
+                with custom_object_scope({'ResidualUnit': ResidualUnit}):
+                    model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
+            else:
+                model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
 
             # Fazer previsões no conjunto de teste
             y_pred_prob = model.predict(imagens_test).flatten()  # Probabilidades preditas
@@ -237,6 +261,8 @@ def get_auc_roc(model_name, dataset="np_dataset", resize=False, target=0):
             # Plotar a Curva ROC
             fpr, tpr, thresholds = roc_curve(y_true, y_pred_prob)
 
+            os.makedirs(f"history/{model_name}/{angle}/roc_curves/", exist_ok=True)
+            
             plt.figure()
             plt.plot(fpr, tpr, label=f'Curva ROC (AUC = {auc:.2f})')
             plt.plot([0, 1], [0, 1], 'k--')  # Linha de referência (modelo aleatório)
@@ -246,7 +272,7 @@ def get_auc_roc(model_name, dataset="np_dataset", resize=False, target=0):
             plt.legend(loc='lower right')
             plt.grid(True)
             plt.tight_layout()
-            plt.savefig(f"history/{model_name}/roc_curve_{angle}_{i}.png")
+            plt.savefig(f"history/{model_name}/{angle}/roc_curves/{mensagem}_roc_curve_{angle}_{i}.png")
             plt.close()
 
     plt.figure(figsize=(10, 6))
@@ -257,7 +283,7 @@ def get_auc_roc(model_name, dataset="np_dataset", resize=False, target=0):
     plt.xlabel('Ângulo')
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(f"history/{model_name}/auc_boxplot_all_angles.png")
+    plt.savefig(f"boxplots/{model_name}/{mensagem}_auc_boxplot_all_angles.png")
     plt.close()
 
 

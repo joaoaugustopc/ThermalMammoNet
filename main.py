@@ -2,7 +2,7 @@ from include.imports import *
 
 def main_func(models_list, mensagem = ""):
     
-    list = ["Left45","Right45", "Left90", "Right90"]
+    list = ["Frontal", "Left90", "Right90", "Left45", "Right45"]
     models = models_list
                 
     for angulo in list:
@@ -37,6 +37,7 @@ def main_func(models_list, mensagem = ""):
 
             for i in range(10):
 
+                i = i + 1
                 
                 start_time = time.time()
 
@@ -54,7 +55,7 @@ def main_func(models_list, mensagem = ""):
                 model.summary()
 
                 history = model.fit(imagens_train, labels_train, epochs = 500, validation_data= (imagens_valid, labels_valid),
-                                    callbacks= [checkpoint, earlystop, reduce_lr], batch_size = 8, verbose = 1, shuffle = True)
+                                    callbacks= [checkpoint, earlystop, reduce_lr], batch_size = 16, verbose = 1, shuffle = True)
                 
                 end_time = time.time()
 
@@ -67,7 +68,10 @@ def main_func(models_list, mensagem = ""):
                 # Avaliação do modelo com conjunto de teste
                 test_loss, test_accuracy = best_model.evaluate(imagens_test, labels_test, verbose=1)
 
-                with open(f"history/{model_name}/{mensagem}_{angulo}_{i}_time.txt", "w") as f:
+                directory = f"history/{model_name}/{angulo}/treinamento/"
+                os.makedirs(directory, exist_ok=True)
+
+                with open(f"{directory}/{mensagem}_{angulo}_{i}_time.txt", "w") as f:
                     f.write(f"Modelo: {model_name}\n")
                     f.write(f"Tempo de execução: {end_time - start_time}\n")
                     f.write(f"Loss: {history.history['loss']}\n")
@@ -82,9 +86,17 @@ def main_func(models_list, mensagem = ""):
 
 
 if __name__ == "__main__":
+        
+    #main_func([ResNet34], "ResNet34_224x224_Bath16")
 
-    main_func([ResNet34], "ResNet34_224x224")
+    #get_confusion_matrices("ResNet34", "ResNet34_224x224", "aug_dataset", resize=True, target = 224)
+
+    get_auc_roc("ResNet34", "ResNet34_224x224", "aug_dataset", resize=True, target = 224)
+
+    #files = [f"ResNet34_224x224_Bath16_Frontal_metrics.txt"]
+
+    #move_files_to_folder(files, "history/ResNet34/Frontal/")
+
     
-
        
     
