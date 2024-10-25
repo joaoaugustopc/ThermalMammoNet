@@ -1,48 +1,58 @@
-import tensorflow as tf
-
 from tensorflow import keras
-from tensorflow.keras import layers
+import tensorflow as tf
 from tensorflow.keras import mixed_precision
-import numpy as np
-
-mixed_precision.set_global_policy('mixed_float16')
 
 
-def VGG_16():
+class Vgg_16:
+    def __init__(self, input_shape=(224, 224, 1), num_classes=2, learning_rate=0.00001):
+        mixed_precision.set_global_policy('mixed_float16')
+        self.input_shape = input_shape
+        self.num_classes = num_classes
+        self.learning_rate = learning_rate
+        self.model = self.build_model()
 
-    model = keras.models.Sequential()
-    
-    model.add(keras.layers.Conv2D(64, 3, input_shape=[240, 320, 1],padding="same", activation="relu"))
-    model.add(keras.layers.Conv2D(64, 3, padding="same", activation="relu"))
-    model.add(keras.layers.MaxPool2D(pool_size=2, strides=2))
+    def build_model(self):
+        model = keras.Sequential([
+            # conv1
+            keras.layers.Conv2D(64, 3, input_shape=self.input_shape, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Conv2D(64, 3, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.MaxPool2D(pool_size=2, strides=2),
+            
+            # conv2
+            keras.layers.Conv2D(128, 3, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Conv2D(128, 3, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.MaxPool2D(pool_size=2, strides=2),
+            
+            # conv3
+            keras.layers.Conv2D(256, 3, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Conv2D(256, 3, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Conv2D(256, 3, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.MaxPool2D(pool_size=2, strides=2),
+            
+            # conv4
+            keras.layers.Conv2D(512, 3, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Conv2D(512, 3, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Conv2D(512, 3, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.MaxPool2D(pool_size=2, strides=2),
+            
+            # conv5
+            keras.layers.Conv2D(512, 3, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Conv2D(512, 3, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Conv2D(512, 3, padding="same", activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.MaxPool2D(pool_size=2, strides=2),
+            
+            # Fully connected layers
+            keras.layers.Flatten(),
+            keras.layers.Dense(4096, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Dropout(0.5),
+            keras.layers.Dense(4096, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+            keras.layers.Dropout(0.5),
+            keras.layers.Dense(self.num_classes, activation="sigmoid", dtype="float32", kernel_regularizer=keras.regularizers.l2(0.001))
+        ])
 
-    model.add(keras.layers.Conv2D(filters=128, kernel_size=(3,3), padding='same', activation='relu'))
-    model.add(keras.layers.Conv2D(filters=128, kernel_size=(3,3), padding='same', activation='relu'))
-    model.add(keras.layers.MaxPool2D(pool_size=2, strides=2))
+        optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
+        optimizer = tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
 
-    model.add(keras.layers.Conv2D(filters=256, kernel_size=(3,3), padding='same', activation='relu'))
-    model.add(keras.layers.Conv2D(filters=256, kernel_size=(3,3), padding='same', activation='relu'))
-    model.add(keras.layers.Conv2D(filters=256, kernel_size=(3,3), padding='same', activation='relu'))
-    model.add(keras.layers.MaxPool2D(pool_size=2, strides=2))
+        model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
-    model.add(keras.layers.Conv2D(filters=512, kernel_size=(3,3), padding='same', activation='relu'))
-    model.add(keras.layers.Conv2D(filters=512, kernel_size=(3,3), padding='same', activation='relu'))
-    model.add(keras.layers.Conv2D(filters=512, kernel_size=(3,3), padding='same', activation='relu'))
-    model.add(keras.layers.MaxPool2D(pool_size=2, strides=2))
-
-    model.add(keras.layers.Conv2D(filters=512, kernel_size=(3,3), padding='same', activation='relu'))
-    model.add(keras.layers.Conv2D(filters=512, kernel_size=(3,3), padding='same', activation='relu'))
-    model.add(keras.layers.Conv2D(filters=512, kernel_size=(3,3), padding='same', activation='relu'))
-    model.add(keras.layers.MaxPool2D(pool_size=2, strides=2))
-
-    model.add(keras.layers.Flatten())
-
-    model.add(keras.layers.Dense(units=4096, activation='relu')) # 4096 -> Reduzi por conta da memoria (TESTE)
-    model.add(keras.layers.Dense(units=4096, activation='relu')) # 4096 -> Reduzi por conta da memoria (TESTE)
-    model.add(keras.layers.Dense(units=2, activation='softmax', dtype='float32'))
-
-    optimize = keras.optimizers.Adam(learning_rate=0.001)
-
-    model.compile(optimizer=optimize, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-
-    return model
+        return model

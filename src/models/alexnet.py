@@ -2,8 +2,18 @@ from tensorflow import keras
 import tensorflow as tf
 from tensorflow.keras import mixed_precision
 
+"""
+Criando AlexNet (para usar a rede, criar o objeto AlexNet e usar .model)
 
-class AlexNetModel:
+Params: (para criar o modelo):
+input_shape: especificar entrada da rede
+num_classes: quantidade de classes para classificação
+learning_rate: taxa de aprendizado 
+
+"""
+
+class AlexNet:
+    
     def __init__(self, input_shape=(227, 227, 1), num_classes=2, learning_rate=0.00001):
         # Configura a política de precisão misturada
         mixed_precision.set_global_policy('mixed_float16')
@@ -46,21 +56,3 @@ class AlexNetModel:
         model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
         
         return model
-
-    def summary(self):
-        self.model.summary()
-
-
-def AlexNet(input_shape=(227, 227, 1), num_classes=2, learning_rate=0.00001):
-    """
-    Função para criar e retornar uma instância do modelo AlexNet.
-
-    Params:
-    - input_shape: Tamanho da imagem de entrada (dim, dim, channels)
-    - num_classes: Número de categorias para a classificação
-    - learning_rate: Taxa de aprendizado para o otimizador
-
-    Return: instância do modelo AlexNet
-    """
-    model_instance = AlexNetModel(input_shape=input_shape, num_classes=num_classes, learning_rate=learning_rate)
-    return model_instance.model  # Retorna apenas o modelo compilado

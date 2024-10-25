@@ -86,17 +86,12 @@ def main_func(models_list, mensagem = ""):
 
 
 if __name__ == "__main__":
-        
-    #main_func([ResNet34], "ResNet34_224x224_Bath16")
 
-    #get_confusion_matrices("ResNet34", "ResNet34_224x224", "aug_dataset", resize=True, target = 224)
 
-    get_auc_roc("ResNet34", "ResNet34_224x224", "aug_dataset", resize=True, target = 224)
+    train_models([Vgg_16], "dataset_aug", resize=True, target=224)
 
-    #files = [f"ResNet34_224x224_Bath16_Frontal_metrics.txt"]
-
-    #move_files_to_folder(files, "history/ResNet34/Frontal/")
-
+    # main_func([ResNet34], "ResNet34_224x224")
     
+
        
     
