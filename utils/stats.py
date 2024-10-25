@@ -157,7 +157,7 @@ def get_confusion_matrices(model_name, mensagem="", dataset="np_dataset", resize
 
             # Fazer previsões no conjunto de teste
             y_pred_prob = model.predict(imagens_test)
-            y_pred = (y_pred_prob >= 0.5).astype(int).flatten()
+            y_pred = (y_pred_prob >= 0.50).astype(int).flatten()
 
             # Obter os labels verdadeiros
             y_true = labels_test
@@ -173,12 +173,14 @@ def get_confusion_matrices(model_name, mensagem="", dataset="np_dataset", resize
             f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
 
             # Printar as métricas
+            
             with open(f"history/{model_name}/{angle}/{mensagem}_{angle}_metrics.txt", "a") as f:
                 f.write(f"Modelo: {model_name} - {i} - {angle}\n")
                 f.write(f"Acurácia: {accuracy}\n")
                 f.write(f"Precision: {precision}\n")
                 f.write(f"Recall: {recall}\n")
                 f.write(f"F1 Score: {f1_score}\n\n\n")
+            
 
             # Armazenar as métricas
             metrics[angle]['accuracy'].append(accuracy)
@@ -204,7 +206,7 @@ def get_confusion_matrices(model_name, mensagem="", dataset="np_dataset", resize
 
 def generate_metrics_boxplots(metrics, model_name, mensagem=""):
 
-    #os.makedirs(f"history/{model_name}/boxplots", exist_ok=True)
+    os.makedirs(f"history/{model_name}/boxplots", exist_ok=True)
 
     for metric_name in ['accuracy', 'precision', 'recall', 'f1_score']:
         os.makedirs(f"boxplots/{model_name}", exist_ok=True)
@@ -261,11 +263,19 @@ def get_auc_roc(model_name,mensagem ="", dataset="np_dataset", resize=False, tar
             # Plotar a Curva ROC
             fpr, tpr, thresholds = roc_curve(y_true, y_pred_prob)
 
+            youden_index = tpr - fpr
+            best_idx = np.argmax(youden_index)
+            best_threshold = thresholds[best_idx]
+
             os.makedirs(f"history/{model_name}/{angle}/roc_curves/", exist_ok=True)
             
             plt.figure()
             plt.plot(fpr, tpr, label=f'Curva ROC (AUC = {auc:.2f})')
             plt.plot([0, 1], [0, 1], 'k--')  # Linha de referência (modelo aleatório)
+            
+            # Destacando o limiar ótimo (Youden)
+            plt.scatter(fpr[best_idx], tpr[best_idx], color='red', label=f'Limiar Ótimo: {best_threshold:.2f}', zorder=5)
+            
             plt.xlabel('Taxa de Falsos Positivos')
             plt.ylabel('Taxa de Verdadeiros Positivos')
             plt.title(f'Curva ROC - {model_name} - {angle} - Modelo {i}')
@@ -274,7 +284,7 @@ def get_auc_roc(model_name,mensagem ="", dataset="np_dataset", resize=False, tar
             plt.tight_layout()
             plt.savefig(f"history/{model_name}/{angle}/roc_curves/{mensagem}_roc_curve_{angle}_{i}.png")
             plt.close()
-
+    
     plt.figure(figsize=(10, 6))
     data = [auc_scores[angle] for angle in angles]
     plt.boxplot(data, labels=angles)
@@ -285,6 +295,7 @@ def get_auc_roc(model_name,mensagem ="", dataset="np_dataset", resize=False, tar
     plt.tight_layout()
     plt.savefig(f"boxplots/{model_name}/{mensagem}_auc_boxplot_all_angles.png")
     plt.close()
+    
 
 
 
