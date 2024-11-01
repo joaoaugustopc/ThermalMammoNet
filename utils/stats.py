@@ -128,6 +128,7 @@ def get_confusion_matrices(model_name, mensagem="", dataset="np_dataset", resize
 
     from sklearn.metrics import confusion_matrix
     import seaborn as sns
+    from src.models.resNet_101 import ResNet101, BottleneckResidualUnit
 
     angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
 
@@ -152,6 +153,9 @@ def get_confusion_matrices(model_name, mensagem="", dataset="np_dataset", resize
             if model_name == "ResNet34":
                 with custom_object_scope({'ResidualUnit': ResidualUnit}):
                     model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
+            elif model_name == "ResNet101":
+                with custom_object_scope({'BottleneckResidualUnit': BottleneckResidualUnit}):
+                    model = keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
             else:
                 model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
 
@@ -296,6 +300,102 @@ def get_auc_roc(model_name,mensagem ="", dataset="np_dataset", resize=False, tar
     plt.savefig(f"boxplots/{model_name}/{mensagem}_auc_boxplot_all_angles.png")
     plt.close()
     
+def get_precision_recall_curves(model_name, mensagem="", dataset="np_dataset", resize=False, target=0):
+    from sklearn.metrics import precision_recall_curve, auc, f1_score
+    import seaborn as sns
+
+    #angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
+    angles = ["Frontal"]
+
+    # Dicionários para armazenar as métricas para cada ângulo
+    metrics = {angle: {'best_thresholds': [], 'best_f1_scores': [], 'auc_pr': []} for angle in angles}
+
+    for angle in angles:
+        # Carregar os dados de teste
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angle, dataset)
+
+        # Mudança para encaixar na rede (se necessário)
+        if resize:
+            imagens_test = np.expand_dims(imagens_test, axis=-1)
+            imagens_test = tf.image.resize_with_pad(imagens_test, target, target, method="bicubic")
+            imagens_test = np.squeeze(imagens_test, axis=-1)
+
+        # Converter labels para formato adequado
+        y_true = labels_test
+
+        for i in range(10):
+            i = i + 1
+            # Carregar o modelo
+            if model_name == "ResNet34":
+                with custom_object_scope({'ResidualUnit': ResidualUnit}):
+                    model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
+            else:
+                model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
+
+            # Fazer previsões no conjunto de teste
+            y_scores = model.predict(imagens_test).flatten()
+
+            # Calcular a curva Precision-Recall
+            precision, recall, thresholds = precision_recall_curve(y_true, y_scores)
+
+            # Calcular o F1-score para cada limiar
+            f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)
+
+            # Encontrar o limiar com o melhor F1-score
+            idx = np.argmax(f1_scores)
+            best_threshold = thresholds[idx] if idx < len(thresholds) else 1.0
+            best_f1 = f1_scores[idx]
+
+            # Calcular a área sob a curva Precision-Recall
+            auc_pr = auc(recall, precision)
+
+            # Armazenar as métricas
+            metrics[angle]['best_thresholds'].append(best_threshold)
+            metrics[angle]['best_f1_scores'].append(best_f1)
+            metrics[angle]['auc_pr'].append(auc_pr)
+
+            # Plotar e salvar a curva Precision-Recall
+            #os.makedirs(f"history/{model_name}/{angle}/precision_recall_curves/", exist_ok=True)
+            plt.figure(figsize=(8, 6))
+            plt.plot(recall, precision, label=f'AUC PR = {auc_pr:.2f}')
+            plt.scatter(recall[idx], precision[idx], marker='o', color='red',
+                        label=f'Melhor F1 = {best_f1:.2f} (Limiar = {best_threshold:.2f})')
+            plt.title(f'Curva Precision-Recall - {model_name} - {angle} - Modelo {i}')
+            plt.xlabel('Recall')
+            plt.ylabel('Precision')
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            #plt.savefig(f"history/{model_name}/{angle}/precision_recall_curves/{mensagem}_precision_recall_{angle}_{i}.png")
+            plt.savefig(f"{mensagem}_precision_recall_{angle}_{i}.png")
+            plt.close()
+
+            # Salvar as métricas em um arquivo
+            #with open(f"history/{model_name}/{angle}/{mensagem}_{angle}_precision_recall_metrics.txt", "a") as f:
+            with open(f"{mensagem}_{angle}_precision_recall_metrics.txt", "a") as f:
+                f.write(f"Modelo: {model_name} - {i} - {angle}\n")
+                f.write(f"AUC PR: {auc_pr}\n")
+                f.write(f"Melhor Limiar: {best_threshold}\n")
+                f.write(f"Melhor F1 Score: {best_f1}\n\n\n")
+
+    # Opcional: Gerar boxplots para as métricas coletadas
+    generate_pr_metrics_boxplots(metrics, model_name, mensagem)
+
+
+def generate_pr_metrics_boxplots(metrics, model_name, mensagem=""):
+    os.makedirs(f"boxplots/{model_name}", exist_ok=True)
+
+    for metric_name in ['best_f1_scores', 'best_thresholds', 'auc_pr']:
+        plt.figure(figsize=(10, 6))
+        data = [metrics[angle][metric_name] for angle in metrics.keys()]
+        plt.boxplot(data, labels=metrics.keys())
+        plt.title(f'Boxplot de {metric_name.replace("_", " ").capitalize()} para cada ângulo - {model_name}')
+        plt.ylabel(metric_name.replace("_", " ").capitalize())
+        plt.xlabel('Ângulo')
+        plt.grid(True)
+        #plt.savefig(f"boxplots/{model_name}/{mensagem}_boxplot_{metric_name}.png")
+        plt.savefig(f"{mensagem}_boxplot_{metric_name}.png")
+        plt.close()
 
 
 

@@ -2,7 +2,7 @@ from include.imports import *
 
 def main_func(models_list, mensagem = ""):
     
-    list = ["Frontal", "Left90", "Right90", "Left45", "Right45"]
+    list = ["Frontal","Left45", "Right45", "Left90", "Right90"]
     models = models_list
                 
     for angulo in list:
@@ -44,10 +44,9 @@ def main_func(models_list, mensagem = ""):
                 checkpoint = tf.keras.callbacks.ModelCheckpoint(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5", monitor='val_loss', verbose=1, save_best_only=True, 
                                                             save_weights_only=False, mode='auto')
                 
-                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
+                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=50, verbose=1, mode='auto')
 
-                reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.1,
-                                              patience=10, min_lr=1e-5)
+                #reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.05,patience=15, min_lr=1e-5, min_delta=0.0001)
 
 
                 model = model_func()
@@ -55,12 +54,15 @@ def main_func(models_list, mensagem = ""):
                 model.summary()
 
                 history = model.fit(imagens_train, labels_train, epochs = 500, validation_data= (imagens_valid, labels_valid),
-                                    callbacks= [checkpoint, earlystop, reduce_lr], batch_size = 16, verbose = 1, shuffle = True)
+                                    callbacks= [checkpoint, earlystop], batch_size = 10, verbose = 1, shuffle = True)
                 
                 end_time = time.time()
 
                 if model_name == "ResNet34":
                     with custom_object_scope({'ResidualUnit': ResidualUnit}):
+                        best_model = keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5")
+                elif model_name == "ResNet101":
+                    with custom_object_scope({'BottleneckResidualUnit': BottleneckResidualUnit}):
                         best_model = keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5")
                 else:
                     best_model = keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5")
@@ -158,10 +160,12 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
 if __name__ == "__main__":
 
 
-    train_models([Vgg_16], "dataset_aug", resize=True, target=224)
+    #train_models([Vgg_16], "dataset_aug", resize=True, target=224)
 
     # main_func([ResNet34], "ResNet34_224x224")
-    
 
-       
+    #main_func([ResNet101],"ResNet101_224x224_3")
+
+    get_confusion_matrices("ResNet101","ResNet101_224x224", "aug_dataset", resize=True, target=224)
+
     
