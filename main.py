@@ -1,4 +1,5 @@
 from include.imports import *
+from utils.data_prep import load_imgs_masks
 
 def main_func(models_list, mensagem = ""):
     
@@ -190,3 +191,10 @@ if __name__ == "__main__":
             print(f"Accuracy: {accuracy}")
             print("\n")            
     """    
+
+    #load_data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
+
+    imgs, masks = load_imgs_masks("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
+
+    print(imgs.shape)
+    print(masks.shape)

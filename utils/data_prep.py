@@ -383,3 +383,57 @@ def create_aug_dataset(val_aug, output_dir="dataset_aug"):
         #verificação
         print(imagens_train.shape)
         print(labels_train.shape)
+
+
+def load_imgs_masks(angulo, img_path, mask_path):
+
+    import re
+
+    angulos = {
+        "Frontal": "1",
+        "Left45": "4",
+        "Right45": "2",
+        "Left90": "5",
+        "Right90": "3"
+    }
+    
+    idx_angle = angulos[angulo]
+    re = re.compile(f".*{idx_angle}\.S.*")
+
+    imgs_files = os.listdir(img_path)
+    masks_files = os.listdir(mask_path)
+
+    imgs = [img for img in imgs_files if re.match(img)]
+    masks = [mask for mask in masks_files if re.match(mask)]
+
+    # Ordenar as imagens e máscaras para garantir que correspondam
+    imgs = sorted(imgs)
+    masks = sorted(masks)
+
+    data_imgs= []
+    data_masks = []
+
+    for img, mask in zip(imgs, masks):
+        # Verificar se os nomes correspondem
+        assert img.split('.')[0] == mask.split('.')[0] and img.split('.')[4] == mask.split('.')[4], "Nomes de arquivos não correspondem"
+
+        imagem_path = os.path.join(img_path, img)
+        mascara_path = os.path.join(mask_path, mask)
+
+        imagem = Image.open(imagem_path).convert('L')
+        mascara = Image.open(mascara_path).convert('L')
+
+        data_imgs.append(imagem)
+        data_masks.append(mascara)
+              
+    data_imgs = np.array(data_imgs)
+    data_masks = np.array(data_masks)
+
+
+    return data_imgs, data_masks
+
+ 
+
+
+
+    
