@@ -1,7 +1,7 @@
 from include.imports import *
 
 # Definir a semente para garantir reprodutibilidade
-SEED = 42
+SEED = 36
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
 random.seed(SEED)

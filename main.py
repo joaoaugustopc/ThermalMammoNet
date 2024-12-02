@@ -160,12 +160,33 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
 if __name__ == "__main__":
 
 
-    #train_models([Vgg_16], "dataset_aug", resize=True, target=224)
+    """
+    angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
 
-    # main_func([ResNet34], "ResNet34_224x224")
+    for angle in angles:
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angle, "aug_dataset")
 
-    #main_func([ResNet101],"ResNet101_224x224_3")
+        # Mudança para encaixar na rede (se necessário)
+        
+        imagens_test = np.expand_dims(imagens_test, axis=-1)
+        imagens_test = tf.image.resize_with_pad(imagens_test, 224, 224, method="bicubic")
+        imagens_test = np.squeeze(imagens_test, axis=-1)
 
-    get_confusion_matrices("ResNet101","ResNet101_224x224", "aug_dataset", resize=True, target=224)
+        # Lista para armazenar as matrizes de confusão
 
-    
+        for i in range(10):
+            i = i + 1
+            # Carregar o modelo
+            
+            with custom_object_scope({'ResidualUnit': ResidualUnit}):
+                model = tf.keras.models.load_model(f"modelos/ResNet34/ResNet34_224x224_{angle}_{i}.h5")
+
+            #Avaliação do modelo
+
+            loss, accuracy = model.evaluate(imagens_test, labels_test, verbose=0)
+
+            print(f"Modelo {angle}_{i}")
+            print(f"Loss: {loss}")
+            print(f"Accuracy: {accuracy}")
+            print("\n")            
+    """    

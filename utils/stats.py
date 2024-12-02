@@ -398,4 +398,74 @@ def generate_pr_metrics_boxplots(metrics, model_name, mensagem=""):
         plt.close()
 
 
+def get_mean_metrics(model_name, mensagem = ""):
+    angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
+
+    # Dicionários para armazenar as métricas para cada ângulo
+    metrics = {angle: {'accuracy': [],'recall': [], 'AUC':[]} for angle in angles}
+
+    for angle in angles:
+        # Carregar os dados de teste
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angle, "aug_dataset")
+
+        # Mudança para encaixar na rede (se necessário)
+        
+        imagens_test = np.expand_dims(imagens_test, axis=-1)
+        imagens_test = tf.image.resize_with_pad(imagens_test, 224, 224, method="bicubic")
+        imagens_test = np.squeeze(imagens_test, axis=-1)
+
+        # Lista para armazenar as matrizes de confusão
+
+        for i in range(1,11):
+            # Carregar o modelo
+            
+            if model_name == "ResNet34":
+                with custom_object_scope({'ResidualUnit': ResidualUnit}):
+                    model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
+            else:
+                model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
+            
+            # Fazer previsões no conjunto de teste
+            y_pred_prob = model.predict(imagens_test)
+            y_pred = (y_pred_prob >= 0.50).astype(int).flatten()
+
+            # Obter os labels verdadeiros
+            y_true = labels_test
+
+            # Gerar a matriz de confusão
+            cm = confusion_matrix(y_true, y_pred)
+
+            # Calcular as métricas para este modelo
+            TN, FP, FN, TP = cm.ravel()
+            accuracy = (TP + TN) / (TP + TN + FP + FN)
+            recall = TP / (TP + FN) if (TP + FN) > 0 else 0
+
+            auc = roc_auc_score(y_true, y_pred_prob)
+
+        
+            # Printar as métricas
+            
+            metrics[angle]['accuracy'].append(accuracy)
+            metrics[angle]['recall'].append(recall)
+            metrics[angle]['AUC'].append(auc)
+
+        
+        
+        acc_mean = np.mean(metrics[angle]['accuracy'])
+        rec_mean = np.mean(metrics[angle]['recall'])
+        auc_mean = np.mean(metrics[angle]['AUC'])
+
+        acc_std = np.std(metrics[angle]['accuracy'])
+        rec_std = np.std(metrics[angle]['recall'])
+        auc_std = np.std(metrics[angle]['AUC'])
+
+        # Armazenar as métricas
+        with open(f"{mensagem}_mean_metrics.txt", "a") as f:
+            f.write(f"Ângulo: {angle}\n")
+            f.write(f"Acurácia: {acc_mean} +/- {acc_std}\n")
+            f.write(f"Recall: {rec_mean} +/- {rec_std}\n")
+            f.write(f"AUC: {auc_mean} +/- {auc_std}\n")
+            f.write("\n")
+
+
 
