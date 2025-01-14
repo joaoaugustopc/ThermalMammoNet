@@ -29,6 +29,9 @@ class ResidualUnit(keras.layers.Layer):
         skip_Z = inputs
         for layer in self.skip_layers:
             skip_Z = layer(skip_Z)
+
+        Z = tf.cast(Z, dtype=skip_Z.dtype)
+        
         return self.activation(Z + skip_Z)
 
 def ResNet34():

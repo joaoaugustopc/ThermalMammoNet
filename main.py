@@ -1,10 +1,9 @@
 from include.imports import *
-
-import random
+from utils.data_prep import load_imgs_masks
 
 def main_func(models_list, mensagem = ""):
     
-    list = ["Frontal", "Left90", "Right90", "Left45", "Right45"]
+    list = ["Frontal","Left45", "Right45", "Left90", "Right90"]
     models = models_list
                 
     for angulo in list:
@@ -46,10 +45,9 @@ def main_func(models_list, mensagem = ""):
                 checkpoint = tf.keras.callbacks.ModelCheckpoint(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5", monitor='val_loss', verbose=1, save_best_only=True, 
                                                             save_weights_only=False, mode='auto')
                 
-                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
+                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=50, verbose=1, mode='auto')
 
-                reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.1,
-                                              patience=10, min_lr=1e-5)
+                #reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.05,patience=15, min_lr=1e-5, min_delta=0.0001)
 
 
                 model = model_func()
@@ -57,12 +55,15 @@ def main_func(models_list, mensagem = ""):
                 model.summary()
 
                 history = model.fit(imagens_train, labels_train, epochs = 500, validation_data= (imagens_valid, labels_valid),
-                                    callbacks= [checkpoint, earlystop, reduce_lr], batch_size = 16, verbose = 1, shuffle = True)
+                                    callbacks= [checkpoint, earlystop], batch_size = 10, verbose = 1, shuffle = True)
                 
                 end_time = time.time()
 
                 if model_name == "ResNet34":
                     with custom_object_scope({'ResidualUnit': ResidualUnit}):
+                        best_model = keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5")
+                elif model_name == "ResNet101":
+                    with custom_object_scope({'BottleneckResidualUnit': BottleneckResidualUnit}):
                         best_model = keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5")
                 else:
                     best_model = keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angulo}_{i}.h5")
@@ -185,10 +186,41 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
 
 if __name__ == "__main__":
 
-    # rename_folder("boxplots/Vgg_16", "boxplots/Vgg_16-5exe")
-    # train_models([Vgg_16], "dataset_aug", resize=True, target=224)
-    
-    get_confusion_matrices("Vgg_16", resize=True, target=224)
-    
-    # get_auc_roc("Vgg_16", dataset="dataset_aug", resize=True, target=224)
-    
+
+    """
+    angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
+
+    for angle in angles:
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angle, "aug_dataset")
+
+        # Mudança para encaixar na rede (se necessário)
+        
+        imagens_test = np.expand_dims(imagens_test, axis=-1)
+        imagens_test = tf.image.resize_with_pad(imagens_test, 224, 224, method="bicubic")
+        imagens_test = np.squeeze(imagens_test, axis=-1)
+
+        # Lista para armazenar as matrizes de confusão
+
+        for i in range(10):
+            i = i + 1
+            # Carregar o modelo
+            
+            with custom_object_scope({'ResidualUnit': ResidualUnit}):
+                model = tf.keras.models.load_model(f"modelos/ResNet34/ResNet34_224x224_{angle}_{i}.h5")
+
+            #Avaliação do modelo
+
+            loss, accuracy = model.evaluate(imagens_test, labels_test, verbose=0)
+
+            print(f"Modelo {angle}_{i}")
+            print(f"Loss: {loss}")
+            print(f"Accuracy: {accuracy}")
+            print("\n")            
+    """    
+
+    #load_data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
+
+    imgs, masks = load_imgs_masks("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
+
+    print(imgs.shape)
+    print(masks.shape)
