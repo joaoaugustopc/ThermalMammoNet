@@ -5,12 +5,12 @@ def encoder_block(inputs, num_filters):
 
 	x = tf.keras.layers.Conv2D(num_filters, 
 							3, 
-							padding = 'valid')(inputs) 
+							padding = 'same')(inputs) 
 	x = tf.keras.layers.Activation('relu')(x) 
 	
 	x = tf.keras.layers.Conv2D(num_filters, 
 							3, 
-							padding = 'valid')(x) 
+							padding = 'same')(x) 
 	x = tf.keras.layers.Activation('relu')(x) 
 
 	x = tf.keras.layers.MaxPool2D(pool_size = (2, 2), 
@@ -23,7 +23,7 @@ def decoder_block(inputs, skip_features, num_filters):
 	x = tf.keras.layers.Conv2DTranspose(num_filters, 
 										(2, 2), 
 										strides = 2, 
-										padding = 'valid')(inputs) 
+										padding = 'same')(inputs) 
 	
 	# Redimensionar skip_features para o tamanho de x
 	skip_features = tf.image.resize(skip_features, 
@@ -35,16 +35,16 @@ def decoder_block(inputs, skip_features, num_filters):
 	
 	x = tf.keras.layers.Conv2D(num_filters, 
 							3, 
-							padding = 'valid')(x) 
+							padding = 'same')(x) 
 	x = tf.keras.layers.Activation('relu')(x) 
 
-	x = tf.keras.layers.Conv2D(num_filters, 3, padding = 'valid')(x) 
+	x = tf.keras.layers.Conv2D(num_filters, 3, padding = 'same')(x) 
 	x = tf.keras.layers.Activation('relu')(x) 
 	
 	return x
 
 # Unet code 
-def unet_model(input_shape = (480, 640, 1), num_classes = 2): 
+def unet_model(input_shape = (480, 640, 1), num_classes = 1): 
 	inputs = tf.keras.layers.Input(input_shape) 
 	
 	# Contracting Path (Encoder)
@@ -54,9 +54,9 @@ def unet_model(input_shape = (480, 640, 1), num_classes = 2):
 	s4 = encoder_block(s3, 512) 
 	
 	# Bottleneck 
-	b1 = tf.keras.layers.Conv2D(1024, 3, padding = 'valid')(s4) 
+	b1 = tf.keras.layers.Conv2D(1024, 3, padding = 'same')(s4) 
 	b1 = tf.keras.layers.Activation('relu')(b1) 
-	b1 = tf.keras.layers.Conv2D(1024, 3, padding = 'valid')(b1) 
+	b1 = tf.keras.layers.Conv2D(1024, 3, padding = 'same')(b1) 
 	b1 = tf.keras.layers.Activation('relu')(b1) 
 	
 	# Expansive Path (Decoder)
@@ -68,12 +68,18 @@ def unet_model(input_shape = (480, 640, 1), num_classes = 2):
 	# Output 
 	outputs = tf.keras.layers.Conv2D(num_classes, 
 									1, 
-									padding = 'valid', 
+									padding = 'same', 
 									activation = 'sigmoid')(s8) 
 	
 	model = tf.keras.models.Model(inputs = inputs, 
 								outputs = outputs, 
 								name = 'U-Net') 
+	
+	opt = tf.keras.optimizers.Adam(learning_rate = 1e-4)
+	
+	model.compile(optimizer = opt, 
+				loss = 'binary_crossentropy', metrics = ['accuracy'])
+	
 	return model 
 
 

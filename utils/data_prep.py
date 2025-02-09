@@ -429,8 +429,33 @@ def load_imgs_masks(angulo, img_path, mask_path):
     data_imgs = np.array(data_imgs)
     data_masks = np.array(data_masks)
 
+    data_imgs = data_imgs / 255.0
+    data_masks = data_masks / 255.0
 
-    return data_imgs, data_masks
+    imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(data_imgs, data_masks, test_size=0.2, random_state=42)
+
+
+    return imgs_train, imgs_valid, masks_train, masks_valid
+
+def view_pred_mask(model, img):
+
+
+    imagem = np.expand_dims(img, axis=0)
+    imagem = np.expand_dims(img, axis=-1)
+
+    pred = model.predict(imagem)
+
+    pred = np.squeeze(pred, axis=0)
+
+    mask = (pred > 0.5).astype(np.uint8)
+    
+
+    plt.figure(figsize=(10, 5))
+    plt.imshow(img, cmap='gray')
+    plt.imshow(mask, cmap='jet', alpha=0.5)
+    plt.axis('off')
+    plt.savefig("unet_pred_TESTE.png")
+    plt.close()
 
  
 

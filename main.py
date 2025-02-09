@@ -1,6 +1,8 @@
 from include.imports import *
 from utils.data_prep import load_imgs_masks
 
+from src.models.u_net import unet_model
+
 def main_func(models_list, mensagem = ""):
     
     list = ["Frontal","Left45", "Right45", "Left90", "Right90"]
@@ -194,7 +196,123 @@ if __name__ == "__main__":
 
     #load_data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
 
-    imgs, masks = load_imgs_masks("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
 
-    print(imgs.shape)
-    print(masks.shape)
+
+
+    """
+    imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(imgs, masks, test_size=0.2, random_state=42)
+
+
+
+    loss, acc = model.evaluate(imgs_valid, masks_valid, verbose=1)
+
+    print(f"Loss: {loss}")
+    print(f"Accuracy: {acc}")
+    """
+
+    """
+    model = tf.keras.models.load_model("modelos/unet/unet.h5")
+    
+    imagem = Image.open("ImgTESTE.jpg").convert('L')
+
+    imagem = np.array(imagem)
+
+    imagem = np.expand_dims(imagem, axis=0)
+    imagem = np.expand_dims(imagem, axis=-1)
+
+    imagem = imagem / 255.0
+
+    pred = model.predict(imagem)
+
+    pred = np.squeeze(pred, axis=0)
+
+    
+    mask = (pred > 0.5).astype(np.uint8)
+
+    
+
+    plt.figure(figsize=(10, 5))
+    plt.imshow(imagem[0], cmap='gray')
+    plt.imshow(mask, cmap='jet', alpha=0.5)
+    plt.axis('off')
+    plt.savefig("unet_pred_TESTE.png")
+    plt.close()
+    """
+
+    
+    #imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks("Left45", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
+    
+    """
+    model = unet_model()
+
+    model.summary()
+
+    earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=20, verbose=1, mode='auto')
+
+    checkpoint = tf.keras.callbacks.ModelCheckpoint("modelos/unet/L45unet.h5", monitor='val_loss', verbose=1, save_best_only=True, 
+                                                            save_weights_only=False, mode='auto')
+
+    history = model.fit(imgs_train, masks_train, epochs = 200, validation_data= (imgs_valid, masks_valid), callbacks= [checkpoint, earlystop], batch_size = 4, verbose = 1, shuffle = True)
+    
+    # Gráfico de perda de treinamento
+    plt.figure(figsize=(10, 6))
+    plt.plot(history.history['loss'], label='Training Loss')
+    plt.title(f'Training Loss Convergence for unet - Frontal')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(f"unet_loss_convergence_L45.png")
+    plt.close()
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title(f'Validation Loss Convergence for unet - Frontal')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(f"unet_val_loss_convergence_L45.png")
+    plt.close()
+    """
+
+    img_test = np.load("np_dataset/imagens_test_Frontal.npy")
+
+    img = img_test[50]
+    origin = img
+
+    img = np.expand_dims(img, axis=0)
+    img = np.expand_dims(img, axis=-1)
+
+    print(img.shape)
+
+
+    model = tf.keras.models.load_model("modelos/unet/unet.h5")
+
+    pred = model.predict(img)
+
+    pred = np.squeeze(pred, axis=0)
+
+    if pred.shape[-1] == 1:
+        pred = pred[:, :, 0]
+        mask = (pred > 0.5).astype(np.uint8)
+    else:
+        mask = np.argmax(pred, axis=-1)
+
+    plt.figure(figsize=(10, 5))
+    plt.imshow(origin, cmap='gray')
+    plt.imshow(mask, cmap='jet', alpha=0.5)
+    plt.axis('off')
+    plt.savefig("unet_pred.png")
+    plt.close()
+
+    """
+    model = keras.models.load_model("modelos/unet/L45unet.h5")
+
+    img_test = np.load("np_dataset/imagens_test_Left45.npy")
+
+    loss, acc = model.evaluate(imgs_valid, masks_valid, verbose=1)
+
+    print(f"Loss: {loss}")
+    print(f"Accuracy: {acc}")
+    """
