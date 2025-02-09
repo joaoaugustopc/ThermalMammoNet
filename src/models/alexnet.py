@@ -14,7 +14,7 @@ learning_rate: taxa de aprendizado
 
 class AlexNet:
     
-    def __init__(self, input_shape=(227, 227, 1), num_classes=2, learning_rate=0.00001):
+    def __init__(self, input_shape=(227, 227, 1), num_classes=1, learning_rate=0.00001):
         # Configura a política de precisão misturada
         mixed_precision.set_global_policy('mixed_float16')
         

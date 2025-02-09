@@ -24,8 +24,8 @@ import os
 import shutil
 
 from utils.data_prep import apply_augmentation_and_expand, load_data, create_aug_dataset, view_pred_mask
-from utils.files_manipulation import delete_folder, delete_file, move_files_to_folder
-from utils.stats import plot_convergence, test_model, get_boxPlot, data_distribution, get_confusion_matrices, get_auc_roc, get_precision_recall_curves
+from utils.files_manipulation import delete_folder, delete_file, move_files_to_folder, rename_file, rename_folder
+from utils.stats import plot_convergence, test_model, get_boxPlot, data_distribution, get_confusion_matrices, get_auc_roc
 from sklearn.metrics import confusion_matrix
 import seaborn as sns
 from sklearn.metrics import roc_auc_score, roc_curve

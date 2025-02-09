@@ -91,7 +91,7 @@ def main_func(models_list, mensagem = ""):
 
 
 def train_models(models_objects, dataset, resize=False, target=0, message=""):
-    list = ["Frontal", "Left45","Right45", "Left90", "Right90"]
+    list = ["Left90","Right90"]
     models = models_objects
                 
     for angulo in list:
@@ -119,13 +119,20 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
 
             #criando pasta com gráficos dos modelos
             os.makedirs(f"history/{model_func.__name__}", exist_ok=True)
+            
+            with open(f"modelos/random_seed.txt", "a") as f:
+                f.write(f"Modelo:{model_func.__name__}\n")
+                f.write(f"Angulo: {angulo}\n")
 
-            for i in range(10):
+            for i in range(5):
 
+                i = i + 5
+                
+                print(f"history/{model_func.__name__}/{model_func.__name__}_{angulo}_{i}_time.txt")
                 
                 start_time = time.time()
                 
-                checkpoint_path = f"modelos/{model_func.__name__}/{model_func.__name__}_{message}_{angulo}_{i}.h5"
+                checkpoint_path = f"modelos/{model_func.__name__}/{model_func.__name__}{message}_{angulo}_{i}.h5"
                 checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True, 
                                                             save_weights_only=False, mode='auto')
                 
@@ -135,6 +142,23 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
                 model = model_func().model
 
                 model.summary()
+                
+                # Use o tempo atual em segundos como semente
+                value_seed = int(time.time() * 1000) % 15000
+                random.seed(value_seed)
+
+                # Agora gere o número aleatório
+                seed = random.randint(0, 15000)
+
+                # Salva a seed em um arquivo de texto
+                with open("modelos/random_seed.txt", "a") as file:
+                    file.write(str(seed))
+                    file.write("\n")
+
+                print("Seed gerada e salva em random_seed.txt:", seed)
+
+                tf.random.set_seed(seed)
+                
 
                 history = model.fit(imagens_train, labels_train, epochs = 500, validation_data= (imagens_valid, labels_valid),
                                     callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
@@ -145,7 +169,7 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
                 model = keras.models.load_model(checkpoint_path) #carregando o melhor modelo
                 test_loss, test_accuracy = model.evaluate(imagens_test, labels_test, verbose=1)
 
-                with open(f"history/{model_func.__name__}/{message}_{angulo}_{i}_time.txt", "w") as f:
+                with open(f"history/{model_func.__name__}/{model_func.__name__}_{angulo}_{i}_time.txt", "w") as f:
                     f.write(f"Modelo: {model_func.__name__}\n")
                     f.write(f"Tempo de execução: {end_time - start_time}\n")
                     f.write(f"Loss: {history.history['loss']}\n")
@@ -156,8 +180,10 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
                     f.write(f"Test Accuracy: {test_accuracy}\n")
                     f.write("\n")
                     
-                plot_convergence(history, model_func.__name__, angulo, i, message)
-    
+                plot_convergence(history, model_func.__name__, angulo, i, "Vgg_16")
+
+
+
 
 
 if __name__ == "__main__":

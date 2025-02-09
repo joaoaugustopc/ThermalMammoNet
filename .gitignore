@@ -25,4 +25,6 @@ aug_dataset/
 dataset_aug/
 modelos/
 history/
+boxplots/
+venv/
 Termografias_Dataset_Segmentação/

@@ -110,7 +110,7 @@ def plot_convergence(history, model_name, angulo, i, mensagem = ""):
         plt.ylabel('Loss')
         plt.legend()
         plt.grid(True)
-        plt.savefig(f"history/{model_name}/{angulo}/treinamento/{mensagem}_{angulo}_{i}_training_loss_convergence.png")
+        plt.savefig(f"history/{model_name}/{mensagem}_{angulo}_{i}_training_loss_convergence.png")
         plt.close()
 
         # Gráfico de perda de validação
@@ -121,16 +121,16 @@ def plot_convergence(history, model_name, angulo, i, mensagem = ""):
         plt.ylabel('Loss')
         plt.legend()
         plt.grid(True)
-        plt.savefig(f"history/{model_name}/{angulo}/treinamento/{mensagem}_{angulo}_{i}_validation_loss_convergence.png")
+        plt.savefig(f"history/{model_name}/{mensagem}_{angulo}_{i}_validation_loss_convergence.png")
         plt.close()
 
-def get_confusion_matrices(model_name, mensagem="", dataset="np_dataset", resize=False, target=0):
+def get_confusion_matrices(model_name, mensagem="", dataset="dataset_aug", resize=False, target=0):
 
     from sklearn.metrics import confusion_matrix
     import seaborn as sns
     from src.models.resNet_101 import ResNet101, BottleneckResidualUnit
 
-    angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
+    angles = ["Frontal", "Right90", "Right45"]
 
     # Dicionários para armazenar as métricas para cada ângulo
     metrics = {angle: {'accuracy': [], 'precision': [], 'recall': [], 'f1_score': []} for angle in angles}
@@ -148,8 +148,8 @@ def get_confusion_matrices(model_name, mensagem="", dataset="np_dataset", resize
         # Lista para armazenar as matrizes de confusão
 
         for i in range(10):
-            i = i + 1
             # Carregar o modelo
+                        
             if model_name == "ResNet34":
                 with custom_object_scope({'ResidualUnit': ResidualUnit}):
                     model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
@@ -157,7 +157,7 @@ def get_confusion_matrices(model_name, mensagem="", dataset="np_dataset", resize
                 with custom_object_scope({'BottleneckResidualUnit': BottleneckResidualUnit}):
                     model = keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
             else:
-                model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
+                model = tf.keras.models.load_model(f"modelos/{model_name}/{model_name}_{angle}_{i}.h5")
 
             # Fazer previsões no conjunto de teste
             y_pred_prob = model.predict(imagens_test)
@@ -178,7 +178,7 @@ def get_confusion_matrices(model_name, mensagem="", dataset="np_dataset", resize
 
             # Printar as métricas
             
-            with open(f"history/{model_name}/{angle}/{mensagem}_{angle}_metrics.txt", "a") as f:
+            with open(f"history/{model_name}/{model_name}-10exe_{angle}_metrics.txt", "a") as f:
                 f.write(f"Modelo: {model_name} - {i} - {angle}\n")
                 f.write(f"Acurácia: {accuracy}\n")
                 f.write(f"Precision: {precision}\n")
@@ -192,7 +192,7 @@ def get_confusion_matrices(model_name, mensagem="", dataset="np_dataset", resize
             metrics[angle]['recall'].append(recall)
             metrics[angle]['f1_score'].append(f1_score)
 
-            os.makedirs(f"history/{model_name}/{angle}/confusion_matrices/", exist_ok=True)
+            os.makedirs(f"history/{model_name}/confusion_matrices-10exe/", exist_ok=True)
 
             # Plotar e salvar a matriz de confusão para este modelo
             classes = ['Healthy', 'Sick']
@@ -203,17 +203,43 @@ def get_confusion_matrices(model_name, mensagem="", dataset="np_dataset", resize
             plt.ylabel('Classe Real')
             plt.xlabel('Classe Predita')
             plt.tight_layout()
-            plt.savefig(f"history/{model_name}/{angle}/confusion_matrices/{mensagem}_confusion_matrix_{angle}_{i}.png")
+            plt.savefig(f"history/{model_name}/confusion_matrices-10exe/{model_name}_confusion_matrix_{angle}_{i}.png")
             plt.close()
 
-    generate_metrics_boxplots(metrics, model_name, mensagem)
+    metrics_summary = {}
+    
+    for angle in angles:
+        metrics_summary[angle] = {
+            'accuracy_mean': np.mean(metrics[angle]['accuracy']),
+            'accuracy_std': np.std(metrics[angle]['accuracy']),
+            'precision_mean': np.mean(metrics[angle]['precision']),
+            'precision_std': np.std(metrics[angle]['precision']),
+            'recall_mean': np.mean(metrics[angle]['recall']),
+            'recall_std': np.std(metrics[angle]['recall']),
+            'f1_score_mean': np.mean(metrics[angle]['f1_score']),
+            'f1_score_std': np.std(metrics[angle]['f1_score'])
+        }
+
+    # Salvar as métricas médias e desvios padrão em um arquivo de texto
+    os.makedirs(f"history/{model_name}/metrics_summary-10exe", exist_ok=True)
+    with open(f"history/{model_name}/metrics_summary-10exe/{model_name}_metrics_summary-10exeFR.txt", "w") as f:
+        for angle, stats in metrics_summary.items():
+            f.write(f"Angle: {angle}\n")
+            f.write(f"Acurácia: média={stats['accuracy_mean']:.4f}, desvio padrão={stats['accuracy_std']:.4f}\n")
+            f.write(f"Precisão: média={stats['precision_mean']:.4f}, desvio padrão={stats['precision_std']:.4f}\n")
+            f.write(f"Recall: média={stats['recall_mean']:.4f}, desvio padrão={stats['recall_std']:.4f}\n")
+            f.write(f"F1 Score: média={stats['f1_score_mean']:.4f}, desvio padrão={stats['f1_score_std']:.4f}\n")
+            f.write("\n")
+        
+        
+    # generate_metrics_boxplots(metrics, model_name, mensagem)
 
 def generate_metrics_boxplots(metrics, model_name, mensagem=""):
 
-    os.makedirs(f"history/{model_name}/boxplots", exist_ok=True)
+    os.makedirs(f"history/{model_name}-10exe/boxplots", exist_ok=True)
 
     for metric_name in ['accuracy', 'precision', 'recall', 'f1_score']:
-        os.makedirs(f"boxplots/{model_name}", exist_ok=True)
+        os.makedirs(f"boxplots/{model_name}-10exe", exist_ok=True)
         plt.figure(figsize=(10, 6))
         data = [metrics[angle][metric_name] for angle in metrics.keys()]
         plt.boxplot(data, labels=metrics.keys())
@@ -221,14 +247,14 @@ def generate_metrics_boxplots(metrics, model_name, mensagem=""):
         plt.ylabel(metric_name.capitalize())
         plt.xlabel('Ângulo')
         plt.grid(True)
-        plt.savefig(f"boxplots/{model_name}/{mensagem}_boxplots_{metric_name}_boxplot.png")
+        plt.savefig(f"boxplots/{model_name}-10exe/{mensagem}_boxplots_{metric_name}_boxplot.png")
         plt.close()
 
 def get_auc_roc(model_name,mensagem ="", dataset="np_dataset", resize=False, target=0):
 
     from sklearn.metrics import roc_auc_score, roc_curve
 
-    angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
+    angles = ["Left90", "Left45"]
 
     # Dicionário para armazenar as AUCs para cada ângulo
     auc_scores = {angle: [] for angle in angles}
@@ -244,13 +270,12 @@ def get_auc_roc(model_name,mensagem ="", dataset="np_dataset", resize=False, tar
             imagens_test = np.squeeze(imagens_test, axis=-1)
 
         for i in range(10):
-            i = i + 1
             # Carregar o modelo
             if model_name == "ResNet34":
                 with custom_object_scope({'ResidualUnit': ResidualUnit}):
                     model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
             else:
-                model = tf.keras.models.load_model(f"modelos/{model_name}/{mensagem}_{angle}_{i}.h5")
+                model = tf.keras.models.load_model(f"modelos/{model_name}/{model_name}_{angle}_{i}.h5")
 
             # Fazer previsões no conjunto de teste
             y_pred_prob = model.predict(imagens_test).flatten()  # Probabilidades preditas
@@ -264,14 +289,14 @@ def get_auc_roc(model_name,mensagem ="", dataset="np_dataset", resize=False, tar
 
             print(f"AUC para o modelo {i} no ângulo {angle}: {auc:.4f}")
 
-            # Plotar a Curva ROC
+            # # Plotar a Curva ROC
             fpr, tpr, thresholds = roc_curve(y_true, y_pred_prob)
 
             youden_index = tpr - fpr
             best_idx = np.argmax(youden_index)
             best_threshold = thresholds[best_idx]
 
-            os.makedirs(f"history/{model_name}/{angle}/roc_curves/", exist_ok=True)
+            os.makedirs(f"history/{model_name}-10exe/{angle}/roc_curves/", exist_ok=True)
             
             plt.figure()
             plt.plot(fpr, tpr, label=f'Curva ROC (AUC = {auc:.2f})')
@@ -286,9 +311,11 @@ def get_auc_roc(model_name,mensagem ="", dataset="np_dataset", resize=False, tar
             plt.legend(loc='lower right')
             plt.grid(True)
             plt.tight_layout()
-            plt.savefig(f"history/{model_name}/{angle}/roc_curves/{mensagem}_roc_curve_{angle}_{i}.png")
+            plt.savefig(f"history/{model_name}-10exe/{angle}/roc_curves/{model_name}_roc_curve_{angle}_{i}.png")
             plt.close()
-    
+            
+            
+    os.makedirs(f"boxplots/{model_name}-10exe/", exist_ok=True)
     plt.figure(figsize=(10, 6))
     data = [auc_scores[angle] for angle in angles]
     plt.boxplot(data, labels=angles)
@@ -297,7 +324,7 @@ def get_auc_roc(model_name,mensagem ="", dataset="np_dataset", resize=False, tar
     plt.xlabel('Ângulo')
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(f"boxplots/{model_name}/{mensagem}_auc_boxplot_all_angles.png")
+    plt.savefig(f"boxplots/{model_name}-10exe/{model_name}_auc_boxplot_all_angles.png")
     plt.close()
     
 def get_precision_recall_curves(model_name, mensagem="", dataset="np_dataset", resize=False, target=0):
@@ -467,5 +494,13 @@ def get_mean_metrics(model_name, mensagem = ""):
             f.write(f"AUC: {auc_mean} +/- {auc_std}\n")
             f.write("\n")
 
+    # Calcular a média e o desvio padrão das AUCs e salvar em um arquivo
+    os.makedirs(f"history/{model_name}-10exe/auc_summary/", exist_ok=True)
+    with open(f"history/{model_name}-10exe/auc_summary/{model_name}_auc_summary-outro2.txt", "w") as f:
+        for angle in angles:
+            auc_mean = np.mean(auc_scores[angle])
+            auc_std = np.std(auc_scores[angle])
+            f.write(f"{angle} - Média da AUC: {auc_mean:.4f}, Desvio Padrão da AUC: {auc_std:.4f}\n")
+            print(f"{angle} - Média da AUC: {auc_mean:.4f}, Desvio Padrão da AUC: {auc_std:.4f}")
 
 
