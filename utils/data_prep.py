@@ -384,11 +384,16 @@ def create_aug_dataset(val_aug, output_dir="dataset_aug"):
         print(imagens_train.shape)
         print(labels_train.shape)
 
+import os
+import re
+import shutil
+from sklearn.model_selection import train_test_split
 
-def load_imgs_masks(angulo, img_path, mask_path):
-
-    import re
-
+def filtrar_imgs_masks(angulo, img_path, mask_path):
+    """
+    Filtra imagens e máscaras baseado no ângulo especificado.
+    Retorna listas de caminhos das imagens e máscaras.
+    """
     angulos = {
         "Frontal": "1",
         "Left45": "4",
@@ -396,46 +401,93 @@ def load_imgs_masks(angulo, img_path, mask_path):
         "Left90": "5",
         "Right90": "3"
     }
+
+    idx_angle = angulos.get(angulo)
+    if not idx_angle:
+        raise ValueError(f"Ângulo inválido: {angulo}")
+
+    pattern = re.compile(f".*{idx_angle}\.S.*")
+
+    imgs_files = sorted([img for img in os.listdir(img_path) if pattern.match(img)])
+    masks_files = sorted([mask for mask in os.listdir(mask_path) if pattern.match(mask)])
+
+    assert len(imgs_files) == len(masks_files), "Número de imagens e máscaras não corresponde!"
+
+    data_imgs = [os.path.join(img_path, img) for img in imgs_files]
+    data_masks = [os.path.join(mask_path, mask) for mask in masks_files]
+
+    return data_imgs, data_masks
+
+
+def load_imgs_masks(angulo, img_path, mask_path):
+    """
+    Carrega imagens e máscaras em formato numpy arrays normalizados (0 a 1).
+    Retorna as listas imgs_train, imgs_valid, masks_train, masks_valid.
+    """
+    data_imgs, data_masks = filtrar_imgs_masks(angulo, img_path, mask_path)
+
+    imagens = [np.array(Image.open(img).convert('L')) / 255.0 for img in data_imgs]
+    mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
+
+    imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(
+        imagens, mascaras, test_size=0.2, random_state=42
+    )
+
+    return np.array(imgs_train), np.array(imgs_valid), np.array(masks_train), np.array(masks_valid)
+
+
+def criar_pastas_yolo():
+    """
+    Cria a estrutura de diretórios para armazenar as imagens e máscaras do YOLO.
+    """
+    pastas = [
+        "Yolo_dataset",
+        "Yolo_dataset/images",
+        "Yolo_dataset/images/train",
+        "Yolo_dataset/images/val",
+        "Yolo_dataset/masks",
+        "Yolo_dataset/masks/train",
+        "Yolo_dataset/masks/val",
+    ]
     
-    idx_angle = angulos[angulo]
-    re = re.compile(f".*{idx_angle}\.S.*")
-
-    imgs_files = os.listdir(img_path)
-    masks_files = os.listdir(mask_path)
-
-    imgs = [img for img in imgs_files if re.match(img)]
-    masks = [mask for mask in masks_files if re.match(mask)]
-
-    # Ordenar as imagens e máscaras para garantir que correspondam
-    imgs = sorted(imgs)
-    masks = sorted(masks)
-
-    data_imgs= []
-    data_masks = []
-
-    for img, mask in zip(imgs, masks):
-        # Verificar se os nomes correspondem
-        assert img.split('.')[0] == mask.split('.')[0] and img.split('.')[4] == mask.split('.')[4], "Nomes de arquivos não correspondem"
-
-        imagem_path = os.path.join(img_path, img)
-        mascara_path = os.path.join(mask_path, mask)
-
-        imagem = Image.open(imagem_path).convert('L')
-        mascara = Image.open(mascara_path).convert('L')
-
-        data_imgs.append(imagem)
-        data_masks.append(mascara)
-              
-    data_imgs = np.array(data_imgs)
-    data_masks = np.array(data_masks)
-
-    data_imgs = data_imgs / 255.0
-    data_masks = data_masks / 255.0
-
-    imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(data_imgs, data_masks, test_size=0.2, random_state=42)
+    for pasta in pastas:
+        os.makedirs(pasta, exist_ok=True)
 
 
-    return imgs_train, imgs_valid, masks_train, masks_valid
+def mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid):
+    """
+    Move imagens e máscaras para os diretórios adequados dentro de Yolo_dataset.
+    """
+    criar_pastas_yolo()
+
+    for img in imgs_train:
+        shutil.copy(img, "Yolo_dataset/images/train")
+    for img in imgs_valid:
+        shutil.copy(img, "Yolo_dataset/images/val")
+    for mask in masks_train:
+        shutil.copy(mask, "Yolo_dataset/masks/train")
+    for mask in masks_valid:
+        shutil.copy(mask, "Yolo_dataset/masks/val")
+
+
+def YoLo_Data(angulo, img_path, mask_path):
+    """
+    Prepara os dados de imagens e máscaras e move para a estrutura YOLO.
+    """
+    data_imgs, data_masks = filtrar_imgs_masks(angulo, img_path, mask_path)
+
+    imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(
+        data_imgs, data_masks, test_size=0.2, random_state=42
+    )
+
+    mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid)
+    
+    input_dir = 'Yolo_dataset/masks/val'
+    output_dir = 'Yolo_dataset/labels/val'
+
+    masks_to_polygons(input_dir, output_dir)
+
+
 
 def view_pred_mask(model, img):
 
@@ -456,6 +508,45 @@ def view_pred_mask(model, img):
     plt.axis('off')
     plt.savefig("unet_pred_TESTE.png")
     plt.close()
+
+import os
+import cv2
+
+
+def masks_to_polygons(input_dir, output_dir):
+    
+    for j in os.listdir(input_dir):
+        image_path = os.path.join(input_dir, j)
+        # load the binary mask and get its contours
+        mask = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        _, mask = cv2.threshold(mask, 1, 255, cv2.THRESH_BINARY)
+
+        H, W = mask.shape
+        contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # convert the contours to polygons
+        polygons = []
+        for cnt in contours:
+            if cv2.contourArea(cnt) > 200:
+                polygon = []
+                for point in cnt:
+                    x, y = point[0]
+                    polygon.append(x / W)
+                    polygon.append(y / H)
+                polygons.append(polygon)
+
+        # print the polygons
+        with open('{}.txt'.format(os.path.join(output_dir, j)[:-4]), 'w') as f:
+            for polygon in polygons:
+                for p_, p in enumerate(polygon):
+                    if p_ == len(polygon) - 1:
+                        f.write('{}\n'.format(p))
+                    elif p_ == 0:
+                        f.write('0 {} '.format(p))
+                    else:
+                        f.write('{} '.format(p))
+
+            f.close()
 
  
 

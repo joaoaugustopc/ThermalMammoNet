@@ -1,5 +1,5 @@
 from include.imports import *
-from utils.data_prep import load_imgs_masks
+from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons
 
 from src.models.u_net import unet_model
 
@@ -187,8 +187,9 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
 
 
 if __name__ == "__main__":
+    
 
-
+    #YoLo_Data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
     """
     angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
 
@@ -301,7 +302,8 @@ if __name__ == "__main__":
     plt.savefig(f"unet_val_loss_convergence_L45.png")
     plt.close()
     """
-
+########################################################################
+    """
     img_test = np.load("np_dataset/imagens_test_Frontal.npy")
 
     img = img_test[50]
@@ -332,6 +334,8 @@ if __name__ == "__main__":
     plt.savefig("unet_pred.png")
     plt.close()
 
+    """
+#######################################################################################
     """
     model = keras.models.load_model("modelos/unet/L45unet.h5")
 
