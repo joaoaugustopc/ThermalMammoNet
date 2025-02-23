@@ -26,4 +26,4 @@ dataset_aug/
 modelos/
 history/
 Termografias_Dataset_Segmentação/
-Yolo_dataset/
+runs/segment/

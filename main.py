@@ -1,5 +1,6 @@
 from include.imports import *
-from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons
+from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only
+from src.models.yolo_seg import train_yolo_seg
 
 from src.models.u_net import unet_model
 
@@ -184,10 +185,114 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
 
 
 
+import cv2
+from ultralytics import YOLO
+
+
+# Função para calcular Pixel Accuracy
+def pixel_accuracy(y_true, y_pred):
+    # y_true e y_pred devem ter a mesma dimensão e serem binários
+    correct = np.sum(y_true == y_pred)
+    total = y_true.size
+    return correct / total
+
+import numpy as np
+
+def dice_coefficient(y_true, y_pred, smooth=1):
+    
+    y_true_f = y_true.flatten()
+    y_pred_f = y_pred.flatten()
+    
+    intersection = np.sum(y_true_f * y_pred_f)
+    
+    dice = (2. * intersection + smooth) / (np.sum(y_true_f) + np.sum(y_pred_f) + smooth)
+    
+    return dice
+
+
 
 
 if __name__ == "__main__":
+
+
+
+    """
+    model_path = 'runs/segment/train9/weights/best.pt'
+
+    img_test = np.load("np_dataset/imagens_test_Frontal.npy")
+
+    img = img_test[36]
+    origin = img
+
+    img = np.expand_dims(img, axis=0)
+    img = np.expand_dims(img, axis=-1)
+
+    print(img.shape)
+
+
+    model = tf.keras.models.load_model("modelos/unet/unet.h5")
+
+    pred = model.predict(img)
+
+    pred = np.squeeze(pred, axis=0)
+
+    if pred.shape[-1] == 1:
+        pred = pred[:, :, 0]
+        mask = (pred > 0.5).astype(np.uint8)
+    else:
+        mask = np.argmax(pred, axis=-1)
+
+    plt.figure(figsize=(10, 5))
+    plt.imshow(origin, cmap='gray')
+    plt.imshow(mask, cmap='jet', alpha=0.5)
+    plt.axis('off')
+    plt.savefig("unet_pred.png")
+    plt.close()
+    """
+
+    #train_yolo_seg()
     
+    #pred_yolo_seg()
+    """
+    img = cv2.imread("imgTESTE()2.jpg", cv2.IMREAD_GRAYSCALE)
+
+    mask = cv2.imread("output.png", cv2.IMREAD_GRAYSCALE)
+
+    mask = (mask > 0).astype(np.uint8)
+
+    plt.figure(figsize=(10, 5))
+    plt.imshow(img, cmap='gray')
+    plt.imshow(mask, cmap='jet', alpha=0.5)
+    plt.axis('off')
+    plt.savefig("YOLO_pred_TESTE.png")
+    plt.close()
+    """
+    """
+    # Transformar uma imagem em numpy para jpg em 224x224 e salvar
+    img_test = np.load("np_dataset/imagens_test_Frontal.npy")
+
+    img = img_test[16]
+    origin = img
+
+    img = np.expand_dims(img, axis=0)
+    img = np.expand_dims(img, axis=-1)
+
+    print(img.shape)
+
+    img = tf.image.resize_with_pad(img, 224, 224, method="bicubic")
+
+    img = np.squeeze(img, axis=-1)
+    img = np.squeeze(img, axis=0)
+
+    # Converter a imagem para o modo 'L' (luminância)
+    img = Image.fromarray((img * 255).astype(np.uint8), mode='L')
+
+    img.save("ImgTESTE()2.jpg")  
+
+    """
+    #pred_yolo_seg()
+
+    #train_yolo_seg()
 
     #YoLo_Data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
     """
@@ -303,11 +408,14 @@ if __name__ == "__main__":
     plt.close()
     """
 ########################################################################
+    
     """
     img_test = np.load("np_dataset/imagens_test_Frontal.npy")
 
     img = img_test[50]
     origin = img
+
+    print(img.shape)
 
     img = np.expand_dims(img, axis=0)
     img = np.expand_dims(img, axis=-1)
@@ -333,16 +441,118 @@ if __name__ == "__main__":
     plt.axis('off')
     plt.savefig("unet_pred.png")
     plt.close()
-
     """
+
+    
 #######################################################################################
     """
     model = keras.models.load_model("modelos/unet/L45unet.h5")
 
     img_test = np.load("np_dataset/imagens_test_Left45.npy")
 
+    print(img_test.shape)
+
     loss, acc = model.evaluate(imgs_valid, masks_valid, verbose=1)
 
     print(f"Loss: {loss}")
     print(f"Accuracy: {acc}")
     """
+
+    #train_yolo_seg()
+    
+    """
+    imgs, masks = load_imgs_masks_2("Frontal", "Yolo_dataset/images/val", "Yolo_dataset/masks/val")
+
+    print(imgs.shape)
+    print(masks.shape)
+
+    model = tf.keras.models.load_model("modelos/unet/unet.h5")
+
+    pred = model.predict(imgs)
+
+    print(pred.shape)
+
+    pred_masks = (pred > 0.5).astype(np.uint8)
+
+    pred_masks = np.squeeze(pred_masks, axis=-1)
+
+    acuracies = []
+
+
+
+    for i in range(len(masks)):
+        #pred_masks[i]= np.squeeze(pred_masks[i], axis=-1)
+
+        acc = dice_coefficient(masks[i], pred_masks[i])
+        print(f"Pixel Accuracy: {acc:.4f}")
+        acuracies.append(acc)
+
+    mean_accuracy = np.mean(acuracies)
+    print(f"Pixel Accuracy Média: {mean_accuracy:.4f}")
+
+
+
+        
+    
+
+
+
+    # Carregando o modelo YOLOv8-seg
+    model = YOLO('runs/segment/train9/weights/best.pt')
+
+    img_path = "Yolo_dataset/images/val"
+    img_files = os.listdir(img_path)
+
+    mask_path = "Yolo_dataset/masks/val"
+    mask_files = os.listdir(mask_path)
+
+    predicted_masks = []
+
+    # Processa as imagens e gera as máscaras preditas
+    for img_file in img_files:
+        image_full_path = os.path.join(img_path, img_file)
+    
+        # Obtém as predições para a imagem
+        results = model.predict(image_full_path, task='segment')
+    
+        # Cria uma máscara vazia com dimensões fixas (certifique-se de que são compatíveis com a ground truth)
+        mask_union = np.zeros((192, 224), dtype=np.uint8)
+    
+        if results[0].masks is not None:
+            for mask in results[0].masks.data:
+                mask_np = mask.cpu().numpy()
+                mask_bin = (mask_np > 0.5).astype(np.uint8)
+                mask_union = np.logical_or(mask_union, mask_bin).astype(np.uint8)
+    
+        predicted_masks.append(mask_union)
+
+    # Carrega as máscaras ground truth (garantindo que sejam do mesmo tamanho e binárias)
+    ground_truth_masks = []
+    for mask_file in mask_files:
+        mask_full_path = os.path.join(mask_path, mask_file)
+        # Lê a imagem em escala de cinza
+        mask_img = cv2.imread(mask_full_path, cv2.IMREAD_GRAYSCALE)
+    
+        # Redimensiona, se necessário, para (192, 224)
+        mask_img = cv2.resize(mask_img, (224, 192))
+    
+        # Binariza a máscara (ajuste o limiar conforme necessário)
+        mask_bin = (mask_img > 127).astype(np.uint8)
+        ground_truth_masks.append(mask_bin)
+
+    # Calcula a Pixel Accuracy para cada par de máscara ground truth e predita
+    pixel_accuracies = []
+    for gt_mask, pred_mask in zip(ground_truth_masks, predicted_masks):
+        acc = dice_coefficient(gt_mask, pred_mask)
+        pixel_accuracies.append(acc)
+
+    mean_accuracy = np.mean(pixel_accuracies)
+    print(f"Pixel Accuracy Média: {mean_accuracy:.4f}")
+    """
+
+
+    
+
+
+
+

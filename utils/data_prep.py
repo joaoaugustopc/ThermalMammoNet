@@ -435,6 +435,18 @@ def load_imgs_masks(angulo, img_path, mask_path):
 
     return np.array(imgs_train), np.array(imgs_valid), np.array(masks_train), np.array(masks_valid)
 
+def load_imgs_masks_only(angulo, img_path, mask_path):
+    """
+    Carrega imagens e máscaras em formato numpy arrays normalizados (0 a 1).
+    Retorna as listas imagens e masks
+    """
+    data_imgs, data_masks = filtrar_imgs_masks(angulo, img_path, mask_path)
+
+    imagens = [np.array(Image.open(img).convert('L')) / 255.0 for img in data_imgs]
+    mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
+
+    return np.array(imagens), np.array(mascaras)
+
 
 def criar_pastas_yolo():
     """
