@@ -504,3 +504,22 @@ def get_mean_metrics(model_name, mensagem = ""):
             print(f"{angle} - Média da AUC: {auc_mean:.4f}, Desvio Padrão da AUC: {auc_std:.4f}")
 
 
+
+# Função para calcular Pixel Accuracyv < Métrica de avaliação segmentação >
+def pixel_accuracy(y_true, y_pred):
+    # y_true e y_pred devem ter a mesma dimensão e serem binários
+    correct = np.sum(y_true == y_pred)
+    total = y_true.size
+    return correct / total
+
+
+def dice_coefficient(y_true, y_pred, smooth=1):
+    
+    y_true_f = y_true.flatten()
+    y_pred_f = y_pred.flatten()
+    
+    intersection = np.sum(y_true_f * y_pred_f)
+    
+    dice = (2. * intersection + smooth) / (np.sum(y_true_f) + np.sum(y_pred_f) + smooth)
+    
+    return dice

@@ -1,10 +1,13 @@
 from include.imports import *
 
-# Definir a semente para garantir reprodutibilidade
+#Semente utilizada para criação dos datasets < USAR APENAS QUANDO FOR CRIAR UM NOVO DATASET
+#-> EXISTE UMA DEFINIÇÃO DE SEMENTE NO ARQUIVO MAIN.PY >
+"""
 SEED = 36
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
 random.seed(SEED)
+"""
 
 #Arrays Numpy
 def load_data(angulo, folder = "np_dataset"):
@@ -383,6 +386,10 @@ def create_aug_dataset(val_aug, output_dir="dataset_aug"):
         #verificação
         print(imagens_train.shape)
         print(labels_train.shape)
+
+
+
+
 
 import os
 import re
