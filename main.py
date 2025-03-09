@@ -1,11 +1,12 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only
+from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, listar_imgs_nao_usadas, format_data
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model
 
 # Use o tempo atual em segundos como semente
+
 VALUE_SEED = int(time.time() * 1000) % 15000
 
 random.seed(VALUE_SEED)
@@ -15,6 +16,7 @@ seed = random.randint(0, 15000)
 tf.random.set_seed(seed)
 
 np.random.seed(seed)
+
 
 print("***SEMENTE USADA****:", VALUE_SEED)
 
@@ -113,8 +115,13 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
                 plot_convergence(history, model_func.__name__, angulo, i, message)
 
 
-
+import re
 if __name__ == "__main__":
+
+    
+
+    format_data("raw_dataset", "np_dataset_v2", exclude=True, exclude_path="Termografias_Dataset_Segmentação/images")
+
 
 
     #U-Net

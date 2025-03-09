@@ -30,3 +30,4 @@ venv/
 Termografias_Dataset_Segmentação/
 Yolo_dataset/
 runs/segment/
+np_dataset_v2/
