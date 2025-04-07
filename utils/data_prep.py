@@ -1,10 +1,17 @@
 from include.imports import *
+import os
+import re
+import shutil
+from sklearn.model_selection import train_test_split
 
-# Definir a semente para garantir reprodutibilidade
+#Semente utilizada para criação dos datasets < USAR APENAS QUANDO FOR CRIAR UM NOVO DATASET
+#-> EXISTE UMA DEFINIÇÃO DE SEMENTE NO ARQUIVO MAIN.PY >
+"""
 SEED = 36
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
 random.seed(SEED)
+"""
 
 #Arrays Numpy
 def load_data(angulo, folder = "np_dataset"):
@@ -31,9 +38,7 @@ def extract_id(filename):
 """
 Função para converter os arquivos de texto em arrays numpy
 """
-def to_array(directory):
-
-    np.random.seed(42)
+def to_array(directory, exclude = False, exclude_set = None):
 
     arquivos = os.listdir(directory)
 
@@ -52,6 +57,11 @@ def to_array(directory):
     min_value = 1000
 
     for arquivo in healthy:
+
+        if exclude and arquivo in exclude_set:
+            print(f"Excluindo {arquivo}")
+            continue
+
         path = os.path.join(healthy_path, arquivo)
         try:
           with open(path, 'r') as f:
@@ -70,6 +80,11 @@ def to_array(directory):
           continue
 
     for arquivo in sick:
+
+        if exclude and arquivo in exclude_set:
+            print(f"Excluindo {arquivo}")
+            continue
+
         path = os.path.join(sick_path, arquivo)
         try:
           with open(path, 'r') as f:
@@ -162,9 +177,18 @@ def to_array(directory):
     return imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test
 
 
-def format_data(directory_raw):
+def format_data(directory_raw, output_dir = "output_dir", exclude = False, exclude_path = ""):
     for angle in ["Frontal", "Right45", "Right90", "Left45", "Left90"]:
-        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"raw_dataset/{angle}")
+
+        if exclude:
+            list = set()
+
+            list = listar_imgs_nao_usadas(exclude_path, angle)
+            
+            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"raw_dataset/{angle}", list)
+
+        else:
+            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"raw_dataset/{angle}")
 
         print("ANGLE:",angle)
         print("Train shape:",imagens_train.shape)
@@ -181,15 +205,15 @@ def format_data(directory_raw):
         print("Test Healthy:",len(labels_test[labels_test == 0]))
         print("Test Sick:",len(labels_test[labels_test == 1]))
 
-        if not os.path.exists("np_dataset"):
-            os.makedirs("np_dataset")
+        if not os.path.exists(f"{output_dir}"):
+            os.makedirs(f"{output_dir}")
 
-        np.save(f"np_dataset/imagens_train_{angle}.npy", imagens_train)
-        np.save(f"np_dataset/labels_train_{angle}.npy", labels_train)
-        np.save(f"np_dataset/imagens_valid_{angle}.npy", imagens_valid)
-        np.save(f"np_dataset/labels_valid_{angle}.npy", labels_valid)
-        np.save(f"np_dataset/imagens_test_{angle}.npy", imagens_test)
-        np.save(f"np_dataset/labels_test_{angle}.npy", labels_test)    
+        np.save(f"{output_dir}/imagens_train_{angle}.npy", imagens_train)
+        np.save(f"{output_dir}/labels_train_{angle}.npy", labels_train)
+        np.save(f"{output_dir}/imagens_valid_{angle}.npy", imagens_valid)
+        np.save(f"{output_dir}/labels_valid_{angle}.npy", labels_valid)
+        np.save(f"{output_dir}/imagens_test_{angle}.npy", imagens_test)
+        np.save(f"{output_dir}/labels_test_{angle}.npy", labels_test)    
     
 
 def apply_mask():
@@ -263,7 +287,6 @@ def apply_transformation(image, transformation):
 """
 def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=False, target_size=0):
 
-    np.random.seed(42)
 
     train = np.expand_dims(train, axis=-1)
     
@@ -384,10 +407,10 @@ def create_aug_dataset(val_aug, output_dir="dataset_aug"):
         print(imagens_train.shape)
         print(labels_train.shape)
 
-import os
-import re
-import shutil
-from sklearn.model_selection import train_test_split
+
+
+
+
 
 def filtrar_imgs_masks(angulo, img_path, mask_path):
     """
@@ -571,6 +594,49 @@ def masks_to_polygons(input_dir, output_dir):
                         f.write('{} '.format(p))
 
             f.close()
+
+
+#Listar os nomes das imagens que não quero usar para treinar o modelo de classificação
+
+def listar_imgs_nao_usadas(directory, angulo):
+    angulos = {
+        "Frontal": "1",
+        "Left45": "4",
+        "Right45": "2",
+        "Left90": "5",
+        "Right90": "3"
+    }
+
+    idx_angle = angulos.get(angulo)
+    if not idx_angle:
+        raise ValueError(f"Ângulo inválido: {angulo}")
+    
+    pattern = re.compile(f".*{idx_angle}\.S.*")
+    imgs_files = sorted([img for img in os.listdir(directory) if pattern.match(img)])
+    nomesexcluidos = set()
+    for file in imgs_files:
+        # Extrair número do paciente e data do nome da segmentação (Ex: T0337.2.1.S.2019-11-13.00)
+        match = re.search(r"T(\d+).*?(\d{4}-\d{2}-\d{2})", file)
+        if match:
+            paciente, data = match.groups()
+            if angulo == "Frontal":
+                nome_adequado = f"{int(paciente)}_img_Static-{angulo}_{data}.txt"  # Converte para o formato do raw_dataset
+            else:
+                nome_adequado = f"{int(paciente)}_img_Static-{angulo}°_{data}.txt"
+            nomesexcluidos.add(nome_adequado)
+    return nomesexcluidos
+
+
+
+
+
+       
+
+
+
+ 
+
+
 
 
 """

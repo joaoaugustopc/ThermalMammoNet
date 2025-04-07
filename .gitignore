@@ -47,3 +47,4 @@ train_patientes_sick
 # modelos
 yolo11n.pt
 yolov8n-seg.pt
+np_dataset_v2/
