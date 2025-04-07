@@ -6,7 +6,7 @@ import cv2
 
 
 def train_yolo_seg():
-    model = YOLO('yolov8s-seg.pt')  # load a pretrained model (recommended for training)
+    model = YOLO('yolov8n-seg.pt')  # load a pretrained model (recommended for training)
 
     model.train(data='dataset.yaml', epochs=100, imgsz=224)
 

@@ -30,3 +30,20 @@ venv/
 Termografias_Dataset_Segmentação/
 Yolo_dataset/
 runs/segment/
+Yolo-Yolo_dataset/
+/Yolo-data-old/
+Yolo-binary-masks-val/
+Yolo-binary-masks-img/
+images-yolo
+output_masks_total/
+yolo-data
+output_segmented_healthy
+output_segmented_sick
+output_segmented_total
+train_pacients
+train_patientes_healthy
+train_patientes_sick
+
+# modelos
+yolo11n.pt
+yolov8n-seg.pt

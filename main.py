@@ -1,5 +1,6 @@
 from include.imports import *
-from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only
+from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients
+from utils.files_manipulation import move_files_within_folder, create_folder
 from src.models.yolo_seg import train_yolo_seg
 
 from src.models.u_net import unet_model
@@ -183,7 +184,8 @@ def train_models(models_objects, dataset, resize=False, target=0, message=""):
                     
                 plot_convergence(history, model_func.__name__, angulo, i, "Vgg_16")
 
-
+#TODO: calcular f1, IoU, recall, accuracy
+#TODO: comparar unet com yolo
 
 import cv2
 from ultralytics import YOLO
@@ -209,8 +211,29 @@ def dice_coefficient(y_true, y_pred, smooth=1):
     
     return dice
 
-
-
+def txt_to_image(txt_file, output_image_path):
+    with open(txt_file, 'r') as file:
+        lines = file.readlines()
+    
+    # Substitui espaços por ponto e vírgula em cada linha
+    lines = [line.replace(' ', ';') for line in lines]
+    
+    # Converte cada linha em uma lista de floats
+    data = [list(map(float, line.strip().split(';'))) for line in lines]
+    
+    # Converte a lista de listas em uma matriz numpy
+    image_array = np.array(data, dtype=np.float32)
+    
+    # Normaliza os valores para a faixa [0, 255]
+    image_array = cv2.normalize(image_array, None, 0, 255, cv2.NORM_MINMAX)
+    
+    # Converte a matriz para uint8
+    image_array = image_array.astype(np.uint8)
+    
+    # Salva a matriz como uma imagem
+    image = Image.fromarray(image_array)
+    image.save(output_image_path)
+    print(f"Imagem salva em: {output_image_path}")
 
 if __name__ == "__main__":
 
@@ -327,9 +350,6 @@ if __name__ == "__main__":
     """    
 
     #load_data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
-
-
-
 
     """
     imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(imgs, masks, test_size=0.2, random_state=42)
@@ -490,13 +510,6 @@ if __name__ == "__main__":
     mean_accuracy = np.mean(acuracies)
     print(f"Pixel Accuracy Média: {mean_accuracy:.4f}")
 
-
-
-        
-    
-
-
-
     # Carregando o modelo YOLOv8-seg
     model = YOLO('runs/segment/train9/weights/best.pt')
 
@@ -550,9 +563,86 @@ if __name__ == "__main__":
     print(f"Pixel Accuracy Média: {mean_accuracy:.4f}")
     """
 
+# criando mascaras
 
+    # # Definir os caminhos
+    # model_path = 'runs/segment/train6/weights/best.pt'
+    # input_images_dir = 'train_pacients'
+    # output_masks_dir = 'output_masks'
+
+    # # Carregar o modelo YOLO com os pesos especificados
+    # model = YOLO(model_path)
+
+    # create_folder("output_masks")
+
+    # # Processar cada imagem na pasta de entrada
+    # for image_file in os.listdir(input_images_dir):
+    #     if image_file.endswith('.txt'):
+    #         txt_path = os.path.join(input_images_dir, image_file)
+    #         output_image_path = os.path.join(input_images_dir, f"{os.path.splitext(image_file)[0]}.png")
+            
+    #         # Converte o arquivo txt para uma imagem
+    #         txt_to_image(txt_path, output_image_path)
+            
+    #         # Carrega a imagem convertida
+    #         img = cv2.imread(output_image_path)
+    #         if img is None:
+    #             print(f"Erro ao carregar a imagem: {output_image_path}")
+    #             continue
+
+    #         H, W, _ = img.shape
+
+    #         # Aplicar o modelo YOLO na imagem
+    #         results = model(img)
+
+    #      # Processar os resultados e salvar as máscaras
+    #         for result in results:
+    #             for j, mask in enumerate(result.masks.data):
+    #                 mask = mask.cpu().numpy() * 255  # Mover o tensor para a CPU antes de converter para numpy
+    #                 mask = cv2.resize(mask, (W, H))
+    #                 output_mask_path = os.path.join(output_masks_dir, f"{os.path.splitext(image_file)[0]}_mask_{j}.png")
+    #                 cv2.imwrite(output_mask_path, mask)
+    #                 print(f"Máscara salva em: {output_mask_path}")
     
+    
+    # criando segmentação de imagens CERTO - criar funcao
+    # Definir os caminhos
+    # model_path = 'runs/segment/train6/weights/best.pt'
+    # input_images_dir = 'train_patientes_sick'
+    # output_segmented_dir = 'output_segmented_sick'
 
+    # # Carregar o modelo YOLO com os pesos especificados
+    # model = YOLO(model_path)
 
+    # create_folder(output_segmented_dir)
 
+    # # Processar cada imagem na pasta de entrada
+    # for image_file in os.listdir(input_images_dir):
+    #     if image_file.endswith('.txt'):
+    #         txt_path = os.path.join(input_images_dir, image_file)
+    #         output_image_path = os.path.join(input_images_dir, f"{os.path.splitext(image_file)[0]}.png")
+            
+    #         # Converte o arquivo txt para uma imagem
+    #         txt_to_image(txt_path, output_image_path)
+            
+    #         # Carrega a imagem convertida
+    #         img = cv2.imread(output_image_path)
+    #         if img is None:
+    #             print(f"Erro ao carregar a imagem: {output_image_path}")
+    #             continue
 
+    #         H, W, _ = img.shape
+
+    #         # Aplicar o modelo YOLO na imagem
+    #         results = model(img)
+
+    #         # Processar os resultados e salvar as imagens segmentadas
+    #         for result in results:
+    #             for j, mask in enumerate(result.masks.data):
+    #                 mask = mask.cpu().numpy() * 255  # Mover o tensor para a CPU antes de converter para numpy
+    #                 mask = cv2.resize(mask, (W, H))
+    #                 segmented_image = cv2.bitwise_and(img, img, mask=mask.astype(np.uint8))
+    #                 output_segmented_path = os.path.join(output_segmented_dir, f"{os.path.splitext(image_file)[0]}_segmented_{j}.png")
+    #                 cv2.imwrite(output_segmented_path, segmented_image)
+    #                 print(f"Imagem segmentada salva em: {output_segmented_path}")
+    
