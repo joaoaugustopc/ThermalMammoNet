@@ -5,9 +5,7 @@ from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_i
 from utils.files_manipulation import move_files_within_folder, create_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model
-
 # Use o tempo atual em segundos como semente
-
 VALUE_SEED = int(time.time() * 1000) % 15000
 
 random.seed(VALUE_SEED)
@@ -18,8 +16,13 @@ tf.random.set_seed(seed)
 
 np.random.seed(seed)
 
-
 print("***SEMENTE USADA****:", VALUE_SEED)
+
+# Salvar a semente em um arquivo de texto
+with open("seed_value_seg.txt", "w") as seed_file:
+    seed_file.write(f"VALUE_SEED: {VALUE_SEED}\n")
+    seed_file.write(f"Random Seed: {seed}\n")
+
 
 def train_models(models_objects, dataset: str, resize=False, target = 0, message=""):
     list = ["Frontal","Left45", "Right45", "Left90", "Right90"]
@@ -165,12 +168,123 @@ def txt_to_image(txt_file, output_image_path):
     image = Image.fromarray(image_array)
     image.save(output_image_path)
     print(f"Imagem salva em: {output_image_path}")
+    
+
+"""
+    model_path: caminho do modelo da yolo, como 'runs/segment/train6/weights/best.pt'
+
+"""
+def segment_and_save_numpydataset(model_path, input_dir, output_dir, view):
+    print(f"Iniciando segmentação para a visão: {view}")
+    
+    # Carregar o modelo
+    model = YOLO(model_path)
+
+    # Carregar dados (ajuste essa função conforme seu projeto)
+    data_train, labels_train, data_valid, labels_valid, data_test, labels_test = load_data(view, input_dir)
+
+    segmented_images = []
+
+    for img in data_train:
+        # Garantir formato adequado
+        if img.dtype != np.uint8:
+            img = (img * 255).astype(np.uint8)
+        if img.ndim == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        elif img.ndim == 3 and img.shape[2] == 1:
+            img = np.repeat(img, 3, axis=-1)
+
+        img_resized = cv2.resize(img, (224, 224))
+
+        # YOLO predict
+        results = model.predict(img_resized, verbose=False)
+
+        if results and results[0].masks is not None and len(results[0].masks.data) > 0:
+            mask_tensor = results[0].masks.data[0]
+            mask = mask_tensor.cpu().numpy()
+            mask = cv2.resize(mask, (224, 224))
+            binary_mask = (mask > 0.5).astype(np.uint8)
+
+            if binary_mask.ndim == 2:
+                binary_mask = np.expand_dims(binary_mask, axis=-1)
+
+            segmented_img = img_resized * binary_mask
+        else:
+            segmented_img = img_resized
+
+        segmented_images.append(segmented_img)
+
+    segmented_images = np.array(segmented_images)
+
+    # Criar pasta de saída se não existir
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Salvar arquivos segmentados e originais
+    np.save(os.path.join(output_dir, f"imagens_train_{view}.npy"), segmented_images)
+    np.save(os.path.join(output_dir, f"labels_train_{view}.npy"), labels_train)
+    np.save(os.path.join(output_dir, f"imagens_valid_{view}.npy"), data_valid)
+    np.save(os.path.join(output_dir, f"labels_valid_{view}.npy"), labels_valid)
+    np.save(os.path.join(output_dir, f"imagens_test_{view}.npy"), data_test)
+    np.save(os.path.join(output_dir, f"labels_test_{view}.npy"), labels_test)
+
+    print(f"Segmentação concluída e dataset salvo para: {view}")
+
+
+"""
+    Segmenta imagens convertidas de arquivos .txt ou .png usando um modelo YOLO e retorna imagens png.
+
+    Parâmetros:
+    model_path : str
+        Caminho para o arquivo de pesos YOLOv8 (.pt) treinado para segmentação.
+    input_dir : str
+        Caminho para a pasta contendo arquivos .txt representando imagens.
+    output_dir : str
+        Caminho onde as imagens segmentadas (.png) serão salvas.
+    ext_txt : str
+        Extensão dos arquivos de entrada (padrão: '.txt').
+    ext_img : str
+        Extensão das imagens convertidas (padrão: '.png').
+
+    Retorno:
+    None. As imagens segmentadas são salvas no diretório `output_dir`.
+"""
+def segment_and_save_pngdataset(model_path, input_dir, output_dir, ext_txt=".txt", ext_img=".png"):
+  
+    model = YOLO(model_path)
+    create_folder(output_dir)
+
+    for file in os.listdir(input_dir):
+        if file.endswith(ext_txt):
+            txt_path = os.path.join(input_dir, file)
+            img_path = os.path.join(input_dir, f"{os.path.splitext(file)[0]}{ext_img}")
+            
+            txt_to_image(txt_path, img_path)
+
+            img = cv2.imread(img_path)
+            if img is None:
+                print(f"[Erro] Não foi possível carregar a imagem: {img_path}")
+                continue
+
+            H, W, _ = img.shape
+            results = model(img)
+
+            for result in results:
+                if result.masks is None:
+                    continue
+                for j, mask in enumerate(result.masks.data):
+                    mask_np = mask.cpu().numpy() * 255
+                    mask_resized = cv2.resize(mask_np, (W, H))
+                    segmented = cv2.bitwise_and(img, img, mask=mask_resized.astype(np.uint8))
+                    out_path = os.path.join(output_dir, f"{os.path.splitext(file)[0]}_seg_{j}{ext_img}")
+                    cv2.imwrite(out_path, segmented)
+                    print(f"[Salvo] {out_path}")
+
 
 if __name__ == "__main__":
 
     
 
-    format_data("raw_dataset", "np_dataset_v2", exclude=True, exclude_path="Termografias_Dataset_Segmentação/images")
+    # format_data("raw_dataset", "np_dataset_v2", exclude=True, exclude_path="Termografias_Dataset_Segmentação/images")
 
 
 
@@ -559,45 +673,7 @@ if __name__ == "__main__":
     #                 cv2.imwrite(output_mask_path, mask)
     #                 print(f"Máscara salva em: {output_mask_path}")
     
+
+    # # train_yolo_seg(type="n", epochs=200, dataset="dataset.yaml", imgsize=224, seed=VALUE_SEED)
     
-    # criando segmentação de imagens CERTO - criar funcao
-    # Definir os caminhos
-    # model_path = 'runs/segment/train6/weights/best.pt'
-    # input_images_dir = 'train_patientes_sick'
-    # output_segmented_dir = 'output_segmented_sick'
-
-    # # Carregar o modelo YOLO com os pesos especificados
-    # model = YOLO(model_path)
-
-    # create_folder(output_segmented_dir)
-
-    # # Processar cada imagem na pasta de entrada
-    # for image_file in os.listdir(input_images_dir):
-    #     if image_file.endswith('.txt'):
-    #         txt_path = os.path.join(input_images_dir, image_file)
-    #         output_image_path = os.path.join(input_images_dir, f"{os.path.splitext(image_file)[0]}.png")
-            
-    #         # Converte o arquivo txt para uma imagem
-    #         txt_to_image(txt_path, output_image_path)
-            
-    #         # Carrega a imagem convertida
-    #         img = cv2.imread(output_image_path)
-    #         if img is None:
-    #             print(f"Erro ao carregar a imagem: {output_image_path}")
-    #             continue
-
-    #         H, W, _ = img.shape
-
-    #         # Aplicar o modelo YOLO na imagem
-    #         results = model(img)
-
-    #         # Processar os resultados e salvar as imagens segmentadas
-    #         for result in results:
-    #             for j, mask in enumerate(result.masks.data):
-    #                 mask = mask.cpu().numpy() * 255  # Mover o tensor para a CPU antes de converter para numpy
-    #                 mask = cv2.resize(mask, (W, H))
-    #                 segmented_image = cv2.bitwise_and(img, img, mask=mask.astype(np.uint8))
-    #                 output_segmented_path = os.path.join(output_segmented_dir, f"{os.path.splitext(image_file)[0]}_segmented_{j}.png")
-    #                 cv2.imwrite(output_segmented_path, segmented_image)
-    #                 print(f"Imagem segmentada salva em: {output_segmented_path}")
     

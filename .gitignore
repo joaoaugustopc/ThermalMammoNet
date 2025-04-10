@@ -48,3 +48,6 @@ train_patientes_sick
 yolo11n.pt
 yolov8n-seg.pt
 np_dataset_v2/
+
+segmented_yolonano_frontal/
+seed_value_seg.txt
