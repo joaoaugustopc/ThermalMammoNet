@@ -5,6 +5,7 @@ from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_i
 from utils.files_manipulation import move_files_within_folder, create_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model
+
 # Use o tempo atual em segundos como semente
 VALUE_SEED = int(time.time() * 1000) % 15000
 
@@ -19,16 +20,17 @@ np.random.seed(seed)
 print("***SEMENTE USADA****:", VALUE_SEED)
 
 # Salvar a semente em um arquivo de texto
-with open("seed_value_seg.txt", "w") as seed_file:
+with open("seed_global", "w") as seed_file:
     seed_file.write(f"VALUE_SEED: {VALUE_SEED}\n")
     seed_file.write(f"Random Seed: {seed}\n")
 
 
 def train_models(models_objects, dataset: str, resize=False, target = 0, message=""):
-    list = ["Frontal","Left45", "Right45", "Left90", "Right90"]
+    list = ["Frontal"]
     models = models_objects
                 
     for angulo in list:
+        
 
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo, dataset)
         
@@ -60,6 +62,14 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
 
             for i in range(10):
                 
+                VALUE_SEED = int(time.time()*1000) % 15000
+                random.seed(VALUE_SEED)
+                
+                seed = random.randint(0,15000)  
+                
+                tf.keras.utils.set_random_seed(seed)
+                tf.config.experimental.enable_op_determinism()
+                
                 print(f"history/{model_func.__name__}/{model_func.__name__}_{angulo}_{i}_time.txt")
                 
                 start_time = time.time()
@@ -68,7 +78,7 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
                 checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True, 
                                                             save_weights_only=False, mode='auto')
                 
-                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=50, verbose=1, mode='auto')
+                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
 
                 #reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.05,patience=15, min_lr=1e-5, min_delta=0.0001)
 
@@ -78,7 +88,7 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
                 model.summary()
                 
                 # Salva a seed em um arquivo de texto
-                with open("modelos/random_seed.txt", "a") as file:
+                with open("random_seed_vgg.txt", "a") as file:
                     file.write(str(seed))
                     file.write("\n")
 
@@ -170,6 +180,49 @@ def txt_to_image(txt_file, output_image_path):
     print(f"Imagem salva em: {output_image_path}")
     
 
+def transform_channels_normalize(angle, origin_folder, result_folder):
+    """
+    Converte imagens com 3 canais para escala de cinza, normaliza e salva em novos arquivos .npy.
+    
+    Parâmetros:
+    - angle: string usada para identificar os arquivos (ex: "Frontal")
+    - origin_folder: diretório onde estão os arquivos .npy originais
+    - result_folder: diretório onde os novos arquivos serão salvos
+    """
+    imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angle, origin_folder)
+
+    def processar_imagens(imagens):
+        array = []
+        for img in imagens:
+            # Converte RGB para cinza
+            if img.ndim == 3 and img.shape[-1] == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # (H, W)
+            # Se já está em (H, W, 1) ou (H, W), deixamos como (H, W)
+            elif img.ndim == 3 and img.shape[-1] == 1:
+                img = img.squeeze(axis=-1)
+            # Normaliza
+            img = (img / 255.0).astype(np.float32)
+            array.append(img)
+        return np.array(array)
+
+    # Processa os conjuntos
+    imagens_train = processar_imagens(imagens_train)
+    imagens_valid = processar_imagens(imagens_valid)
+    imagens_test = processar_imagens(imagens_test)
+
+    # Garante que o diretório de destino exista
+    os.makedirs(result_folder, exist_ok=True)
+
+    # Salva os arquivos
+    np.save(f"{result_folder}/imagens_train_{angle}.npy", imagens_train)
+    np.save(f"{result_folder}/labels_train_{angle}.npy", labels_train)
+    np.save(f"{result_folder}/imagens_valid_{angle}.npy", imagens_valid)
+    np.save(f"{result_folder}/labels_valid_{angle}.npy", labels_valid)
+    np.save(f"{result_folder}/imagens_test_{angle}.npy", imagens_test)
+    np.save(f"{result_folder}/labels_test_{angle}.npy", labels_test)
+
+    print(f"Arquivos processados e salvos em '{result_folder}' para o ângulo '{angle}'.")
+
 """
     model_path: caminho do modelo da yolo, como 'runs/segment/train6/weights/best.pt'
 
@@ -211,7 +264,7 @@ def segment_and_save_numpydataset(model_path, input_dir, output_dir, view):
             segmented_img = img_resized * binary_mask
         else:
             segmented_img = img_resized
-
+            
         segmented_images.append(segmented_img)
 
     segmented_images = np.array(segmented_images)
@@ -675,5 +728,8 @@ if __name__ == "__main__":
     
 
     # # train_yolo_seg(type="n", epochs=200, dataset="dataset.yaml", imgsize=224, seed=VALUE_SEED)
+    
+    # train_models(Vgg_16, "segmented_yolonano_frontal", resize=True, target=224, message="vgg_yolo_nano")
+    
     
     

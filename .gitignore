@@ -51,3 +51,5 @@ np_dataset_v2/
 
 segmented_yolonano_frontal/
 seed_value_seg.txt
+yolo_dataset_nano
+random_seed_vgg.txt
