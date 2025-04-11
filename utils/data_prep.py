@@ -185,7 +185,7 @@ def format_data(directory_raw, output_dir = "output_dir", exclude = False, exclu
 
             list = listar_imgs_nao_usadas(exclude_path, angle)
             
-            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"raw_dataset/{angle}", list)
+            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"raw_dataset/{angle}", True, list)
 
         else:
             imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"raw_dataset/{angle}")
@@ -340,7 +340,7 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
     
     #se passado como parametro
     if resize:
-        all_images = tf.image.resize_with_pad(all_images, target_size, target_size, method="bicubic")
+        all_images = tf.image.resize_with_pad(all_images, target_size, target_size, method="bilenear")
     
     
     all_images = np.squeeze(all_images, axis=-1)
@@ -382,7 +382,7 @@ def visualize_augmentation(original_img, aug_img, num_images=5):
     plt.savefig("foto_aug/")
 
 
-def create_aug_dataset(val_aug, output_dir="dataset_aug"):
+def create_aug_dataset(val_aug, input_dir ="", output_dir=""):
     
     angles_list = ["Frontal", "Left45", "Left90", "Right45", "Right90"]
     
@@ -390,7 +390,7 @@ def create_aug_dataset(val_aug, output_dir="dataset_aug"):
         os.makedirs(output_dir)
     
     for position in angles_list:
-        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(position)
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(position, input_dir)
         imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, val_aug, resize=False)
         
         #salvar imagens e labels em arquivos separados

@@ -6,9 +6,9 @@ from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model
 
 # Use o tempo atual em segundos como semente
-
-VALUE_SEED = int(time.time() * 1000) % 15000
-
+##VALUE_SEED = int(time.time() * 1000) % 15000
+"""
+VALUE_SEED = 7758
 random.seed(VALUE_SEED)
 
 seed = random.randint(0, 15000)
@@ -16,12 +16,14 @@ seed = random.randint(0, 15000)
 tf.random.set_seed(seed)
 
 np.random.seed(seed)
+"""
 
 
-print("***SEMENTE USADA****:", VALUE_SEED)
+
+#print("***SEMENTE USADA****:", VALUE_SEED)
 
 def train_models(models_objects, dataset: str, resize=False, target = 0, message=""):
-    list = ["Frontal","Left45", "Right45", "Left90", "Right90"]
+    list = ["Frontal"]
     models = models_objects
                 
     for angulo in list:
@@ -35,9 +37,9 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
             imagens_valid = np.expand_dims(imagens_valid, axis=-1) 
             imagens_test = np.expand_dims(imagens_test, axis=-1)
 
-            imagens_train = tf.image.resize_with_pad(imagens_train, target, target, method="bicubic")
-            imagens_valid = tf.image.resize_with_pad(imagens_valid, target, target, method="bicubic")
-            imagens_test = tf.image.resize_with_pad(imagens_test, target, target, method="bicubic")
+            imagens_train = tf.image.resize_with_pad(imagens_train, target, target, method="bilinear")
+            imagens_valid = tf.image.resize_with_pad(imagens_valid, target, target, method="bilinear")
+            imagens_test = tf.image.resize_with_pad(imagens_test, target, target, method="bilinear")
             
             # Remover a dimensão do canal de cor
             imagens_train = np.squeeze(imagens_train, axis=-1)
@@ -54,7 +56,15 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
                 f.write(f"Modelo:{model_func.__name__}\n")
                 f.write(f"Angulo: {angulo}\n")
 
-            for i in range(10):
+            for i in range(5):
+
+                VALUE_SEED = int(time.time() * 1000) % 15000
+                random.seed(VALUE_SEED)
+                
+                seed = random.randint(0, 15000)
+    
+                tf.keras.utils.set_random_seed(seed)
+                tf.config.experimental.enable_op_determinism()
                 
                 print(f"history/{model_func.__name__}/{model_func.__name__}_{angulo}_{i}_time.txt")
                 
@@ -64,15 +74,16 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
                 checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True, 
                                                             save_weights_only=False, mode='auto')
                 
-                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.001, patience=50, verbose=1, mode='auto')
+                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
 
                 #reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.05,patience=15, min_lr=1e-5, min_delta=0.0001)
 
                 #criando objeto e usando o modelo
-                model = model_func().model
+                model = model_func()
 
                 model.summary()
                 
+
                 # Salva a seed em um arquivo de texto
                 with open("modelos/random_seed.txt", "a") as file:
                     file.write(str(seed))
@@ -110,6 +121,7 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
                     f.write(f"Val_accuracy: {history.history['val_accuracy']}\n")
                     f.write(f"Test Loss: {test_loss}\n")
                     f.write(f"Test Accuracy: {test_accuracy}\n")
+                    f.write(f"SEED{str(seed)}\n")
                     f.write("\n")
                     
                 plot_convergence(history, model_func.__name__, angulo, i, message)
@@ -117,275 +129,77 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
 
 import re
 if __name__ == "__main__":
+    ##train12 - Yolov8x-seg 
+    #train_yolo_seg()
 
-    
+    #train_models([ResNet34], "Unet_dataset", resize=True, target=224, message="Unet_ResNet34_224_batch_8")
+    #train_models([ResNet34], "Yolo_dataset", resize=True, target=224, message="ResNet34_224_batch_8")
+    #train_models([ResNet34], "np_dataset_v2", resize=True, target=224, message="ResNet34V2_224_batch_8")
 
-    format_data("raw_dataset", "np_dataset_v2", exclude=True, exclude_path="Termografias_Dataset_Segmentação/images")
-
-
-
-    #U-Net
-    ##################################################################################################
-
-    ######Código que possibilita testar a U-NEt em imagens especificas e verificar de forma visual######
-    """
-    img_test = np.load("np_dataset/imagens_test_Frontal.npy")
-
-    print(img_test.shape)
-
-    img = img_test[22]
-    origin = img
-
-    img = np.expand_dims(img, axis=0)
-    img = np.expand_dims(img, axis=-1)
-
-    print(img.shape)
-
-
-    model = tf.keras.models.load_model("modelos/unet/unet.h5")
-
-    pred = model.predict(img)
-
-    pred = np.squeeze(pred, axis=0)
-
-    if pred.shape[-1] == 1:
-        pred = pred[:, :, 0]
-        mask = (pred > 0.5).astype(np.uint8)
-    else:
-        mask = np.argmax(pred, axis=-1)
-
-    plt.figure(figsize=(10, 5))
-    plt.imshow(origin, cmap='gray')
-    plt.imshow(mask, cmap='jet', alpha=0.5)
-    plt.axis('off')
-    plt.savefig("unet_pred.png")
-    plt.close()
-    """
-    
-    ######Código para testar u-net no caso de uma paciente sem uma das mamas######
-    """
-    model = tf.keras.models.load_model("modelos/unet/unet.h5")
-    
-    imagem = Image.open("output/ImgTESTE.jpg").convert('L')
-
-    imagem = np.array(imagem)
-
-    imagem = np.expand_dims(imagem, axis=0)
-    imagem = np.expand_dims(imagem, axis=-1)
-
-    imagem = imagem / 255.0
-
-    pred = model.predict(imagem)
-
-    pred = np.squeeze(pred, axis=0)
-
-    
-    mask = (pred > 0.5).astype(np.uint8)
-
-    
-
-    plt.figure(figsize=(10, 5))
-    plt.imshow(imagem[0], cmap='gray')
-    plt.imshow(mask, cmap='jet', alpha=0.5)
-    plt.axis('off')
-    plt.savefig("unet_pred_TESTE.png")
-    plt.close()
-    """
-
-    ######train U-Net model######
-    """
-    #imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks("Left45", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
-    
-    model = unet_model()
-
-    model.summary()
-
-    earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=20, verbose=1, mode='auto')
-
-    checkpoint = tf.keras.callbacks.ModelCheckpoint("modelos/unet/L45unet.h5", monitor='val_loss', verbose=1, save_best_only=True, 
-                                                            save_weights_only=False, mode='auto')
-
-    history = model.fit(imgs_train, masks_train, epochs = 200, validation_data= (imgs_valid, masks_valid), callbacks= [checkpoint, earlystop], batch_size = 4, verbose = 1, shuffle = True)
-    
-    # Gráfico de perda de treinamento
-    plt.figure(figsize=(10, 6))
-    plt.plot(history.history['loss'], label='Training Loss')
-    plt.title(f'Training Loss Convergence for unet - Frontal')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(f"unet_loss_convergence_L45.png")
-    plt.close()
-    
-    plt.figure(figsize=(10, 6))
-    plt.plot(history.history['val_loss'], label='Validation Loss')
-    plt.title(f'Validation Loss Convergence for unet - Frontal')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(f"unet_val_loss_convergence_L45.png")
-    plt.close()
-    """
-
-
-    ######Código para avaliar o modelo U-Net######
-    """
-    model = keras.models.load_model("modelos/unet/L45unet.h5")
-
-    img_test = np.load("np_dataset/imagens_test_Left45.npy")
-
-    print(img_test.shape)
-
-    loss, acc = model.evaluate(imgs_valid, masks_valid, verbose=1)
-
-    print(f"Loss: {loss}")
-    print(f"Accuracy: {acc}")
-    """
-    ########################################################################################################
-    #U-NET
-
-
-
-    #YOLO
-    ########################################################################################################
-    
-    #Função para montar dataset para o modelo YOLO
-    """
-    YoLo_Data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
-    """
-
-    #Função para treinar o modelo YOLO
-    """
-    train_yolo_seg()
-    """
-
-    #Caminho para carregar o modelo YOLO
-    """
-    model_path = 'runs/segment/train9/weights/best.pt'
-    """
-
-    # Transformar uma imagem em numpy para jpg em 224x224 e salvar
-    """
-    img_test = np.load("np_dataset/imagens_test_Frontal.npy")
-
-    img = img_test[16]
-    origin = img
-
-    img = np.expand_dims(img, axis=0)
-    img = np.expand_dims(img, axis=-1)
-
-    print(img.shape)
-
-    img = tf.image.resize_with_pad(img, 224, 224, method="bicubic")
-
-    img = np.squeeze(img, axis=-1)
-    img = np.squeeze(img, axis=0)
-
-    # Converter a imagem para o modo 'L' (luminância)
-    img = Image.fromarray((img * 255).astype(np.uint8), mode='L')
-
-    img.save("ImgTESTE()2.jpg")  
-    """
-
-    ########################################################################################################
-    #YOLO
-
-
-    
-    
-    #AVALIANDO YOLO E U-NET
-    ########################################################################################################
-    """
-    imgs, masks = load_imgs_masks_only("Frontal", "Yolo_dataset/images/val", "Yolo_dataset/masks/val")
-
-    print(imgs.shape)
-    print(masks.shape)
-
-    model = tf.keras.models.load_model("modelos/unet/unet.h5")
-
-    pred = model.predict(imgs)
-
-    print(pred.shape)
-
-    pred_masks = (pred > 0.5).astype(np.uint8)
-
-    pred_masks = np.squeeze(pred_masks, axis=-1)
-
-    acuracies = []
-
-
-
-    for i in range(len(masks)):
-        #pred_masks[i]= np.squeeze(pred_masks[i], axis=-1)
-
-        acc = dice_coefficient(masks[i], pred_masks[i])
-        print(f"Pixel Accuracy: {acc:.4f}")
-        acuracies.append(acc)
-
-    mean_accuracy = np.mean(acuracies)
-    print(f"Pixel Accuracy Média: {mean_accuracy:.4f}")
-
-
-    # Carregando o modelo YOLOv8-seg
-    model = YOLO('runs/segment/train9/weights/best.pt')
-
-    img_path = "Yolo_dataset/images/val"
-    img_files = os.listdir(img_path)
-
-    mask_path = "Yolo_dataset/masks/val"
-    mask_files = os.listdir(mask_path)
-
-    predicted_masks = []
-
-    # Processa as imagens e gera as máscaras preditas
-    for img_file in img_files:
-        image_full_path = os.path.join(img_path, img_file)
-    
-        # Obtém as predições para a imagem
-        results = model.predict(image_full_path, task='segment')
-    
-        # Cria uma máscara vazia com dimensões fixas (certifique-se de que são compatíveis com a ground truth)
-        mask_union = np.zeros((192, 224), dtype=np.uint8)
-    
-        if results[0].masks is not None:
-            for mask in results[0].masks.data:
-                mask_np = mask.cpu().numpy()
-                mask_bin = (mask_np > 0.5).astype(np.uint8)
-                mask_union = np.logical_or(mask_union, mask_bin).astype(np.uint8)
-    
-        predicted_masks.append(mask_union)
-
-    # Carrega as máscaras ground truth (garantindo que sejam do mesmo tamanho e binárias)
-    ground_truth_masks = []
-    for mask_file in mask_files:
-        mask_full_path = os.path.join(mask_path, mask_file)
-        # Lê a imagem em escala de cinza
-        mask_img = cv2.imread(mask_full_path, cv2.IMREAD_GRAYSCALE)
-    
-        # Redimensiona, se necessário, para (192, 224)
-        mask_img = cv2.resize(mask_img, (224, 192))
-    
-        # Binariza a máscara (ajuste o limiar conforme necessário)
-        mask_bin = (mask_img > 127).astype(np.uint8)
-        ground_truth_masks.append(mask_bin)
-
-    # Calcula a Pixel Accuracy para cada par de máscara ground truth e predita
-    pixel_accuracies = []
-    for gt_mask, pred_mask in zip(ground_truth_masks, predicted_masks):
-        acc = dice_coefficient(gt_mask, pred_mask)
-        pixel_accuracies.append(acc)
-
-    mean_accuracy = np.mean(pixel_accuracies)
-    print(f"Pixel Accuracy Média: {mean_accuracy:.4f}")
-    """
-    ########################################################################################################
-    #AVALIANDO YOLO E U-NET
-
-
+    move_files_to_folder(["Frontal_Unet.h5"],"modelos/unet")
     
 
 
 
+    # Código utilizado para segmentar o dataset utilizado o YOLO-seg
+    """
+    model_path = "runs/segment/train12/weights/best.pt"
 
+    model = YOLO(model_path)
+
+    data_train, labels_train, data_valid, labels_valid, data_test, labels_test = load_data("Frontal","np_dataset_v2")
+    
+    segmented_images = []
+
+    for img in data_train:
+        if img.dtype != np.uint8:
+            img = (img * 255).astype(np.uint8)
+        # Se a imagem for 2D (sem canal), converte para 3 canais
+        if img.ndim == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        # Se a imagem tiver 1 canal (shape: (480,640,1)), replica o canal para formar 3 canais
+        elif img.ndim == 3 and img.shape[2] == 1:
+            img = np.repeat(img, 3, axis=-1)
+        
+        # Redimensionar para 224x224
+        img_resized = cv2.resize(img, (224, 224))
+                
+        # Obter as predições do YOLO-seg
+        results = model.predict(img_resized)
+        
+        if results and len(results[0].masks) > 0:
+            # Seleciona a primeira máscara (a de maior probabilidade)
+            masks = results[0].masks
+            mask_tensor = masks.data[0]
+            mask = mask_tensor.cpu().numpy()
+
+            # Redimensionar a máscara para 224x224
+            if mask.shape[:2] != (224, 224):
+                mask = cv2.resize(mask, (224, 224))
+
+            # Converter a máscara para binária (threshold = 0.5)
+            binary_mask = (mask > 0.5).astype(np.uint8)
+            if binary_mask.ndim == 2:
+                binary_mask = np.expand_dims(binary_mask, axis=-1)
+
+            # Aplicar a máscara à imagem (multiplicação pixel a pixel)
+            segmented_img = img_resized * binary_mask
+        else:
+            segmented_img = img_resized
+
+        segmented_images.append(segmented_img)
+
+    segmented_images = np.array(segmented_images)
+
+    os.makedirs("Yolo_dataset", exist_ok=True)
+
+    np.save(f"Yolo_dataset/imagens_train_Frontal.npy", segmented_images)
+    np.save(f"Yolo_dataset/labels_train_Frontal.npy", labels_train)
+    np.save(f"Yolo_dataset/imagens_valid_Frontal.npy", data_valid)
+    np.save(f"Yolo_dataset/labels_valid_Frontal.npy", labels_valid)
+    np.save(f"Yolo_dataset/imagens_test_Frontal.npy", data_test)
+    np.save(f"Yolo_dataset/labels_test_Frontal.npy", labels_test)
+
+
+    print("Segmentação concluída e dataset salvo!")
+    """

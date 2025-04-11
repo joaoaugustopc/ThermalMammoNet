@@ -28,3 +28,7 @@ history/
 Termografias_Dataset_Segmentação/
 runs/segment/
 np_dataset_v2/
+yolov8x-seg.pt
+yolov8m-seg.pt
+yolo11n.pt
+Unet_dataset/
