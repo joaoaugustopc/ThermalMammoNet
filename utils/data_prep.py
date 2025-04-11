@@ -442,7 +442,7 @@ def filtrar_imgs_masks(angulo, img_path, mask_path):
     return data_imgs, data_masks
 
 
-def load_imgs_masks(angulo, img_path, mask_path):
+def load_imgs_masks(angulo, img_path, mask_path, augment=False):
     """
     Carrega imagens e máscaras em formato numpy arrays normalizados (0 a 1).
     Retorna as listas imgs_train, imgs_valid, masks_train, masks_valid.
@@ -456,7 +456,17 @@ def load_imgs_masks(angulo, img_path, mask_path):
         imagens, mascaras, test_size=0.2, random_state=42
     )
 
-    return np.array(imgs_train), np.array(imgs_valid), np.array(masks_train), np.array(masks_valid)
+    imgs_train = np.array(imgs_train)
+    masks_train = np.array(masks_train)
+    imgs_valid = np.array(imgs_valid)
+    masks_valid = np.array(masks_valid)
+
+    if augment:
+        imgs_train_aug, masks_train_aug = apply_augmentation_and_expand_seg(
+            imgs_train, masks_train, num_augmented_copies = 1, resize=False
+        )
+
+    return imgs_train_aug, imgs_valid, masks_train_aug, masks_valid
 
 def load_imgs_masks_only(angulo, img_path, mask_path):
     """
@@ -613,6 +623,74 @@ def listar_imgs_nao_usadas(directory, angulo):
                 nome_adequado = f"{int(paciente)}_img_Static-{angulo}°_{data}.txt"
             nomesexcluidos.add(nome_adequado)
     return nomesexcluidos
+
+
+def apply_augmentation_and_expand_seg(images, masks, num_augmented_copies, resize=False, target_size=0):
+
+    VALUE_SEED = int(time.time() * 1000) % 15000
+    random.seed(VALUE_SEED)
+    print(f"***SEMENTE USADA****: {VALUE_SEED}")
+    
+    
+    images = np.expand_dims(images, axis=-1)
+    masks = np.expand_dims(masks, axis=-1)
+
+    all_images = []
+    all_masks = []
+
+    # Adiciona os dados originais
+    for img, mask in zip(images, masks):
+        all_images.append(img)
+        all_masks.append(mask)
+
+    # Transformações espaciais que devem ser aplicadas de forma sincronizada
+    spatial_transformations = [random_rotation, random_zoom, random_flip]
+
+    for _ in range(num_augmented_copies):
+        for img, mask in zip(images, masks):
+            for transformation in spatial_transformations:
+                # Usa um seed para garantir que a transformação aplicada na imagem e na máscara seja a mesma
+                seed = random.randint(0, 10000)
+                
+                random.seed(seed)
+                aug_img = apply_transformation(img, transformation)
+                
+                random.seed(seed)
+                aug_mask = apply_transformation(mask, transformation)
+                
+                all_images.append(aug_img)
+                all_masks.append(aug_mask)
+
+    # Transformações que serão aplicadas apenas nas imagens: brilho e contraste.
+    image_only_transformations = [random_brightness, random_contrast]
+
+    for _ in range(num_augmented_copies):
+        for img, mask in zip(images, masks):
+            for transformation in image_only_transformations:
+                # Para estas transformações não é necessário sincronizar com a máscara.
+                aug_img = apply_transformation(img, transformation)
+                all_images.append(aug_img)
+                # A máscara permanece inalterada
+                all_masks.append(mask)
+
+    # Converte as listas em arrays do numpy
+    all_images = np.array(all_images)
+    all_masks = np.array(all_masks)
+
+    # Se solicitado, redimensiona as imagens e máscaras com padding utilizando TensorFlow
+    if resize:
+        all_images = tf.image.resize_with_pad(all_images, target_size, target_size, method="bilinear")
+        all_masks = tf.image.resize_with_pad(all_masks, target_size, target_size, method="bilinear")
+
+    # Se o canal adicionado não for necessário para o treinamento, pode-se remover a dimensão extra
+    all_images = np.squeeze(all_images, axis=-1)
+    all_masks = np.squeeze(all_masks, axis=-1)
+
+    # Visualização ou prints de verificação (opcional)
+    print("Shape das imagens aumentadas:", all_images.shape)
+    print("Shape das máscaras aumentadas:", all_masks.shape)
+    
+    return all_images, all_masks
 
 
 
