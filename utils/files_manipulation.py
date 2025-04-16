@@ -29,10 +29,28 @@ def rename_file(current_path, new_path):
     else:
         print(f"Arquivo {current_path} não encontrado.")
         
-        
+    
 def rename_folder(current_folder_path, new_folder_path):
     if os.path.exists(current_folder_path):
         os.rename(current_folder_path, new_folder_path)
         print(f"Pasta {current_folder_path} renomeada para {new_folder_path}.")
     else:
         print(f"Pasta {current_folder_path} não encontrada.")
+
+def move_files_within_folder(source_folder, destination_folder):
+    if not os.path.exists(destination_folder):
+        os.makedirs(destination_folder)
+    for file_name in os.listdir(source_folder):
+        source_file = os.path.join(source_folder, file_name)
+        if os.path.isfile(source_file):
+            shutil.move(source_file, destination_folder)
+            print(f"Arquivo {source_file} movido para {destination_folder}.")
+        else:
+            print(f"{source_file} não é um arquivo.")
+
+def create_folder(folder_path):
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+        print(f"Pasta {folder_path} criada.")
+    else:
+        print(f"Pasta {folder_path} já existe.")

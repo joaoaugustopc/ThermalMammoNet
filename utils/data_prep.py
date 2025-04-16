@@ -493,6 +493,8 @@ def criar_pastas_yolo():
         "Yolo_dataset/masks",
         "Yolo_dataset/masks/train",
         "Yolo_dataset/masks/val",
+        "Yolo_dataset/labels/train",
+        "Yolo_dataset/labels/val"
     ]
     
     for pasta in pastas:
@@ -528,9 +530,18 @@ def YoLo_Data(angulo, img_path, mask_path):
     mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid)
     
     input_dir = 'Yolo_dataset/masks/val'
+
     output_dir = 'Yolo_dataset/labels/val'
 
     masks_to_polygons(input_dir, output_dir)
+    
+    input_dir = 'Yolo_dataset/masks/train'
+    output_dir = 'Yolo_dataset/labels/train'
+    
+    masks_to_polygons(input_dir, output_dir)
+    
+
+    
 
 
 
@@ -539,6 +550,7 @@ def view_pred_mask(model, img):
 
     imagem = np.expand_dims(img, axis=0)
     imagem = np.expand_dims(img, axis=-1)
+# train_yolo_seg()
 
     pred = model.predict(imagem)
 
@@ -703,6 +715,43 @@ def apply_augmentation_and_expand_seg(images, masks, num_augmented_copies, resiz
  
 
 
+
+
+"""
+Função para extrair os pacientes que não participaram da segmentação
+Params:
+source_folders: lista de pasta com todos os pacientes que participariam do treinamento
+exclude_folders: lista de pasta com todos os pacientes que estão na segmentação
+destination_folder: pasta para alocar pacientes para o treinamento que não estão na segmentação
+"""
+
+def copy_images_excluding_patients(source_folders, exclude_folders, destination_folder):
+    """
+    Copia as imagens dos pacientes que não estão nas pastas de exclusão para a pasta de destino.
+    """
+    if not os.path.exists(destination_folder):
+        os.makedirs(destination_folder)
+    
+    
+    # Extrair IDs dos pacientes nas pastas de exclusão
+    exclude_patient_ids = []
+    for exclude_folder in exclude_folders:
+        for filename in os.listdir(exclude_folder):
+            if filename.endswith('.jpg'):
+                patient_id = filename.split('T0')[1].split('.')  # Extrair o ID do paciente da imagem
+                exclude_patient_ids.append(patient_id)
+    
+    
+    # Copiar imagens dos pacientes que não estão nas pastas de exclusão
+    for source_folder in source_folders:
+        for filename in os.listdir(source_folder):
+            if filename.endswith('.txt'):  # Ajuste conforme necessário
+                patient_id = filename.split('_')[0]  # Extrair o ID do paciente do arquivo de texto
+                if patient_id not in exclude_patient_ids:
+                    source_path = os.path.join(source_folder, filename)
+                    destination_path = os.path.join(destination_folder, filename)
+                    shutil.copy(source_path, destination_path)
+                    print(f"Imagem {filename} copiada para {destination_folder}")
 
 
     
