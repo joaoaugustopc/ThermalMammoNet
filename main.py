@@ -19,18 +19,77 @@ tf.random.set_seed(seed)
 np.random.seed(seed)
 """
 
+#Função para transformar as imagens de .txt para .jpg
+def raw_dataset_to_png(directory, exclude = False, exclude_set = None):
 
+    arquivos = os.listdir(directory)
 
-print("***SEMENTE USADA****:", VALUE_SEED)
+    print(arquivos)
 
-# Salvar a semente em um arquivo de texto
-with open("seed_global", "w") as seed_file:
-    seed_file.write(f"VALUE_SEED: {VALUE_SEED}\n")
-    seed_file.write(f"Random Seed: {seed}\n")
+    healthy_path = os.path.join(directory, 'healthy')
+    sick_path = os.path.join(directory, 'sick')
+
+    healthy = os.listdir(healthy_path)
+    sick = os.listdir(sick_path)
+
+    imagens = []
+    labels = []
+    ids = []
+
+    for arquivo in healthy:
+
+        if exclude and arquivo in exclude_set:
+            print(f"Excluindo {arquivo}")
+            continue
+
+        path = os.path.join(healthy_path, arquivo)
+        try:
+          with open(path, 'r') as f:
+            primeira_linha = f.readline()
+            if ';' in primeira_linha:
+              delimiter = ';'
+            else:
+              delimiter = ' '
+          imagem = np.loadtxt(path, delimiter=delimiter)
+
+          os.makedirs("raw_png_dataset/Frontal/healthy", exist_ok=True)
+
+          #Salvar a imagem como .png
+          plt.imsave(os.path.join("raw_png_dataset/Frontal/healthy", arquivo.replace('.txt', '.png')), imagem, cmap='gray')
+          
+        except ValueError as e:
+          print(e)
+          print(arquivo)
+          continue
+
+    for arquivo in sick:
+
+        if exclude and arquivo in exclude_set:
+            print(f"Excluindo {arquivo}")
+            continue
+
+        path = os.path.join(sick_path, arquivo)
+        try:
+          with open(path, 'r') as f:
+            primeira_linha = f.readline()
+            if ';' in primeira_linha:
+              delimiter = ';'
+            else:
+              delimiter = ' '
+            f.seek(0)
+          imagem = np.loadtxt(path, delimiter=delimiter)
+
+          os.makedirs("raw_png_dataset/Frontal/sick", exist_ok=True)
+          
+          plt.imsave(os.path.join("raw_png_dataset/Frontal/sick", arquivo.replace('.txt', '.png')), imagem, cmap='gray')
+
+        except ValueError as e:
+          print(e)
+          print(arquivo)
+          continue
 
 
 def train_models(models_objects, dataset: str, resize=False, target = 0, message=""):
-    list = ["Frontal"]
     list = ["Frontal"]
     models = models_objects
                 
@@ -84,7 +143,6 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
                                                             save_weights_only=False, mode='auto')
                 
                 earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
-                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
 
                 #reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.05,patience=15, min_lr=1e-5, min_delta=0.0001)
 
@@ -95,7 +153,7 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
                 
 
                 # Salva a seed em um arquivo de texto
-                with open("random_seed_vgg.txt", "a") as file:
+                with open("modelos/random_seed.txt", "a") as file:
                     file.write(str(seed))
                     file.write("\n")
 
@@ -134,7 +192,7 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
                     f.write(f"SEED{str(seed)}\n")
                     f.write("\n")
                     
-                plot_convergence(history, model_func.__name__, angulo, i, "Vgg_16")
+                plot_convergence(history, model_func.__name__, angulo, i, message)
 
 #TODO: calcular f1, IoU, recall, accuracy
 #TODO: comparar unet com yolo
@@ -342,20 +400,285 @@ def segment_and_save_pngdataset(model_path, input_dir, output_dir, ext_txt=".txt
 
 
 if __name__ == "__main__":
-    ##train12 - Yolov8x-seg 
-    #train_yolo_seg()
 
-    #train_models([ResNet34], "Unet_dataset", resize=True, target=224, message="Unet_ResNet34_224_batch_8")
-    #train_models([ResNet34], "Yolo_dataset", resize=True, target=224, message="ResNet34_224_batch_8")
-    #train_models([ResNet34], "np_dataset_v2", resize=True, target=224, message="ResNet34V2_224_batch_8")
+    raw_dataset_to_png("raw_dataset/Frontal")
 
-    move_files_to_folder(["Frontal_Unet.h5"],"modelos/unet")
+
+    
+     
+    # 1. Treinamento do modelo UNET com o dataset AUMENTADO
+
+
+
+    """
+    imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks", True)
+
+
+    VALUE_SEED = int(time.time()*1000) % 15000
+    random.seed(VALUE_SEED)
+
+    print(f"Valor da semente: {VALUE_SEED}")
+                
+    seed = random.randint(0,15000)  
+                
+    tf.keras.utils.set_random_seed(seed)
+    tf.config.experimental.enable_op_determinism()
+
+    model = unet_model()
+
+    model.summary()
+
+    earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
+
+    checkpoint = tf.keras.callbacks.ModelCheckpoint("modelos/unet/Frontal_Unet_AUG.h5", monitor='val_loss', verbose=1, save_best_only=True, 
+                                                            save_weights_only=False, mode='auto')
+
+    history = model.fit(imgs_train, masks_train, epochs = 500, validation_data= (imgs_valid, masks_valid), callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
+
+    # Gráfico de perda de treinamento
+    plt.figure(figsize=(10, 6))
+    plt.plot(history.history['loss'], label='Training Loss')
+    plt.title(f'Training Loss Convergence for unet - Frontal')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(f"unet_loss_convergence_Frontal.png")
+    plt.close()
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title(f'Validation Loss Convergence for unet - Frontal')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(f"unet_val_loss_convergence_Frontal.png")
+    plt.close()
+    """
+
+
+
+
+    ### 2. Treinamento do modelo YoloX-seg com o dataset AUMENTADO
+
+
+
+    #YoLo_Data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks", "Yolo_dataset_aug", True)
+    #train_yolo_seg("x", 500, "dataset.yaml", 224, seed=7758)
+
+    ### 3. Aumentando np_dataset_v2
+
+
+    #create_aug_dataset(1, "np_dataset_v2","AUG_dataset_v2")
+
+
+
+    # 4. Segmentando o AUG_dataset_v2 com a UNET
+
+
+
+    """
+    model = tf.keras.models.load_model("modelos/unet/Frontal_Unet_AUG.h5")
+
+    data_train, labels_train, data_valid, labels_valid, data_test, labels_test = load_data("Frontal","AUG_dataset_v2")
+
+    predictions = model.predict(data_train, batch_size = 4)
+
+    masks = (predictions > 0.5).astype(np.uint8)
+
+    masks = np.squeeze(masks, axis=-1)
+
+    segmented_images = data_train * masks
+
+    os.makedirs("Unet_dataset_AUG", exist_ok=True)
+
+    np.save(f"Unet_dataset_AUG/imagens_train_Frontal.npy", segmented_images)
+    np.save(f"Unet_dataset_AUG/labels_train_Frontal.npy", labels_train)
+    np.save(f"Unet_dataset_AUG/imagens_valid_Frontal.npy", data_valid)
+    np.save(f"Unet_dataset_AUG/labels_valid_Frontal.npy", labels_valid)
+    np.save(f"Unet_dataset_AUG/imagens_test_Frontal.npy", data_test)
+    np.save(f"Unet_dataset_AUG/labels_test_Frontal.npy", labels_test)
+    """
+
+    #######  5. Carregamento do modelo Yolo e Segmentação do dataset AUG_dataset_v2 #######
+
+    """
+
+    model_path = "runs/segment/train13/weights/best.pt"
+
+    model = YOLO(model_path)
+
+    data_train, labels_train, data_valid, labels_valid, data_test, labels_test = load_data("Frontal","AUG_dataset_v2")
+
+    segmented_images = []
+
+    for img in data_train:
+        if img.dtype != np.uint8:
+            img = (img * 255).astype(np.uint8)
+        # Se a imagem for 2D (sem canal), converte para 3 canais
+        if img.ndim == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        # Se a imagem tiver 1 canal (shape: (480,640,1)), replica o canal para formar 3 canais
+        elif img.ndim == 3 and img.shape[2] == 1:
+            img = np.repeat(img, 3, axis=-1)
+        
+        # Redimensionar para 224x224
+        img_resized = cv2.resize(img, (224, 224))
+                
+        # Obter as predições do YOLO-seg
+        results = model.predict(img_resized)
+        
+        if results and len(results[0].masks) > 0:
+            # Seleciona a primeira máscara (a de maior probabilidade)
+            masks = results[0].masks
+            mask_tensor = masks.data[0]
+            mask = mask_tensor.cpu().numpy()
+
+            # Redimensionar a máscara para 224x224
+            if mask.shape[:2] != (224, 224):
+                mask = cv2.resize(mask, (224, 224))
+
+            # Converter a máscara para binária (threshold = 0.5)
+            binary_mask = (mask > 0.5).astype(np.uint8)
+            if binary_mask.ndim == 2:
+                binary_mask = np.expand_dims(binary_mask, axis=-1)
+
+            # Aplicar a máscara à imagem (multiplicação pixel a pixel)
+            segmented_img = img_resized * binary_mask
+        else:
+            segmented_img = img_resized
+
+        segmented_images.append(segmented_img)
+
+    segmented_images = np.array(segmented_images)
+
+    os.makedirs("Yolo_dataset_AUG", exist_ok=True)
+
+    np.save(f"Yolo_dataset_AUG/imagens_train_Frontal.npy", segmented_images)
+    np.save(f"Yolo_dataset_AUG/labels_train_Frontal.npy", labels_train)
+    np.save(f"Yolo_dataset_AUG/imagens_valid_Frontal.npy", data_valid)
+    np.save(f"Yolo_dataset_AUG/labels_valid_Frontal.npy", labels_valid)
+    np.save(f"Yolo_dataset_AUG/imagens_test_Frontal.npy", data_test)
+    np.save(f"Yolo_dataset_AUG/labels_test_Frontal.npy", labels_test)
+
+
+    print("Segmentação concluída e dataset salvo!")
+    """
+
+    #### Código para remover 3 canais e "Renormalizar imagens" depois da segmentação do dataset utilizando a Yolo #####
+
+    """
+        a, b, c, d, e, f = load_data("Frontal", "Yolo_dataset_AUG")
+        
+        array = []
+
+    # Exemplo hipotético de loop processando imagens
+        for i, img in enumerate(a):
+        # Se a imagem tiver 3 canais (H, W, 3), converta para cinza
+        if img.ndim == 3 and img.shape[-1] == 3:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # (H, W)
+            gray = np.expand_dims(gray, axis=-1)          # (H, W, 1)
+            img = gray
+            img = (img / 255.0).astype(np.float32)
+        
+        # Se ela já tiver shape (H, W, 1), não precisa fazer nada
+        # Se estiver em 2D (H, W) e você quiser (H, W, 1), basta expandir a dimensão
+        elif img.ndim == 2:
+            img = np.expand_dims(img, axis=-1)
+        
+        # Agora 'img' tem shape (H, W, 1), pronto para o modelo de classificação
+        # ...
+
+        array.append(img)
+
+        array = np.array(array).squeeze(axis=-1)
+
+        print(array.shape)
+
+        np.save("Yolo_dataset_AUG/imagens_train_Frontal.npy", array)
+
+        """
     
 
 
+    # 6. Treinamento do modelo ResNet34 com os datasets 
+    #train_models([ResNet34], "Unet_dataset_AUG", resize=True, target=224, message="AUG_Unet_ResNet34_224_batch_8")
+    #train_models([ResNet34], "Yolo_dataset_AUG", resize=True, target=224, message="AUG_ResNet34_224_batch_8")
+    #train_models([ResNet34], "AUG_dataset_v2", resize=True, target=224, message="AUG_ResNet34V2_224_batch_8")
+
+
+"""
+
+    
+    idx = 84
+    
+    img = imgs_train[idx]
+    mask = masks_train[idx]
+
+    
+
+    mask = (mask > 0.5).astype(np.uint8)
+
+    img_seg = img * mask
+
+    plt.figure(figsize=(10, 5))
+    plt.subplot(1, 3, 1)
+    plt.imshow(img)
+    plt.title('Imagem Original')
+    plt.axis('off')
+    plt.subplot(1, 3, 2)
+    plt.imshow(mask)
+    plt.title('Máscara')
+    plt.axis('off')
+    plt.subplot(1, 3, 3)
+    plt.imshow(img_seg)
+    plt.title('Imagem Segmentada')
+    plt.axis('off')
+    plt.tight_layout()
+    plt.savefig("segmentada.png")
+
+    """
+
+    # Caminhos da imagem e máscara específicas
+"""
+    caminho_img = "TESTEAUG/images/train/aug_0142.png"
+    caminho_mask = "TESTEAUG/masks/train/aug_0142.png"
+
+    # 1. Carrega imagem e máscara como arrays normalizados [0, 1]
+    img = np.array(Image.open(caminho_img).convert("L")) / 255.0
+    mask = np.array(Image.open(caminho_mask).convert("L")) / 255.0
+
+    # 2. Converte a máscara para binária
+    mask = (mask > 0.5).astype(np.uint8)
+
+    # 3. Aplica a máscara à imagem
+
+    img_segmentada = img * mask
+
+    plt.figure(figsize=(10, 5))
+    plt.subplot(1, 3, 1)
+    plt.imshow(img, cmap='gray')
+    plt.title('Imagem Original')
+    plt.axis('off')
+    plt.subplot(1, 3, 2)
+    plt.imshow(mask, cmap='gray')
+    plt.title('Máscara')
+    plt.axis('off')
+    plt.subplot(1, 3, 3)
+    plt.imshow(img_segmentada, cmap='gray')
+    plt.title('Imagem Segmentada')
+    plt.axis('off')
+    plt.tight_layout()
+
+    plt.savefig("segmentada.png")
+       
+
+
+    """
 
     # Código utilizado para segmentar o dataset utilizado o YOLO-seg
-    """
+"""
     model_path = "runs/segment/train12/weights/best.pt"
 
     model = YOLO(model_path)

@@ -32,3 +32,4 @@ yolov8x-seg.pt
 yolov8m-seg.pt
 yolo11n.pt
 Unet_dataset/
+raw_png_dataset/

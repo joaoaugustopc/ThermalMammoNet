@@ -14,7 +14,7 @@ random.seed(SEED)
 """
 
 #Arrays Numpy
-def load_data(angulo, folder = "np_dataset"):
+def load_data(angulo, folder = ""):
 
     imagens_train = np.load(f"{folder}/imagens_train_{angulo}.npy")
     labels_train = np.load(f"{folder}/labels_train_{angulo}.npy")
@@ -287,6 +287,14 @@ def apply_transformation(image, transformation):
 """
 def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=False, target_size=0):
 
+    print("Aumentando o dataset com cópias aumentadas...")
+    print("Shape original das imagens:", train.shape)
+    print("Shape original das máscaras:", labels.shape)
+
+    #VALUE_SEED = int(time.time() * 1000) % 15000
+    VALUE_SEED = 12274
+    random.seed(VALUE_SEED)
+    print(f"***SEMENTE USADA****: {VALUE_SEED}")
 
     train = np.expand_dims(train, axis=-1)
     
@@ -306,10 +314,16 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
         i = 0
         for image, label in zip(train, labels):
             for transformation in transformations:  # Aplicar cada transformação separadamente
+                
+                seed = random.randint(0, 10000)
+                
+                random.seed(seed)
+                
                 augmented_image = apply_transformation(image, transformation)
                 
                 # Aleatoriamente decidir se vai aplicar random_flip
                 if random.random() > 0.5:  # 50% de chance de aplicar o flip
+                    random.seed(seed)
                     augmented_image = apply_transformation(augmented_image, random_flip)
                 
 
@@ -351,6 +365,8 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
     
     #teste
     #visualize_augmentation(all_images[:10], all_images[156:166], 10)
+
+    print("Shape das imagens aumentadas:", all_images.shape)
     
     
     return all_images, all_labels    
@@ -481,43 +497,43 @@ def load_imgs_masks_only(angulo, img_path, mask_path):
     return np.array(imagens), np.array(mascaras)
 
 
-def criar_pastas_yolo():
+def criar_pastas_yolo(Directory = ""):
     """
     Cria a estrutura de diretórios para armazenar as imagens e máscaras do YOLO.
     """
     pastas = [
-        "Yolo_dataset",
-        "Yolo_dataset/images",
-        "Yolo_dataset/images/train",
-        "Yolo_dataset/images/val",
-        "Yolo_dataset/masks",
-        "Yolo_dataset/masks/train",
-        "Yolo_dataset/masks/val",
-        "Yolo_dataset/labels/train",
-        "Yolo_dataset/labels/val"
+        f"{Directory}",
+        f"{Directory}/images",
+        f"{Directory}/images/train",
+        f"{Directory}/images/val",
+        f"{Directory}/masks",
+        f"{Directory}/masks/train",
+        f"{Directory}/masks/val",
+        f"{Directory}/labels/train",
+        f"{Directory}/labels/val"
     ]
     
     for pasta in pastas:
         os.makedirs(pasta, exist_ok=True)
 
 
-def mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid):
+def mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid, Directory = ""):
     """
     Move imagens e máscaras para os diretórios adequados dentro de Yolo_dataset.
     """
-    criar_pastas_yolo()
+    criar_pastas_yolo(Directory)
 
     for img in imgs_train:
-        shutil.copy(img, "Yolo_dataset/images/train")
+        shutil.copy(img, f"{Directory}/images/train")
     for img in imgs_valid:
-        shutil.copy(img, "Yolo_dataset/images/val")
+        shutil.copy(img, f"{Directory}/images/val")
     for mask in masks_train:
-        shutil.copy(mask, "Yolo_dataset/masks/train")
+        shutil.copy(mask, f"{Directory}/masks/train")
     for mask in masks_valid:
-        shutil.copy(mask, "Yolo_dataset/masks/val")
+        shutil.copy(mask, f"{Directory}/masks/val")
 
 
-def YoLo_Data(angulo, img_path, mask_path):
+def YoLo_Data(angulo, img_path, mask_path, outputDir="", augment=False):
     """
     Prepara os dados de imagens e máscaras e move para a estrutura YOLO.
     """
@@ -527,18 +543,37 @@ def YoLo_Data(angulo, img_path, mask_path):
         data_imgs, data_masks, test_size=0.2, random_state=42
     )
 
-    mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid)
-    
-    input_dir = 'Yolo_dataset/masks/val'
+    mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid, outputDir)
 
-    output_dir = 'Yolo_dataset/labels/val'
+    if augment:
 
-    masks_to_polygons(input_dir, output_dir)
-    
-    input_dir = 'Yolo_dataset/masks/train'
-    output_dir = 'Yolo_dataset/labels/train'
-    
-    masks_to_polygons(input_dir, output_dir)
+        imgs_arr = [np.array(Image.open(img).convert('L')) / 255.0 for img in imgs_train]
+        masks_arr = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in masks_train]
+
+        imgs_aug, masks_aug = apply_augmentation_and_expand_seg(np.stack(imgs_arr, axis = 0), 
+                                                                np.stack(masks_arr, axis = 0), 
+                                                                num_augmented_copies=1, resize=False)
+        
+        for i, (img_a, mask_a) in enumerate(zip(imgs_aug, masks_aug)):
+            img_uint8 = (img_a * 255).astype(np.uint8)
+            mask_uint8 = (mask_a * 255).astype(np.uint8)
+
+            fname = f"aug_{i:04d}.png"
+            img_p = os.path.join(f"{outputDir}/images/train", fname)
+            mask_p = os.path.join(f"{outputDir}/masks/train", fname)
+
+            Image.fromarray(img_uint8).save(img_p)
+            Image.fromarray(mask_uint8).save(mask_p)
+
+
+    masks_to_polygons(
+        input_dir= f"{outputDir}/masks/train",
+        output_dir=f"{outputDir}/labels/train"
+    )
+    masks_to_polygons(
+        input_dir=f"{outputDir}/masks/val",
+        output_dir=f"{outputDir}/labels/val"
+    )
     
 
     
@@ -639,7 +674,12 @@ def listar_imgs_nao_usadas(directory, angulo):
 
 def apply_augmentation_and_expand_seg(images, masks, num_augmented_copies, resize=False, target_size=0):
 
-    VALUE_SEED = int(time.time() * 1000) % 15000
+    print("Aumentando o dataset com cópias aumentadas...")
+    print("Shape original das imagens:", images.shape)
+    print("Shape original das máscaras:", masks.shape)
+
+    #VALUE_SEED = int(time.time() * 1000) % 15000
+    VALUE_SEED = 12274
     random.seed(VALUE_SEED)
     print(f"***SEMENTE USADA****: {VALUE_SEED}")
     
