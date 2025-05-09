@@ -272,7 +272,7 @@ random_contrast = lambda: keras.layers.RandomContrast(factor=0.3)
 
 # Função para aplicar as transformações individualmente
 def apply_transformation(image, transformation):
-    return transformation()(image)
+    return transformation()(image).numpy()
 
 """
     Params:
@@ -469,7 +469,7 @@ def load_imgs_masks(angulo, img_path, mask_path, augment=False):
     mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
 
     imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(
-        imagens, mascaras, test_size=0.2, random_state=42
+        imagens, mascaras, test_size=0.2, random_state=42, shuffle = False
     )
 
     imgs_train = np.array(imgs_train)
@@ -479,7 +479,7 @@ def load_imgs_masks(angulo, img_path, mask_path, augment=False):
 
     if augment:
         imgs_train_aug, masks_train_aug = apply_augmentation_and_expand_seg(
-            imgs_train, masks_train, num_augmented_copies = 1, resize=False
+            imgs_train, masks_train, num_augmented_copies = 2, resize=False
         )
 
     return imgs_train_aug, imgs_valid, masks_train_aug, masks_valid
@@ -540,30 +540,16 @@ def YoLo_Data(angulo, img_path, mask_path, outputDir="", augment=False):
     data_imgs, data_masks = filtrar_imgs_masks(angulo, img_path, mask_path)
 
     imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(
-        data_imgs, data_masks, test_size=0.2, random_state=42
+        data_imgs, data_masks, test_size=0.2, random_state=42, shuffle= False
     )
 
     mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid, outputDir)
 
     if augment:
 
-        imgs_arr = [np.array(Image.open(img).convert('L')) / 255.0 for img in imgs_train]
-        masks_arr = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in masks_train]
-
-        imgs_aug, masks_aug = apply_augmentation_and_expand_seg(np.stack(imgs_arr, axis = 0), 
-                                                                np.stack(masks_arr, axis = 0), 
-                                                                num_augmented_copies=1, resize=False)
-        
-        for i, (img_a, mask_a) in enumerate(zip(imgs_aug, masks_aug)):
-            img_uint8 = (img_a * 255).astype(np.uint8)
-            mask_uint8 = (mask_a * 255).astype(np.uint8)
-
-            fname = f"aug_{i:04d}.png"
-            img_p = os.path.join(f"{outputDir}/images/train", fname)
-            mask_p = os.path.join(f"{outputDir}/masks/train", fname)
-
-            Image.fromarray(img_uint8).save(img_p)
-            Image.fromarray(mask_uint8).save(mask_p)
+        augment_and_save(
+            imgs_train, masks_train, outputDir, num_augmented_copies=2
+        )
 
 
     masks_to_polygons(
@@ -699,8 +685,8 @@ def apply_augmentation_and_expand_seg(images, masks, num_augmented_copies, resiz
     spatial_transformations = [random_rotation, random_zoom, random_flip]
 
     for _ in range(num_augmented_copies):
-        for img, mask in zip(images, masks):
-            for transformation in spatial_transformations:
+        for transformation in spatial_transformations:
+            for img, mask in zip(images, masks):    
                 # Usa um seed para garantir que a transformação aplicada na imagem e na máscara seja a mesma
                 seed = random.randint(0, 10000)
                 
@@ -712,18 +698,6 @@ def apply_augmentation_and_expand_seg(images, masks, num_augmented_copies, resiz
                 
                 all_images.append(aug_img)
                 all_masks.append(aug_mask)
-
-    # Transformações que serão aplicadas apenas nas imagens: brilho e contraste.
-    image_only_transformations = [random_brightness, random_contrast]
-
-    for _ in range(num_augmented_copies):
-        for img, mask in zip(images, masks):
-            for transformation in image_only_transformations:
-                # Para estas transformações não é necessário sincronizar com a máscara.
-                aug_img = apply_transformation(img, transformation)
-                all_images.append(aug_img)
-                # A máscara permanece inalterada
-                all_masks.append(mask)
 
     # Converte as listas em arrays do numpy
     all_images = np.array(all_images)
@@ -793,5 +767,44 @@ def copy_images_excluding_patients(source_folders, exclude_folders, destination_
                     shutil.copy(source_path, destination_path)
                     print(f"Imagem {filename} copiada para {destination_folder}")
 
+
+def augment_and_save(img_paths, mask_paths, outputDir, num_augmented_copies):
+    """
+    Gera augmentations para cada par imagem/máscara em img_paths/mask_paths,
+    salva em outputDir/images/train e outputDir/masks/train preservando
+    o nome original e prefixo 'aug_'.
+    """
+
+    VALUE_SEED = 12274
+    random.seed(VALUE_SEED)
+    print(f"***SEMENTE USADA****: {VALUE_SEED}")
+    
+    spatial_transformations = [random_rotation, random_zoom, random_flip]
+
+    for i, (img_path, mask_path) in enumerate(zip(img_paths, mask_paths)):
+        base_name = os.path.basename(img_path)
+        # Carrega e normaliza
+        img = np.expand_dims(np.array(Image.open(img_path).convert('L')) / 255.0, axis=-1)
+        mask = np.expand_dims(np.array(Image.open(mask_path).convert('L')) / 255.0, axis=-1)
+
+        
+
+        # Transformações espaciais (sincronizadas)
+        for j in range(num_augmented_copies):
+            i = 0
+            for trans in spatial_transformations:
+                i = i + 1
+                seed = random.randint(0, 10000)
+                random.seed(seed)
+                aug_img = apply_transformation(img, trans)
+                random.seed(seed)
+                aug_mask = apply_transformation(mask, trans)
+
+                fname = f"aug_{j}.{i}_{base_name}"
+                img_out = (aug_img.squeeze() * 255).astype(np.uint8)
+                mask_out = (aug_mask.squeeze() * 255).astype(np.uint8)
+
+                Image.fromarray(img_out).save(os.path.join(outputDir, 'images/train', fname))
+                Image.fromarray(mask_out).save(os.path.join(outputDir, 'masks/train', fname))
 
     
