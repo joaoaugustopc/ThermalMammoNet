@@ -265,8 +265,10 @@ def save_numpy_data(images, labels, output_dir, position):
 
 # Funções lambda para cada transformação separada
 random_flip = lambda: keras.layers.RandomFlip("horizontal")
-random_rotation = lambda: keras.layers.RandomRotation(0.05)
-random_zoom = lambda: keras.layers.RandomZoom(0.3, 0.5)
+random_rotation = lambda: keras.layers.RandomRotation(0.04, fill_mode="constant", interpolation="bilinear", fill_value=0.0)
+random_rotation_mask = lambda: keras.layers.RandomRotation(0.04, fill_mode="constant", interpolation="nearest", fill_value=0.0)
+random_zoom = lambda: keras.layers.RandomZoom(0.2, 0.2, fill_mode="constant", interpolation="bilinear", fill_value=0.0)
+random_zoom_mask = lambda: keras.layers.RandomZoom(0.2, 0.2, fill_mode="constant", interpolation="nearest", fill_value=0.0)
 random_brightness = lambda: keras.layers.RandomBrightness(factor=0.3, value_range=(0.0, 1.0))
 random_contrast = lambda: keras.layers.RandomContrast(factor=0.3)
 
@@ -682,19 +684,20 @@ def apply_augmentation_and_expand_seg(images, masks, num_augmented_copies, resiz
         all_masks.append(mask)
 
     # Transformações espaciais que devem ser aplicadas de forma sincronizada
-    spatial_transformations = [random_rotation, random_zoom, random_flip]
+    spatial_transformations_img = [random_rotation, random_zoom, random_flip]
+    spatial_transformations_mask = [random_rotation_mask, random_zoom_mask, random_flip]
 
     for _ in range(num_augmented_copies):
-        for transformation in spatial_transformations:
+        for transformation_img, transformation_mask in zip (spatial_transformations_img, spatial_transformations_mask):
             for img, mask in zip(images, masks):    
                 # Usa um seed para garantir que a transformação aplicada na imagem e na máscara seja a mesma
                 seed = random.randint(0, 10000)
                 
                 random.seed(seed)
-                aug_img = apply_transformation(img, transformation)
+                aug_img = apply_transformation(img, transformation_img)
                 
                 random.seed(seed)
-                aug_mask = apply_transformation(mask, transformation)
+                aug_mask = apply_transformation(mask, transformation_mask)
                 
                 all_images.append(aug_img)
                 all_masks.append(aug_mask)
@@ -779,7 +782,8 @@ def augment_and_save(img_paths, mask_paths, outputDir, num_augmented_copies):
     random.seed(VALUE_SEED)
     print(f"***SEMENTE USADA****: {VALUE_SEED}")
     
-    spatial_transformations = [random_rotation, random_zoom, random_flip]
+    spatial_transformations_img = [random_rotation, random_zoom, random_flip]
+    spatial_transformations_mask = [random_rotation_mask, random_zoom_mask, random_flip]
 
     for i, (img_path, mask_path) in enumerate(zip(img_paths, mask_paths)):
         base_name = os.path.basename(img_path)
@@ -792,13 +796,13 @@ def augment_and_save(img_paths, mask_paths, outputDir, num_augmented_copies):
         # Transformações espaciais (sincronizadas)
         for j in range(num_augmented_copies):
             i = 0
-            for trans in spatial_transformations:
+            for trans_img, trans_mask in zip(spatial_transformations_img, spatial_transformations_mask):
                 i = i + 1
                 seed = random.randint(0, 10000)
                 random.seed(seed)
-                aug_img = apply_transformation(img, trans)
+                aug_img = apply_transformation(img, trans_img)
                 random.seed(seed)
-                aug_mask = apply_transformation(mask, trans)
+                aug_mask = apply_transformation(mask, trans_mask)
 
                 fname = f"aug_{j}.{i}_{base_name}"
                 img_out = (aug_img.squeeze() * 255).astype(np.uint8)
@@ -807,4 +811,30 @@ def augment_and_save(img_paths, mask_paths, outputDir, num_augmented_copies):
                 Image.fromarray(img_out).save(os.path.join(outputDir, 'images/train', fname))
                 Image.fromarray(mask_out).save(os.path.join(outputDir, 'masks/train', fname))
 
-    
+
+def filter_dataset_by_id(src_dir: str, dst_dir: str, ids_to_remove):
+    """
+    Copia recursivamente todo o conteúdo de `src_dir` para `dst_dir`, exceto
+    os arquivos cujo nome comece com qualquer um dos IDs em `ids_to_remove`.
+
+    :param src_dir: caminho para o dataset original (ex: "raw_dataset")
+    :param dst_dir: caminho para onde será salva a cópia filtrada
+    :param ids_to_remove: lista (ou set) de IDs (string ou int) a excluir
+    """
+    ids_str = {str(i) for i in ids_to_remove}
+
+    for root, dirs, files in os.walk(src_dir):
+        rel_path = os.path.relpath(root, src_dir)
+        target_root = os.path.join(dst_dir, rel_path)
+        os.makedirs(target_root, exist_ok=True)
+
+        for fname in files:
+            file_id = fname.split('_', 1)[0]
+            if file_id in ids_str:
+                print(f"Excluindo {fname} do diretório {root}")
+                continue
+
+            src_path = os.path.join(root, fname)
+            dst_path = os.path.join(target_root, fname)
+
+            shutil.copy2(src_path, dst_path)

@@ -62,3 +62,5 @@ Yolo_dataset_AUG/
 AUG_dataset_v2/
 Unet_dataset_AUG/
 raw_png_dataset/
+filtered_raw_dataset/
+

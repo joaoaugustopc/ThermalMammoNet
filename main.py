@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients
+from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id
 from utils.files_manipulation import move_files_within_folder, create_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model
@@ -401,10 +401,17 @@ def segment_and_save_pngdataset(model_path, input_dir, output_dir, ext_txt=".txt
 
 if __name__ == "__main__":
 
-    raw_dataset_to_png("raw_dataset/Frontal")
 
-
+    original = "raw_dataset/Frontal"
+    destino = "filtered_raw_dataset/Frontal"
+    ids_para_remover = [
+    10, 47, 94, 109, 114, 141, 156, 185, 197, 206,
+    242, 258, 346, 363, 376, 400]
     
+    filter_dataset_by_id(original, destino, ids_para_remover)
+    
+    
+    #raw_dataset_to_png("raw_dataset/Frontal")
      
     # 1. Treinamento do modelo UNET com o dataset AUMENTADO
 
@@ -641,6 +648,8 @@ if __name__ == "__main__":
     """
 
     # Caminhos da imagem e máscara específicas
+
+
 """
     caminho_img = "TESTEAUG/images/train/aug_0142.png"
     caminho_mask = "TESTEAUG/masks/train/aug_0142.png"
