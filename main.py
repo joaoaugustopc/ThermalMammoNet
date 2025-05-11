@@ -1,11 +1,12 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id
+from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize
 from utils.files_manipulation import move_files_within_folder, create_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model
-from utils.stats import precision_score_, recall_score_, accuracy_score_, dice_coef_, iou_
+from utils.stats import precision_score_, recall_score_, accuracy_score_, dice_coef_, iou_ 
+import json
 
 # Use o tempo atual em segundos como semente
 ##VALUE_SEED = int(time.time() * 1000) % 15000
@@ -19,6 +20,90 @@ tf.random.set_seed(seed)
 
 np.random.seed(seed)
 """
+
+def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5, 
+                    resize = False, resize_to = 224, n_aug = 1, batch = 8, seed = 42):
+    
+    X, y , patient_ids = load_raw_images(
+        os.path.join(raw_root, angle),
+        resize_to=resize_to, interp='bicubic')
+    
+
+    for fold, (tr_idx, va_idx, te_idx) in enumerate(
+                        make_tvt_splits(X, y, patient_ids,
+                                        k=k, val_size=0.2, seed=seed)):
+        # salva índices para reuso posterior
+        split_file = f"splits/{message}_{angle}_F{fold}.json"
+        os.makedirs("splits", exist_ok=True)
+        with open(split_file, "w") as f:
+            json.dump({
+                "train_idx": tr_idx.tolist(),
+                "val_idx":   va_idx.tolist(),
+                "test_idx":  te_idx.tolist()
+            }, f)
+
+        # ------ prepara dados -----------
+        X_tr_orig, y_tr = X[tr_idx], y[tr_idx]
+        X_val,    y_val = X[va_idx], y[va_idx]
+        X_test,   y_test= X[te_idx], y[te_idx]
+
+        # min/max APENAS dos originais
+        mn, mx = X_tr_orig.min(), X_tr_orig.max()
+
+        # augmenta & concatena
+        X_tr_aug, y_tr_aug = augment_train_fold(X_tr_orig, y_tr,
+                                                n_aug=n_aug, seed=fold)
+
+        # normaliza
+        X_tr = normalize(X_tr_aug, mn, mx)
+        X_val= normalize(X_val,    mn, mx)
+        X_test=normalize(X_test,   mn, mx)
+
+        # ------ loop de modelos ---------
+        for model_fn in models:
+            model   = model_fn()
+            ckpt    = f"modelos/{model_fn.__name__}/{message}_{angle}_F{fold}.h5"
+            log_txt = f"history/{model_fn.__name__}/{message}_{angle}.txt"
+            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
+            os.makedirs(os.path.dirname(log_txt), exist_ok=True)
+
+            model.fit(X_tr, y_tr_aug,
+                      epochs=500,
+                      validation_data=(X_val, y_val),
+                      batch_size=batch,
+                      callbacks=[
+                          tf.keras.callbacks.EarlyStopping(
+                              monitor='val_loss', patience=50,
+                              min_delta=0.01, restore_best_weights=True),
+                          tf.keras.callbacks.ModelCheckpoint(
+                              ckpt, monitor='val_loss',
+                              save_best_only=True)
+                      ],
+                      verbose=2, shuffle=True)
+
+            # ---------- avaliação ----------
+            y_pred = (model.predict(X_test) > 0.5).astype(int).ravel()
+
+            acc = accuracy_score(y_test, y_pred)
+            prec, rec, f1, _ = precision_recall_fscore_support(
+                                   y_test, y_pred, average="binary",
+                                   zero_division=0)
+
+            # salva métrica fold‐a‐fold
+            with open(log_txt, "a") as f:
+                f.write(f"Fold {fold:02d}  "
+                        f"Acc={acc:.4f}  "
+                        f"Prec={prec:.4f}  "
+                        f"Rec={rec:.4f}  "
+                        f"F1={f1:.4f}\n")
+
+
+
+
+
+
+
+
 
 
 

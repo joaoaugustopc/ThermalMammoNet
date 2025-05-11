@@ -843,3 +843,88 @@ def filter_dataset_by_id(src_dir: str, dst_dir: str, ids_to_remove):
             dst_path = os.path.join(target_root, fname)
 
             shutil.copy2(src_path, dst_path)
+
+
+def load_raw_images(angle_dir, exclude=False, exclude_set=None,
+                    resize_to=224, interp='bicubic'):
+    """
+    Lê todas as imagens de um ângulo (healthy/ sick), faz
+    - redimensionamento bicúbico
+    - coleta id do paciente
+    Retorna: imgs, labels, ids   (SEM split)
+    """
+    imgs, labels, ids = [], [], []
+
+    for label_name, label_val in [('healthy', 0), ('sick', 1)]:
+        for file in os.listdir(os.path.join(angle_dir, label_name)):
+            if exclude and file in exclude_set:
+                continue
+
+            fpath = os.path.join(angle_dir, label_name, file)
+
+            try:
+                with open(fpath, 'r') as f:
+                    delim = ';' if ';' in f.readline() else ' '
+                    f.seek(0)
+                arr = np.loadtxt(fpath, delimiter=delim, dtype=np.float32)
+
+                # Adiciona canal para o TensorFlow (H, W) → (H, W, 1)
+                arr = arr[..., None]
+
+                # Redimensionamento com padding bicúbico
+                arr_resized = tf.image.resize_with_pad(
+                    arr, resize_to, resize_to, method='bicubic'
+                ).numpy().squeeze()
+
+                imgs.append(arr_resized)
+                labels.append(label_val)
+                ids.append(extract_id(file))  # sua função
+
+            except Exception as e:
+                print(f"Erro ao processar {fpath}: {e}")
+                continue
+
+    return np.array(imgs), np.array(labels), np.array(ids)
+
+
+from sklearn.model_selection import StratifiedGroupKFold, GroupShuffleSplit
+
+def make_tvt_splits(imgs, labels, ids, k=5, val_size=0.2, seed=42):
+    """
+    Cria gerador de tuplas (train_idx, val_idx, test_idx).
+    • 'test_idx' vem do fold externo (StratifiedGroupKFold)
+    • 'val_idx' vem de um shuffle split estratificado SOBRE o
+      subconjunto train_val mantendo grupos (pacientes) distintos
+    """
+    sgkf = StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=seed)
+
+    for outer_train_val, test in sgkf.split(imgs, labels, groups=ids):
+        # Dentro do conjunto que resta, sorteia validação
+        gss = GroupShuffleSplit(
+            n_splits=1, test_size=val_size,
+            random_state=seed)
+        train, val = next(gss.split(imgs[outer_train_val],
+                                    labels[outer_train_val],
+                                    groups=ids[outer_train_val]))
+        # Ajusta índices ao vetor global
+        train_idx = outer_train_val[train]
+        val_idx   = outer_train_val[val]
+        yield train_idx, val_idx, test
+
+
+
+def augment_train_fold(x_train, y_train, n_aug=1, seed=None):
+    """
+    Recebe dados de treino de UM fold e concatena n_aug versões aumentadas.
+    """
+    aug_imgs, aug_labels = apply_augmentation_and_expand(
+                               x_train, y_train, n_aug, resize=False)
+
+    return aug_imgs, aug_labels
+
+def normalize(arr, min_v, max_v):
+    return (arr - min_v) / (max_v - min_v + 1e-8)
+
+
+
+
