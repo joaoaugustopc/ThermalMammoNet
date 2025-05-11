@@ -78,7 +78,8 @@ def unet_model(input_shape = (480, 640, 1), num_classes = 1):
 	opt = tf.keras.optimizers.Adam(learning_rate = 1e-4)
 	
 	model.compile(optimizer = opt, 
-				loss = 'binary_crossentropy', metrics = ['accuracy'])
+				loss = 'binary_crossentropy', metrics = [tf.keras.metrics.BinaryIoU(), tf.keras.metrics.Precision(),
+        tf.keras.metrics.Recall()])
 	
 	return model 
 

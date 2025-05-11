@@ -5,6 +5,7 @@ from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_i
 from utils.files_manipulation import move_files_within_folder, create_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model
+from utils.stats import precision_score_, recall_score_, accuracy_score_, dice_coef_, iou_
 
 # Use o tempo atual em segundos como semente
 ##VALUE_SEED = int(time.time() * 1000) % 15000
@@ -18,6 +19,27 @@ tf.random.set_seed(seed)
 
 np.random.seed(seed)
 """
+
+
+
+def evaluate_segmentation(model_path, x_val, y_val):
+    model = tf.keras.models.load_model(model_path)
+    pred    = (model.predict(x_val) > 0.5).astype(np.uint8)
+    true    = (y_val > 0.5).astype(np.uint8)
+
+    metrics = {
+        "precision": precision_score_(true, pred),
+        "recall"   : recall_score_(true, pred),
+        "accuracy" : accuracy_score_(true, pred),
+        "dice"     : dice_coef_(true, pred),
+        "iou"      : iou_(true, pred)
+    }
+    return metrics
+
+
+
+
+
 
 #Função para transformar as imagens de .txt para .jpg
 def raw_dataset_to_png(directory, exclude = False, exclude_set = None):
@@ -245,6 +267,7 @@ def txt_to_image(txt_file, output_image_path):
     image.save(output_image_path)
     print(f"Imagem salva em: {output_image_path}")
     
+    
 
 def transform_channels_normalize(angle, origin_folder, result_folder):
     """
@@ -402,27 +425,77 @@ def segment_and_save_pngdataset(model_path, input_dir, output_dir, ext_txt=".txt
 if __name__ == "__main__":
 
 
-    original = "raw_dataset/Frontal"
-    destino = "filtered_raw_dataset/Frontal"
-    ids_para_remover = [
-    10, 47, 94, 109, 114, 141, 156, 185, 197, 206,
-    242, 258, 346, 363, 376, 400]
-    
-    filter_dataset_by_id(original, destino, ids_para_remover)
-    
-    
-    #raw_dataset_to_png("raw_dataset/Frontal")
-     
-    # 1. Treinamento do modelo UNET com o dataset AUMENTADO
-
-
-
     """
     imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks", True)
+    YoLo_Data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks", "Yolo_dataset_aug_10_05", True)
+
+    VALUE_SEED = int(time.time()*1000) % 15000
+    random.seed(VALUE_SEED)
+
+    print(f"Valor da semente: {VALUE_SEED}")
+    with open("modelos/random_seed.txt", "a") as f:
+        f.write(f"Valor da semente para treinar modelos com aumento de dados: {VALUE_SEED}\n")
+                
+    seed = random.randint(0,15000)  
+                
+    tf.keras.utils.set_random_seed(seed)
+    tf.config.experimental.enable_op_determinism()
+
+    model = unet_model()
+
+    model.summary()
+
+    earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
+
+    checkpoint = tf.keras.callbacks.ModelCheckpoint("modelos/unet/Frontal_Unet_AUG_V10_05.h5", monitor='val_loss', verbose=1, save_best_only=True, 
+                                                            save_weights_only=False, mode='auto')
+
+    history = model.fit(imgs_train, masks_train, epochs = 500, validation_data= (imgs_valid, masks_valid), callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
+
+    # Gráfico de perda de treinamento
+    plt.figure(figsize=(10, 6))
+    plt.plot(history.history['loss'], label='Training Loss')
+    plt.title(f'Training Loss Convergence for unet - Frontal')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(f"unet_loss_convergence_Frontal_10_05_AUG.png")
+    plt.close()
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title(f'Validation Loss Convergence for unet - Frontal')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(f"unet_val_loss_convergence_Frontal10_05_AUG.png")
+    plt.close()
+
+    """
 
 
     VALUE_SEED = int(time.time()*1000) % 15000
     random.seed(VALUE_SEED)
+    seed = random.randint(0,15000)
+
+    semente = seed
+    #train_yolo_seg("x", 500, "dataset.yaml", 224, seed=semente)
+    #train_yolo_seg("n", 500, "dataset.yaml", 224, seed=semente)
+    YoLo_Data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks", "Yolo_dataset_10_05", False)
+    train_yolo_seg("x", 500, "dataset2.yaml", 224, seed=semente)
+    train_yolo_seg("n", 500, "dataset2.yaml", 224, seed=semente)
+
+
+    # -----------------------------------------------------------------------------------------
+    imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks", False)
+
+    VALUE_SEED = int(time.time()*1000) % 15000
+    random.seed(VALUE_SEED)
+
+    with open("modelos/random_seed.txt", "a") as f:
+        f.write(f"Valor da semente 2 para treinar modelos sem aumento de dados: {VALUE_SEED}\n")
 
     print(f"Valor da semente: {VALUE_SEED}")
                 
@@ -437,7 +510,7 @@ if __name__ == "__main__":
 
     earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
 
-    checkpoint = tf.keras.callbacks.ModelCheckpoint("modelos/unet/Frontal_Unet_AUG.h5", monitor='val_loss', verbose=1, save_best_only=True, 
+    checkpoint = tf.keras.callbacks.ModelCheckpoint("modelos/unet/Frontal_Unet_V10_05.h5", monitor='val_loss', verbose=1, save_best_only=True, 
                                                             save_weights_only=False, mode='auto')
 
     history = model.fit(imgs_train, masks_train, epochs = 500, validation_data= (imgs_valid, masks_valid), callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
@@ -450,7 +523,7 @@ if __name__ == "__main__":
     plt.ylabel('Loss')
     plt.legend()
     plt.grid(True)
-    plt.savefig(f"unet_loss_convergence_Frontal.png")
+    plt.savefig(f"unet_loss_convergence_Frontal_10_05.png")
     plt.close()
 
     plt.figure(figsize=(10, 6))
@@ -460,8 +533,43 @@ if __name__ == "__main__":
     plt.ylabel('Loss')
     plt.legend()
     plt.grid(True)
-    plt.savefig(f"unet_val_loss_convergence_Frontal.png")
+    plt.savefig(f"unet_val_loss_convergence_Frontal_10_05.png")
     plt.close()
+
+
+    semente = seed
+    """
+    """
+
+
+
+    
+
+
+
+
+    
+    
+    
+    
+    
+    """
+    original = "raw_dataset/Frontal"
+    destino = "filtered_raw_dataset/Frontal"
+    ids_para_remover = [
+    10, 47, 94, 109, 114, 141, 156, 185, 197, 206,
+    242, 258, 346, 363, 376, 400]
+    
+    filter_dataset_by_id(original, destino, ids_para_remover)
+    """
+    
+    #raw_dataset_to_png("raw_dataset/Frontal")
+     
+    # 1. Treinamento do modelo UNET com o dataset AUMENTADO
+
+
+
+    """
     """
 
 

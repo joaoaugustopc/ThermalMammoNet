@@ -471,7 +471,7 @@ def load_imgs_masks(angulo, img_path, mask_path, augment=False):
     mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
 
     imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(
-        imagens, mascaras, test_size=0.2, random_state=42, shuffle = False
+        imagens, mascaras, test_size=0.2, random_state=42
     )
 
     imgs_train = np.array(imgs_train)
@@ -479,12 +479,17 @@ def load_imgs_masks(angulo, img_path, mask_path, augment=False):
     imgs_valid = np.array(imgs_valid)
     masks_valid = np.array(masks_valid)
 
+    print("Train shape:", imgs_train.shape)
+    print("Valid shape:", imgs_valid.shape)
+
     if augment:
         imgs_train_aug, masks_train_aug = apply_augmentation_and_expand_seg(
             imgs_train, masks_train, num_augmented_copies = 2, resize=False
         )
 
-    return imgs_train_aug, imgs_valid, masks_train_aug, masks_valid
+        return imgs_train_aug, imgs_valid, masks_train_aug, masks_valid
+    
+    return imgs_train, imgs_valid, masks_train, masks_valid
 
 def load_imgs_masks_only(angulo, img_path, mask_path):
     """
@@ -542,7 +547,7 @@ def YoLo_Data(angulo, img_path, mask_path, outputDir="", augment=False):
     data_imgs, data_masks = filtrar_imgs_masks(angulo, img_path, mask_path)
 
     imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(
-        data_imgs, data_masks, test_size=0.2, random_state=42, shuffle= False
+        data_imgs, data_masks, test_size=0.2, random_state=42
     )
 
     mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid, outputDir)
