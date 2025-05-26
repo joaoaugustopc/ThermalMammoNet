@@ -185,10 +185,10 @@ def format_data(directory_raw, output_dir = "output_dir", exclude = False, exclu
 
             list = listar_imgs_nao_usadas(exclude_path, angle)
             
-            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"raw_dataset/{angle}", True, list)
+            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"{directory_raw}/{angle}", True, list)
 
         else:
-            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"raw_dataset/{angle}")
+            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"{directory_raw}/{angle}")
 
         print("ANGLE:",angle)
         print("Train shape:",imagens_train.shape)
@@ -265,10 +265,10 @@ def save_numpy_data(images, labels, output_dir, position):
 
 # Funções lambda para cada transformação separada
 random_flip = lambda: keras.layers.RandomFlip("horizontal")
-random_rotation = lambda: keras.layers.RandomRotation(0.04, fill_mode="constant", interpolation="bilinear", fill_value=0.0)
-random_rotation_mask = lambda: keras.layers.RandomRotation(0.04, fill_mode="constant", interpolation="nearest", fill_value=0.0)
-random_zoom = lambda: keras.layers.RandomZoom(0.2, 0.2, fill_mode="constant", interpolation="bilinear", fill_value=0.0)
-random_zoom_mask = lambda: keras.layers.RandomZoom(0.2, 0.2, fill_mode="constant", interpolation="nearest", fill_value=0.0)
+random_rotation = lambda: keras.layers.RandomRotation(0.04, interpolation="bilinear")
+random_rotation_mask = lambda: keras.layers.RandomRotation(0.04, interpolation="nearest")
+random_zoom = lambda: keras.layers.RandomZoom(0.2, 0.2, interpolation="bilinear")
+random_zoom_mask = lambda: keras.layers.RandomZoom(0.2, 0.2, interpolation="nearest")
 random_brightness = lambda: keras.layers.RandomBrightness(factor=0.3, value_range=(0.0, 1.0))
 random_contrast = lambda: keras.layers.RandomContrast(factor=0.3)
 
@@ -460,7 +460,7 @@ def filtrar_imgs_masks(angulo, img_path, mask_path):
     return data_imgs, data_masks
 
 
-def load_imgs_masks(angulo, img_path, mask_path, augment=False):
+def load_imgs_masks(angulo, img_path, mask_path, augment=False, resize=False, target = 224):
     """
     Carrega imagens e máscaras em formato numpy arrays normalizados (0 a 1).
     Retorna as listas imgs_train, imgs_valid, masks_train, masks_valid.
@@ -469,6 +469,19 @@ def load_imgs_masks(angulo, img_path, mask_path, augment=False):
 
     imagens = [np.array(Image.open(img).convert('L')) / 255.0 for img in data_imgs]
     mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
+
+    if resize:
+
+        imagens = np.expand_dims(imagens, axis=-1)
+        mascaras = np.expand_dims(mascaras, axis=-1)
+
+        imagens = tf.image.resize_with_pad(imagens, target, target, method="bilinear")
+        mascaras = tf.image.resize_with_pad(mascaras, target, target, method="nearest")
+
+        imagens = np.squeeze(imagens, axis=-1)
+        mascaras = np.squeeze(mascaras, axis=-1)
+
+    
 
     imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(
         imagens, mascaras, test_size=0.2, random_state=42
@@ -847,12 +860,7 @@ def filter_dataset_by_id(src_dir: str, dst_dir: str, ids_to_remove):
 
 def load_raw_images(angle_dir, exclude=False, exclude_set=None,
                     resize_to=224, interp='bicubic'):
-    """
-    Lê todas as imagens de um ângulo (healthy/ sick), faz
-    - redimensionamento bicúbico
-    - coleta id do paciente
-    Retorna: imgs, labels, ids   (SEM split)
-    """
+    
     imgs, labels, ids = [], [], []
 
     for label_name, label_val in [('healthy', 0), ('sick', 1)]:
@@ -868,15 +876,17 @@ def load_raw_images(angle_dir, exclude=False, exclude_set=None,
                     f.seek(0)
                 arr = np.loadtxt(fpath, delimiter=delim, dtype=np.float32)
 
-                # Adiciona canal para o TensorFlow (H, W) → (H, W, 1)
+                
+                """
                 arr = arr[..., None]
 
                 # Redimensionamento com padding bicúbico
                 arr_resized = tf.image.resize_with_pad(
                     arr, resize_to, resize_to, method='bicubic'
                 ).numpy().squeeze()
-
-                imgs.append(arr_resized)
+                """
+                
+                imgs.append(arr)
                 labels.append(label_val)
                 ids.append(extract_id(file))  # sua função
 
@@ -884,18 +894,13 @@ def load_raw_images(angle_dir, exclude=False, exclude_set=None,
                 print(f"Erro ao processar {fpath}: {e}")
                 continue
 
-    return np.array(imgs), np.array(labels), np.array(ids)
+    return np.array(imgs), np.array(labels), np.array(ids, dtype= float)
 
 
 from sklearn.model_selection import StratifiedGroupKFold, GroupShuffleSplit
 
-def make_tvt_splits(imgs, labels, ids, k=5, val_size=0.2, seed=42):
-    """
-    Cria gerador de tuplas (train_idx, val_idx, test_idx).
-    • 'test_idx' vem do fold externo (StratifiedGroupKFold)
-    • 'val_idx' vem de um shuffle split estratificado SOBRE o
-      subconjunto train_val mantendo grupos (pacientes) distintos
-    """
+def make_tvt_splits(imgs, labels, ids, k=5, val_size=0.25, seed=42):
+    
     sgkf = StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=seed)
 
     for outer_train_val, test in sgkf.split(imgs, labels, groups=ids):
@@ -906,6 +911,7 @@ def make_tvt_splits(imgs, labels, ids, k=5, val_size=0.2, seed=42):
         train, val = next(gss.split(imgs[outer_train_val],
                                     labels[outer_train_val],
                                     groups=ids[outer_train_val]))
+        
         # Ajusta índices ao vetor global
         train_idx = outer_train_val[train]
         val_idx   = outer_train_val[val]

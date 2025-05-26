@@ -44,7 +44,7 @@ def decoder_block(inputs, skip_features, num_filters):
 	return x
 
 # Unet code 
-def unet_model(input_shape = (480, 640, 1), num_classes = 1): 
+def unet_model(input_shape = (224, 224, 1), num_classes = 1): 
 	inputs = tf.keras.layers.Input(input_shape) 
 	
 	# Contracting Path (Encoder)
