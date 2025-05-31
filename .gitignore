@@ -82,3 +82,8 @@ teste_test_yolo/
 teste_train_yolo/
 teste_val_yolo/
 
+dataset_fold/
+runs/
+yolo_datasets/
+yolov8s-cls.pt
+

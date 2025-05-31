@@ -9,6 +9,26 @@ from utils.stats import precision_score_, recall_score_, accuracy_score_, dice_c
 import json
 import glob
 
+import cv2
+from ultralytics import YOLO
+from tensorflow.keras import backend as K
+import gc
+import numpy as np
+import os, json, time, shutil, random, gc
+from pathlib import Path
+from typing import List, Union
+
+from pathlib import Path
+import numpy as np
+import cv2   # ou PIL.Image, se preferir
+import csv
+import os
+import json as json_module  # Alias seguro
+import json
+
+
+
+
 # Use o tempo atual em segundos como semente
 ##VALUE_SEED = int(time.time() * 1000) % 15000
 """
@@ -175,12 +195,8 @@ def segment_with_yolo( X_train, X_valid, X_test, model_path):
 
     return seg_train, seg_valid, seg_test
 
-    
-from tensorflow.keras import backend as K
-import gc
-
 def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5, 
-                    resize = True, resize_to = 224, n_aug = 0, batch = 8, seed = 42, segmenter = "none", seg_model_path = ""):
+                    resize = True, resize_to = 224, n_aug = 0, batch = 8, seed = 42, segmenter = "yolo", seg_model_path = "runs/segment/train22/weights/best.pt"):
     
     X, y , patient_ids = load_raw_images(
         os.path.join(raw_root, angle),
@@ -201,10 +217,10 @@ def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5,
         split_file = f"splits/{message}_{angle}_F{fold}.json"
         os.makedirs("splits", exist_ok=True)
         with open(split_file, "w") as f:
-            json.dump({
+            json_module.dump({
                 "train_idx": tr_idx.tolist(),
-                "val_idx":   va_idx.tolist(),
-                "test_idx":  te_idx.tolist()
+                "val_idx": va_idx.tolist(),
+                "test_idx": te_idx.tolist()
             }, f)
 
         # ------ prepara dados -----------
@@ -264,6 +280,8 @@ def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5,
 
             start_time = time.time()
 
+            """
+
             history = model.fit(X_tr, y_tr,
                       epochs=500,
                       validation_data=(X_val, y_val),
@@ -278,7 +296,75 @@ def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5,
                       ],
                       verbose=2, shuffle=True)
             
+            """
+            save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
+
+            # Treinamento YOLO
+            model = YOLO('yolov8s-cls.pt')
+            model.train(
+                data=f"dataset_fold_{fold+1}",
+                epochs=100,
+                patience=50,
+                batch=16,
+                #lr0=0.0005,
+                optimizer='AdamW',
+                #weight_decay=0.0005,
+                #hsv_h=0.1,
+                #hsv_s=0.2,
+                #flipud=0.3,
+                #mosaic=0.1,
+                #mixup=0.1,
+                workers=0,
+                pretrained=False,
+                amp=False,
+                deterministic=True,
+                seed=seed,
+                project="runs/classify",
+                name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
+            )
+            
             end_time = time.time()
+
+            # Validação
+            metrics = model.val(
+                data=f"dataset_fold_{fold+1}",
+                project="runs/classify/val",
+                name=f"fold_{fold+1}_seed_{seed}",
+                save_json=True
+            )
+
+            # Dados para salvar
+            results_to_save = {
+                'top1_accuracy': metrics.top1,
+                'top5_accuracy': metrics.top5,
+                'fitness': metrics.fitness,
+                'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
+                'all_metrics': metrics.results_dict,
+                'speed': metrics.speed
+            }
+
+            # Salvar em JSON
+            with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
+                json_module.dump(results_to_save, f, indent=4)
+                
+            """
+            # Extraindo métricas
+            accuracy = metrics.results_dict['accuracy_top1']
+            precision = metrics.results_dict['precision']
+            recall = metrics.results_dict['recall']
+            f1 = metrics.results_dict['f1']
+
+            # Salvando no mesmo arquivo de log dos outros modelos
+            with open(log_txt, "a") as f:
+                f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
+                f.write(f"Accuracy: {accuracy:.4f}\n")
+                f.write(f"Precision: {precision:.4f}\n")
+                f.write(f"Recall: {recall:.4f}\n")
+                f.write(f"F1-Score: {f1:.4f}\n")
+                f.write("-"*50 + "\n")  # Separador visual
+            
 
             # ---------- avaliação ----------
             y_pred = (model.predict(X_test) > 0.5).astype(int).ravel()
@@ -298,12 +384,11 @@ def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5,
                         f"Tempo de treinamento={end_time - start_time:.2f} s\n")
                 
             plot_convergence(history, model_fn.__name__, angle, fold, message)
+            """
+
+            delete_folder("dataset_fold")
             K.clear_session()
             gc.collect()
-
-    
-        
-
 
 def evaluate_segmentation(model_path, x_val, y_val):
     model = tf.keras.models.load_model(model_path)
@@ -367,11 +452,6 @@ def evaluate_yolo_on_folder(model_path, ds_root,
         "iou"      : iou_(y_true, y_pred)
     }
     return metrics
-
-
-
-
-
 
 #Função para transformar as imagens de .txt para .jpg
 def raw_dataset_to_png(directory, exclude = False, exclude_set = None):
@@ -441,7 +521,6 @@ def raw_dataset_to_png(directory, exclude = False, exclude_set = None):
           print(e)
           print(arquivo)
           continue
-
 
 def train_models(models_objects, dataset: str, resize=False, target = 0, message=""):
     list = ["Frontal"]
@@ -551,18 +630,12 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
 #TODO: calcular f1, IoU, recall, accuracy
 #TODO: comparar unet com yolo
 
-import cv2
-from ultralytics import YOLO
-
-
 # Função para calcular Pixel Accuracy
 def pixel_accuracy(y_true, y_pred):
     # y_true e y_pred devem ter a mesma dimensão e serem binários
     correct = np.sum(y_true == y_pred)
     total = y_true.size
     return correct / total
-
-import numpy as np
 
 def dice_coefficient(y_true, y_pred, smooth=1):
     
@@ -598,8 +671,6 @@ def txt_to_image(txt_file, output_image_path):
     image = Image.fromarray(image_array)
     image.save(output_image_path)
     print(f"Imagem salva em: {output_image_path}")
-    
-    
 
 def transform_channels_normalize(angle, origin_folder, result_folder):
     """
@@ -753,6 +824,49 @@ def segment_and_save_pngdataset(model_path, input_dir, output_dir, ext_txt=".txt
                     cv2.imwrite(out_path, segmented)
                     print(f"[Salvo] {out_path}")
 
+#FABS
+def save_split_to_png(images, labels, split_name, root="dataset_fold"):
+    """
+    Salva um split de imagens/labels em formato PNG no layout aceito pelo YOLOv8n-cls.
+
+    └── dataset_fold/
+        ├── train/
+        │   ├── 0/
+        │   │   ├── 00000.png
+        │   │   └── ...
+        │   └── 1/
+        ├── val/
+        └── test/
+    Args
+    ----
+    images : np.ndarray  (N, H, W, C) ou (N, H, W)
+    labels : Sequence[int]  rótulo inteiro por imagem
+    split_name : str  "train" | "val" | "test"
+    root : str ou Path  diretório-raiz do dataset
+    """
+    out_base = Path(root) / split_name
+    out_base.mkdir(parents=True, exist_ok=True)
+
+    for idx, (img, cls) in enumerate(zip(images, labels)):
+        # Converte para uint8 [0-255] caso ainda esteja em float [0-1]
+        if img.dtype != np.uint8:
+            img = np.clip(img * 255, 0, 255).astype(np.uint8)
+
+        # Garante 3 canais
+        if img.ndim == 2:
+            img = np.stack([img]*3, axis=-1)
+
+        # YOLO-cls quer as pastas por classe
+        class_dir = out_base / str(cls)
+        class_dir.mkdir(parents=True, exist_ok=True)
+
+        fname = class_dir / f"{idx:06d}.png"
+        # cv2 espera BGR; converta se seu array já estiver RGB
+        cv2.imwrite(str(fname), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+
+    print(f"✓ {split_name} salvo em {out_base}")
+
+
 
 if __name__ == "__main__":
 
@@ -761,6 +875,21 @@ if __name__ == "__main__":
     semente = random.randint(0,15000)
     np.random.seed(semente)
     tf.random.set_seed(semente)
+
+    delete_folder("runs/classify")
+
+    train_models_cv([ResNet34],
+                   raw_root="filtered_raw_dataset",
+                   angle="Frontal",
+                   k=5,                 
+                   resize_to=224,
+                   n_aug=2,             
+                   batch=8,
+                   seed= semente,
+                   segmenter="yolo",
+                   message="Yolon_seg_Yolos_cls",
+                   seg_model_path="runs/segment/train22/weights/best.pt")
+    
 
     """
     train_models_cv([ResNet34],
@@ -779,7 +908,7 @@ if __name__ == "__main__":
     """
 
 
-    
+    """
     train_models_cv([ResNet34],
                    raw_root="filtered_raw_dataset",
                    angle="Frontal",
@@ -871,7 +1000,7 @@ if __name__ == "__main__":
                    segmenter="yolo",
                    message="ResNet_yolo_CV_2.0", seg_model_path="runs/segment/train18/weights/best.pt")
     
-    
+    """
 
 
 
