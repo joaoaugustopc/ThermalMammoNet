@@ -8,6 +8,8 @@ from src.models.u_net import unet_model
 from utils.stats import precision_score_, recall_score_, accuracy_score_, dice_coef_, iou_ 
 import json
 import glob
+from eigemCAM import run_eigencam
+
 
 # Use o tempo atual em segundos como semente
 ##VALUE_SEED = int(time.time() * 1000) % 15000
@@ -754,13 +756,87 @@ def segment_and_save_pngdataset(model_path, input_dir, output_dir, ext_txt=".txt
                     print(f"[Salvo] {out_path}")
 
 
+
+
+def ppeprocessEigenCam(X, y, splits_path, segmenter_path,  ):
+    with open (splits_path, "r") as f:
+        splits = json.load(f)
+
+
+    
+    train_idx = splits["train_idx"]
+    val_idx = splits["val_idx"]
+    test_idx = splits["test_idx"]
+
+    X_test = X[test_idx]
+    y_test = y[test_idx]
+
+    X_train = X[train_idx]
+    y_train = y[train_idx]
+
+
+    mn, mx = X_train.min(), X_train.max()
+
+    # normaliza
+    X_test=normalize(X_test,   mn, mx)
+
+    
+
+    X_tr = np.expand_dims(X_tr, axis=-1)
+    X_val= np.expand_dims(X_val, axis=-1)
+    X_test= np.expand_dims(X_test, axis=-1)
+
+    X_tr= tf.image.resize_with_pad(X_tr, 224, 224, method="bicubic")
+    X_val= tf.image.resize_with_pad(X_val, 224, 224, method="bicubic")
+    X_test= tf.image.resize_with_pad(X_test, 224, 224, method="bicubic")
+
+    X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
+    X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
+    X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
+
+
+    X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, segmenter_path)
+    print(f"Segmentação com YOLO concluída.")
+
+    X_test = np.expand_dims(X_test, axis=-1)
+
+    return X_test
+
+
 if __name__ == "__main__":
 
-    VALUE_SEED = int(time.time()*1000) % 15000
-    random.seed(VALUE_SEED)
-    semente = random.randint(0,15000)
-    np.random.seed(semente)
-    tf.random.set_seed(semente)
+
+
+    X, y , patient_ids = load_raw_images(
+        "filtered_raw_dataset/Frontal",
+        resize_to=224, interp='bicubic')
+    
+
+
+    #X_test = X_test[y_test == 1] 
+    
+    #Filtra apenas as imagens com rótulo 1
+
+
+
+    # # 1) carregue seus arrays .npy ou crie dummy arrays para testar
+    # imgs  = np.load("x_val.npy")            # shape (N,H,W,1), float32 0-1
+    # masks = np.load("masks_val.npy")        # shape (N,H,W)   0/1  OU  None
+
+    run_eigencam(
+        imgs       = X_test,
+        model_path = "modelos/ResNet34/ResNet_unet_AUG_CV_2.0_Frontal_F1.h5",
+        out_dir    = "cam_results_unet_F1"
+    )
+
+
+
+
+    # VALUE_SEED = int(time.time()*1000) % 15000
+    # random.seed(VALUE_SEED)
+    # semente = random.randint(0,15000)
+    # np.random.seed(semente)
+    # tf.random.set_seed(semente)
 
     """
     train_models_cv([ResNet34],
@@ -780,96 +856,96 @@ if __name__ == "__main__":
 
 
     
-    train_models_cv([ResNet34],
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= semente,
-                   segmenter="yolo",
-                   message="ResNet_yolon_AUG_CV_2.0", seg_model_path="runs/segment/train22/weights/best.pt")
+    # train_models_cv([ResNet34],
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= semente,
+    #                segmenter="yolo",
+    #                message="ResNet_yolon_AUG_CV_2.0", seg_model_path="runs/segment/train22/weights/best.pt")
     
-    semente = random.randint(0,15000)
+    # semente = random.randint(0,15000)
     
-    train_models_cv([ResNet34],
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= semente,
-                   message="ResNet_AUG_CV_2.0")
+    # train_models_cv([ResNet34],
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= semente,
+    #                message="ResNet_AUG_CV_2.0")
     
     
     
-    semente = random.randint(0,15000)
+    # semente = random.randint(0,15000)
 
 
-    train_models_cv([ResNet34],
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=0,             
-                   batch=8,
-                   seed= semente,
-                   segmenter="unet",
-                   message="ResNet_unet_CV_2.0", seg_model_path="modelos/unet/Frontal_Unet_V10_05.h5")
+    # train_models_cv([ResNet34],
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=0,             
+    #                batch=8,
+    #                seed= semente,
+    #                segmenter="unet",
+    #                message="ResNet_unet_CV_2.0", seg_model_path="modelos/unet/Frontal_Unet_V10_05.h5")
 
-    semente = random.randint(0,15000)
+    # semente = random.randint(0,15000)
 
-    train_models_cv([ResNet34],
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=0,             
-                   batch=8,
-                   seed= semente,
-                   message="ResNet_CV_2.0")
+    # train_models_cv([ResNet34],
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=0,             
+    #                batch=8,
+    #                seed= semente,
+    #                message="ResNet_CV_2.0")
     
-    semente = random.randint(0,15000)
+    # semente = random.randint(0,15000)
     
     
-    train_models_cv([ResNet34],
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=0,             
-                   batch=8,
-                   seed= semente,
-                   segmenter="yolo",
-                   message="ResNet_yolon_CV_2.0", seg_model_path="runs/segment/train19/weights/best.pt")
+    # train_models_cv([ResNet34],
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=0,             
+    #                batch=8,
+    #                seed= semente,
+    #                segmenter="yolo",
+    #                message="ResNet_yolon_CV_2.0", seg_model_path="runs/segment/train19/weights/best.pt")
     
-    semente = random.randint(0,15000)
+    # semente = random.randint(0,15000)
     
-    train_models_cv([ResNet34],
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= semente,
-                   segmenter="yolo",
-                   message="ResNet_yolox_AUG_CV_2.0", seg_model_path="runs/segment/train21/weights/best.pt")
+    # train_models_cv([ResNet34],
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= semente,
+    #                segmenter="yolo",
+    #                message="ResNet_yolox_AUG_CV_2.0", seg_model_path="runs/segment/train21/weights/best.pt")
     
-    semente = random.randint(0,15000)
+    # semente = random.randint(0,15000)
     
-    train_models_cv([ResNet34],
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=0,             
-                   batch=8,
-                   seed= semente,
-                   segmenter="yolo",
-                   message="ResNet_yolo_CV_2.0", seg_model_path="runs/segment/train18/weights/best.pt")
+    # train_models_cv([ResNet34],
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=0,             
+    #                batch=8,
+    #                seed= semente,
+    #                segmenter="yolo",
+    #                message="ResNet_yolo_CV_2.0", seg_model_path="runs/segment/train18/weights/best.pt")
     
     
 
