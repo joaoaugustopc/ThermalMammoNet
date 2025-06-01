@@ -86,4 +86,6 @@ dataset_fold/
 runs/
 yolo_datasets/
 yolov8s-cls.pt
+testandoLETTERBOX/
+testandoLETTERBOX_1/
 

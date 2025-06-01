@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize
+from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox
 from utils.files_manipulation import move_files_within_folder, create_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model
@@ -195,12 +195,11 @@ def segment_with_yolo( X_train, X_valid, X_test, model_path):
 
     return seg_train, seg_valid, seg_test
 
-def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5, 
-                    resize = True, resize_to = 224, n_aug = 0, batch = 8, seed = 42, segmenter = "yolo", seg_model_path = "runs/segment/train22/weights/best.pt"):
+def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5, 
+                    resize = True, resize_to = 224, n_aug = 0, batch = 8, seed = 42, segmenter = "", seg_model_path = ""):
     
     X, y , patient_ids = load_raw_images(
-        os.path.join(raw_root, angle),
-        resize_to=resize_to, interp='bicubic')
+        os.path.join(raw_root, angle))
     
 
     with open("modelos/random_seed.txt", "a") as f:
@@ -217,7 +216,7 @@ def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5,
         split_file = f"splits/{message}_{angle}_F{fold}.json"
         os.makedirs("splits", exist_ok=True)
         with open(split_file, "w") as f:
-            json_module.dump({
+            json.dump({
                 "train_idx": tr_idx.tolist(),
                 "val_idx": va_idx.tolist(),
                 "test_idx": te_idx.tolist()
@@ -242,22 +241,26 @@ def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5,
             X_val= np.expand_dims(X_val, axis=-1)
             X_test= np.expand_dims(X_test, axis=-1)
 
-            X_tr= tf.image.resize_with_pad(X_tr, resize_to, resize_to, method="bicubic")
-            X_val= tf.image.resize_with_pad(X_val, resize_to, resize_to, method="bicubic")
-            X_test= tf.image.resize_with_pad(X_test, resize_to, resize_to, method="bicubic")
+            # X_tr= tf.image.resize_with_pad(X_tr, resize_to, resize_to, method="bicubic")
+            # X_val= tf.image.resize_with_pad(X_val, resize_to, resize_to, method="bicubic")
+            # X_test= tf.image.resize_with_pad(X_test, resize_to, resize_to, method="bicubic")
+
+            X_tr = tf_letterbox(X_tr, resize_to)
+            X_val = tf_letterbox(X_val, resize_to)
+            X_test = tf_letterbox(X_test, resize_to)
 
             X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
             X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
             X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
 
         
+        
+        
         # augmenta & concatena
-
         if n_aug > 0:
             X_tr, y_tr = augment_train_fold(X_tr, y_tr,
                                                 n_aug=n_aug, seed=fold)
         
-
 
         if segmenter != "none":
             if segmenter == "unet":
@@ -268,42 +271,20 @@ def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5,
                 print(f"Segmentação com YOLO concluída.")
             else:
                 raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
+        
 
-          
-        # ------ loop de modelos ---------
-        for model_fn in models:
-            model   = model_fn()
-            ckpt    = f"modelos/{model_fn.__name__}/{message}_{angle}_F{fold}.h5"
-            log_txt = f"history/{model_fn.__name__}/{message}_{angle}.txt"
-            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
-            os.makedirs(os.path.dirname(log_txt), exist_ok=True)
-
-            start_time = time.time()
-
-            """
-
-            history = model.fit(X_tr, y_tr,
-                      epochs=500,
-                      validation_data=(X_val, y_val),
-                      batch_size=batch,
-                      callbacks=[
-                          tf.keras.callbacks.EarlyStopping(
-                              monitor='val_loss', patience=50,
-                              min_delta=0.01, restore_best_weights=True),
-                          tf.keras.callbacks.ModelCheckpoint(
-                              ckpt, monitor='val_loss',
-                              save_best_only=True)
-                      ],
-                      verbose=2, shuffle=True)
-            
-            """
+        if model == "yolo":
             save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
             save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
             save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
 
+            print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
+
             # Treinamento YOLO
-            model = YOLO('yolov8s-cls.pt')
-            model.train(
+            model_f = YOLO('yolov8s-cls.pt')
+            start_time = time.time() 
+
+            model_f.train(
                 data=f"dataset_fold_{fold+1}",
                 epochs=100,
                 patience=50,
@@ -328,7 +309,7 @@ def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5,
             end_time = time.time()
 
             # Validação
-            metrics = model.val(
+            metrics = model_f.val(
                 data=f"dataset_fold_{fold+1}",
                 project="runs/classify/val",
                 name=f"fold_{fold+1}_seed_{seed}",
@@ -348,7 +329,7 @@ def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5,
             # Salvar em JSON
             with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
                 json_module.dump(results_to_save, f, indent=4)
-                
+
             """
             # Extraindo métricas
             accuracy = metrics.results_dict['accuracy_top1']
@@ -364,15 +345,43 @@ def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5,
                 f.write(f"Recall: {recall:.4f}\n")
                 f.write(f"F1-Score: {f1:.4f}\n")
                 f.write("-"*50 + "\n")  # Separador visual
+
+            """
+
+        else:
+
+            model_f   = model()
+            ckpt    = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
+            log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
+            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
+            os.makedirs(os.path.dirname(log_txt), exist_ok=True)
+
+
+            start_time = time.time()
             
+            history = model_f.fit(X_tr, y_tr,
+                        epochs=500,
+                        validation_data=(X_val, y_val),
+                        batch_size=batch,
+                        callbacks=[
+                            tf.keras.callbacks.EarlyStopping(
+                                monitor='val_loss', patience=50,
+                                min_delta=0.01, restore_best_weights=True),
+                            tf.keras.callbacks.ModelCheckpoint(
+                                ckpt, monitor='val_loss',
+                                save_best_only=True)
+                        ],
+                        verbose=2, shuffle=True)
+            
+            end_time = time.time()
 
             # ---------- avaliação ----------
-            y_pred = (model.predict(X_test) > 0.5).astype(int).ravel()
+            y_pred = (model_f.predict(X_test) > 0.5).astype(int).ravel()
 
             acc = accuracy_score(y_test, y_pred)
             prec, rec, f1, _ = precision_recall_fscore_support(
-                                   y_test, y_pred, average="binary",
-                                   zero_division=0)
+                                    y_test, y_pred, average="binary",
+                                    zero_division=0)
 
             # salva métrica fold‐a‐fold
             with open(log_txt, "a") as f:
@@ -383,12 +392,12 @@ def train_models_cv(models, raw_root , message, angle = "Frontal", k = 5,
                         f"F1={f1:.4f}\n"
                         f"Tempo de treinamento={end_time - start_time:.2f} s\n")
                 
-            plot_convergence(history, model_fn.__name__, angle, fold, message)
-            """
+            plot_convergence(history, model.__name__, angle, fold, message)
+        
 
-            delete_folder("dataset_fold")
-            K.clear_session()
-            gc.collect()
+        delete_folder("dataset_fold")
+        K.clear_session()
+        gc.collect()
 
 def evaluate_segmentation(model_path, x_val, y_val):
     model = tf.keras.models.load_model(model_path)
@@ -873,12 +882,14 @@ if __name__ == "__main__":
     VALUE_SEED = int(time.time()*1000) % 15000
     random.seed(VALUE_SEED)
     semente = random.randint(0,15000)
+
+    tf.config.experimental.enable_op_determinism()
     np.random.seed(semente)
     tf.random.set_seed(semente)
 
     delete_folder("runs/classify")
 
-    train_models_cv([ResNet34],
+    train_model_cv("yolo",
                    raw_root="filtered_raw_dataset",
                    angle="Frontal",
                    k=5,                 
@@ -892,7 +903,7 @@ if __name__ == "__main__":
     
 
     """
-    train_models_cv([ResNet34],
+    train_model_cv(ResNet34,
                    raw_root="filtered_raw_dataset",
                    angle="Frontal",
                    k=5,                 
@@ -904,7 +915,7 @@ if __name__ == "__main__":
                    message="ResNet_unet_AUG_CV_2.0", seg_model_path="modelos/unet/Frontal_Unet_AUG_V10_05_Padding.h5")
     
     
-    semente = random.randint(0,15000)
+    
     """
 
 
@@ -920,7 +931,7 @@ if __name__ == "__main__":
                    segmenter="yolo",
                    message="ResNet_yolon_AUG_CV_2.0", seg_model_path="runs/segment/train22/weights/best.pt")
     
-    semente = random.randint(0,15000)
+    
     
     train_models_cv([ResNet34],
                    raw_root="filtered_raw_dataset",
@@ -934,7 +945,7 @@ if __name__ == "__main__":
     
     
     
-    semente = random.randint(0,15000)
+    
 
 
     train_models_cv([ResNet34],
@@ -948,7 +959,7 @@ if __name__ == "__main__":
                    segmenter="unet",
                    message="ResNet_unet_CV_2.0", seg_model_path="modelos/unet/Frontal_Unet_V10_05.h5")
 
-    semente = random.randint(0,15000)
+    
 
     train_models_cv([ResNet34],
                    raw_root="filtered_raw_dataset",
@@ -960,7 +971,7 @@ if __name__ == "__main__":
                    seed= semente,
                    message="ResNet_CV_2.0")
     
-    semente = random.randint(0,15000)
+    
     
     
     train_models_cv([ResNet34],
@@ -974,7 +985,7 @@ if __name__ == "__main__":
                    segmenter="yolo",
                    message="ResNet_yolon_CV_2.0", seg_model_path="runs/segment/train19/weights/best.pt")
     
-    semente = random.randint(0,15000)
+    
     
     train_models_cv([ResNet34],
                    raw_root="filtered_raw_dataset",
@@ -987,7 +998,7 @@ if __name__ == "__main__":
                    segmenter="yolo",
                    message="ResNet_yolox_AUG_CV_2.0", seg_model_path="runs/segment/train21/weights/best.pt")
     
-    semente = random.randint(0,15000)
+    
     
     train_models_cv([ResNet34],
                    raw_root="filtered_raw_dataset",
