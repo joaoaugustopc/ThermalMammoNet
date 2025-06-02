@@ -6,6 +6,7 @@ from utils.files_manipulation import move_files_within_folder, create_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model
 from utils.stats import precision_score_, recall_score_, accuracy_score_, dice_coef_, iou_ 
+from eigemCAM import run_eigencam
 import json
 import glob
 
@@ -877,29 +878,150 @@ def save_split_to_png(images, labels, split_name, root="dataset_fold"):
 
 
 
+
+
+
+
+def ppeprocessEigenCam(X, y, splits_path, segment = None, segmenter_path ="" ):
+    
+    
+    with open (splits_path, "r") as f:
+        splits = json.load(f)
+
+
+    
+    train_idx = splits["train_idx"]
+    val_idx = splits["val_idx"]
+    test_idx = splits["test_idx"]
+
+    X_test = X[test_idx]
+    y_test = y[test_idx]
+
+    X_train = X[train_idx]
+    y_train = y[train_idx]
+
+
+    mn, mx = X_train.min(), X_train.max()
+
+    # normaliza
+    X_test=normalize(X_test,   mn, mx)
+
+    
+
+    X_tr = np.expand_dims(X_tr, axis=-1)
+    X_val= np.expand_dims(X_val, axis=-1)
+    X_test= np.expand_dims(X_test, axis=-1)
+
+    X_tr= tf.image.resize_with_pad(X_tr, 224, 224, method="bicubic")
+    X_val= tf.image.resize_with_pad(X_val, 224, 224, method="bicubic")
+    X_test= tf.image.resize_with_pad(X_test, 224, 224, method="bicubic")
+
+    X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
+    X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
+    X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
+
+    if segment != None:
+        if segment == "unet":
+            X_tr, X_val, X_test = unet_segmenter(X_tr, X_val, X_test, segmenter_path)
+            print(f"Segmentação com UNet concluída.")   
+        elif segment == "yolo":
+            X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, segmenter_path)
+            print(f"Segmentação com YOLO concluída.")
+
+
+    X_test = np.expand_dims(X_test, axis=-1)
+
+    return X_test
+
+
+
+
+
 if __name__ == "__main__":
 
-    VALUE_SEED = int(time.time()*1000) % 15000
-    random.seed(VALUE_SEED)
-    semente = random.randint(0,15000)
 
-    tf.config.experimental.enable_op_determinism()
-    np.random.seed(semente)
-    tf.random.set_seed(semente)
+    X, y , patient_ids = load_raw_images(
+        "filtered_raw_dataset/Frontal",
+        resize_to=224, interp='bicubic')
+    
 
-    delete_folder("runs/classify")
 
-    train_model_cv("yolo",
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= semente,
-                   segmenter="yolo",
-                   message="Yolon_seg_Yolos_cls",
-                   seg_model_path="runs/segment/train22/weights/best.pt")
+    for i in range(5):
+
+        X_test = ppeprocessEigenCam(X, y, f"splits/ResNet_unet_AUG_CV_2.0_Frontal_F{i}.json", segment="unet", segmenter_path="modelos/unet/Frontal_Unet_AUG_V10_05_Padding.h5")
+        
+
+        run_eigencam(
+            imgs       = X_test,
+            model_path = f"modelos/ResNet34/ResNet_unet_AUG_CV_2.0_Frontal_F{i}.h5",
+            out_dir    = "CAM_results_ResNet_unet_AUG_CV_2.0_F{i}"
+        )
+
+
+    for i in range(5):
+
+        X_test = ppeprocessEigenCam(X, y, f"splits/ResNet_yolon_AUG_CV_2.0_Frontal_F{i}.json", segment="yolo", segmenter_path="runs/segment/train22/weights/best.pt")
+
+        run_eigencam(
+            imgs       = X_test,
+            model_path = f"modelos/ResNet34/ResNet_yolon_AUG_CV_2.0_Frontal_F{i}.h5",
+            out_dir    = "CAM_results_ResNet_yolon_AUG_CV_2.0_F{i}"
+        )
+
+
+    for i in range(5):
+        X_test = ppeprocessEigenCam(X, y, f"splits/ResNet_AUG_CV_2.0_Frontal_F{i}.json")
+
+        run_eigencam(
+            imgs       = X_test,
+            model_path = f"modelos/ResNet34/ResNet_AUG_CV_2.0_Frontal_F{i}.h5",
+            out_dir    = "CAM_results_ResNet_AUG_CV_2.0_F{i}"
+        )
+
+
+
+
+
+
+
+
+    #X_test = X_test[y_test == 1] 
+    
+    #Filtra apenas as imagens com rótulo 1
+
+
+
+    # # 1) carregue seus arrays .npy ou crie dummy arrays para testar
+    # imgs  = np.load("x_val.npy")            # shape (N,H,W,1), float32 0-1
+    # masks = np.load("masks_val.npy")        # shape (N,H,W)   0/1  OU  None
+
+
+
+
+
+
+
+    # VALUE_SEED = int(time.time()*1000) % 15000
+    # random.seed(VALUE_SEED)
+    # semente = random.randint(0,15000)
+
+    # tf.config.experimental.enable_op_determinism()
+    # np.random.seed(semente)
+    # tf.random.set_seed(semente)
+
+    # delete_folder("runs/classify")
+
+    # train_model_cv("yolo",
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= semente,
+    #                segmenter="yolo",
+    #                message="Yolon_seg_Yolos_cls",
+    #                seg_model_path="runs/segment/train22/weights/best.pt")
     
 
     """
