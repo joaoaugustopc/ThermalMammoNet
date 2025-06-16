@@ -900,11 +900,16 @@ def ppeprocessEigenCam(X, y, splits_path, segment = None, segmenter_path ="" ):
     X_train = X[train_idx]
     y_train = y[train_idx]
 
+    X_val = X[val_idx]
+    y_val = y[val_idx]
+
 
     mn, mx = X_train.min(), X_train.max()
 
     # normaliza
     X_test=normalize(X_test,   mn, mx)
+    X_tr=normalize(X_train, mn, mx)
+    X_val=normalize(X_val,   mn, mx)
 
     
 
@@ -941,8 +946,7 @@ if __name__ == "__main__":
 
 
     X, y , patient_ids = load_raw_images(
-        "filtered_raw_dataset/Frontal",
-        resize_to=224, interp='bicubic')
+        "filtered_raw_dataset/Frontal")
     
 
 
@@ -954,7 +958,7 @@ if __name__ == "__main__":
         run_eigencam(
             imgs       = X_test,
             model_path = f"modelos/ResNet34/ResNet_unet_AUG_CV_2.0_Frontal_F{i}.h5",
-            out_dir    = "CAM_results_ResNet_unet_AUG_CV_2.0_F{i}"
+            out_dir    = f"CAM_results_ResNet_unet_AUG_CV_2.0_F{i}"
         )
 
 
@@ -965,17 +969,18 @@ if __name__ == "__main__":
         run_eigencam(
             imgs       = X_test,
             model_path = f"modelos/ResNet34/ResNet_yolon_AUG_CV_2.0_Frontal_F{i}.h5",
-            out_dir    = "CAM_results_ResNet_yolon_AUG_CV_2.0_F{i}"
+            out_dir    = f"CAM_results_ResNet_yolon_AUG_CV_2.0_F{i}"
         )
 
 
     for i in range(5):
+
         X_test = ppeprocessEigenCam(X, y, f"splits/ResNet_AUG_CV_2.0_Frontal_F{i}.json")
 
         run_eigencam(
             imgs       = X_test,
             model_path = f"modelos/ResNet34/ResNet_AUG_CV_2.0_Frontal_F{i}.h5",
-            out_dir    = "CAM_results_ResNet_AUG_CV_2.0_F{i}"
+            out_dir    = f"CAM_results_ResNet_AUG_CV_2.0_F{i}"
         )
 
 

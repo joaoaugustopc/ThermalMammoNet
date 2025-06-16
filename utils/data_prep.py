@@ -944,7 +944,7 @@ def tf_letterbox(images, target = 224, mode = 'bilinear'):
 
 
     TARGET = target          
-    PAD_COLOR = 114/255.0  # normalizado p/ [0,1] se você já escala
+    PAD_COLOR = 114/255.0  
 
     #PAD_COLOR = 0.0
 
@@ -968,6 +968,7 @@ def tf_letterbox(images, target = 224, mode = 'bilinear'):
     right = pad_w - left
 
     paddings = [[0, 0], [top, bottom], [left, right], [0, 0]]
+    
     padded = tf.pad(resized, 
 				    paddings, 
 				    mode='CONSTANT', 
