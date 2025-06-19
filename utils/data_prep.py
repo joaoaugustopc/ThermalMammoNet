@@ -309,7 +309,9 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
         all_images.append(image)
         all_labels.append(label)
     
-    transformations = [random_rotation, random_zoom, random_brightness, random_contrast]
+    #transformations = [random_rotation, random_zoom, random_brightness, random_contrast]
+    transformations = [random_rotation, random_zoom, random_brightness]
+
 
     #aplicar cada transformação separado
     for _ in range(num_augmented_copies):
@@ -475,8 +477,11 @@ def load_imgs_masks(angulo, img_path, mask_path, augment=False, resize=False, ta
         imagens = np.expand_dims(imagens, axis=-1)
         mascaras = np.expand_dims(mascaras, axis=-1)
 
-        imagens = tf.image.resize_with_pad(imagens, target, target, method="bilinear")
-        mascaras = tf.image.resize_with_pad(mascaras, target, target, method="nearest")
+        # imagens = tf.image.resize_with_pad(imagens, target, target, method="bilinear")
+        # mascaras = tf.image.resize_with_pad(mascaras, target, target, method="nearest")
+
+        imagens = tf_letterbox(imagens, target, mode="bilinear")
+        mascaras = tf_letterbox(mascaras, target, mode="nearest")
 
         imagens = np.squeeze(imagens, axis=-1)
         mascaras = np.squeeze(mascaras, axis=-1)
@@ -858,8 +863,7 @@ def filter_dataset_by_id(src_dir: str, dst_dir: str, ids_to_remove):
             shutil.copy2(src_path, dst_path)
 
 
-def load_raw_images(angle_dir, exclude=False, exclude_set=None,
-                    resize_to=224, interp='bicubic'):
+def load_raw_images(angle_dir, exclude=False, exclude_set=None):
     
     imgs, labels, ids = [], [], []
 
@@ -930,6 +934,54 @@ def augment_train_fold(x_train, y_train, n_aug=1, seed=None):
 
 def normalize(arr, min_v, max_v):
     return (arr - min_v) / (max_v - min_v + 1e-8)
+
+
+
+
+
+
+def tf_letterbox(images, target = 224, mode = 'bilinear'):
+
+
+    TARGET = target          
+    PAD_COLOR = 114/255.0  
+
+    #PAD_COLOR = 0.0
+
+    h, w = tf.shape(images)[1], tf.shape(images)[2]
+    
+    r = tf.cast(tf.minimum(TARGET / tf.cast(h, tf.float32),
+                           TARGET / tf.cast(w, tf.float32)), tf.float32)
+    
+    new_h = tf.cast(tf.round(tf.cast(h, tf.float32) * r), tf.int32)
+    new_w = tf.cast(tf.round(tf.cast(w, tf.float32) * r), tf.int32)
+
+    # Resize todas as imagens do batch
+    resized = tf.image.resize(images, (new_h, new_w), method=mode)
+
+    # Calcula padding necessário
+    pad_h = TARGET - new_h
+    pad_w = TARGET - new_w
+    top = pad_h // 2
+    bottom = pad_h - top
+    left = pad_w // 2
+    right = pad_w - left
+
+    paddings = [[0, 0], [top, bottom], [left, right], [0, 0]]
+    
+    padded = tf.pad(resized, 
+				    paddings, 
+				    mode='CONSTANT', 
+				    constant_values=PAD_COLOR)
+
+    return padded
+
+
+
+
+    
+    
+
 
 
 

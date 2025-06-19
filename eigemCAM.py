@@ -72,7 +72,7 @@ def run_eigencam(imgs, masks = None, model_path = "", out_dir="cam_out", layer_n
         ov_img = mix(rgb, heat)           # overlay
 
         # ----- salvar -----
-        Image.fromarray(heat).save(f"{out_dir}/sample_{i}_heatmap.png")
+        #Image.fromarray(heat).save(f"{out_dir}/sample_{i}_heatmap.png")
         Image.fromarray(ov_img).save(f"{out_dir}/sample_{i}_overlay.png")
 
         # ----- métrica opcional -----
