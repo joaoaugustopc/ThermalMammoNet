@@ -975,7 +975,10 @@ def tf_letterbox(images, target = 224, mode = 'bilinear'):
 				    constant_values=PAD_COLOR)
 
     return padded
-    
+
+
+
+
     
     
 
