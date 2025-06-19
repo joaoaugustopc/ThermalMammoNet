@@ -82,3 +82,16 @@ teste_test_yolo/
 teste_train_yolo/
 teste_val_yolo/
 
+dataset_fold/
+runs/
+yolo_datasets/
+yolov8s-cls.pt
+testandoLETTERBOX/
+testandoLETTERBOX_1/
+dataset_fold_1/
+
+CAM_results*
+testandoLETTERBOX_preto/
+
+Confusion_Matrix/
+
