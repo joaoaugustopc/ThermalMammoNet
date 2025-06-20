@@ -273,44 +273,61 @@ def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5,
                 raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
         
 
+        # FAB -> Treinamento YOLO
         if model == "yolo":
-            save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
-            save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
-            save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_tr, y_tr, "train", root=f"Yolos_Seg_Yolos_cls/dataset_fold_{fold+1}")                     #AQUI
+            save_split_to_png(X_val, y_val, "val",   root=f"Yolos_Seg_Yolos_cls/dataset_fold_{fold+1}")                   #AQUI
+            save_split_to_png(X_test, y_test, "test", root=f"Yolos_Seg_Yolos_cls/dataset_fold_{fold+1}")                  #AQUI
 
             print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
 
-            # Treinamento YOLO
-            model_f = YOLO('yolov8s-cls.pt')
-            start_time = time.time() 
+            start_time = time.time()
 
-            model_f.train(
-                data=f"dataset_fold_{fold+1}",
-                epochs=100,
-                patience=50,
+            modelY = YOLO('yolov8s-cls.pt')
+            modelY.train(
+                data=f"Yolos_Seg_Yolos_cls/dataset_fold_{fold+1}",                                    #AQUI
+                epochs=500,
+                patience=50, #'20'
                 batch=16,
-                #lr0=0.0005,
-                optimizer='AdamW',
-                #weight_decay=0.0005,
-                #hsv_h=0.1,
-                #hsv_s=0.2,
-                #flipud=0.3,
-                #mosaic=0.1,
-                #mixup=0.1,
-                workers=0,
+                imgsz=224,
+                optimizer='AdamW', 
+                # optimizer='SGD'
+                # momentum=0.9,
+                workers=0,  #2
                 pretrained=False,
                 amp=False,
                 deterministic=True,
                 seed=seed,
                 project="runs/classify",
-                name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
+                name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}",
+
+
+
+                augment=False,      # Desativa augmentations básicas
+                mosaic=0.0,         # Desativa mosaic augmentation
+                erasing=0.0,        # Desativa random erasing
+                hsv_h=0.0,          # Desativa ajuste de matiz (HSV)
+                hsv_s=0.0,          # Desativa ajuste de saturação
+                hsv_v=0.0,          # Desativa ajuste de brilho
+                degrees=0.0,        # Desativa rotação
+                translate=0.0,      # Desativa translação
+                scale=0.0,          # Desativa escala
+                shear=0.0,          # Desativa inclinação (shear)
+                perspective=0.0,    # Desativa distorção de perspectiva
+                flipud=0.0,         # Desativa flip vertical
+                fliplr=0.0          # Desativa flip horizontal
+                
             )
             
             end_time = time.time()
 
+            best_model_path = f"runs/classify/YOLOv8_cls_fold_{fold+1}_seed_{seed}/weights/best.pt"
+            modelYV = YOLO(best_model_path) 
+
             # Validação
-            metrics = model_f.val(
-                data=f"dataset_fold_{fold+1}",
+            metrics = modelYV.val(
+                data=f"Yolos_Seg_Yolos_cls/dataset_fold_{fold+1}",                                                #AQUI
+                split="test", 
                 project="runs/classify/val",
                 name=f"fold_{fold+1}_seed_{seed}",
                 save_json=True
@@ -329,24 +346,7 @@ def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5,
             # Salvar em JSON
             with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
                 json_module.dump(results_to_save, f, indent=4)
-
-            """
-            # Extraindo métricas
-            accuracy = metrics.results_dict['accuracy_top1']
-            precision = metrics.results_dict['precision']
-            recall = metrics.results_dict['recall']
-            f1 = metrics.results_dict['f1']
-
-            # Salvando no mesmo arquivo de log dos outros modelos
-            with open(log_txt, "a") as f:
-                f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
-                f.write(f"Accuracy: {accuracy:.4f}\n")
-                f.write(f"Precision: {precision:.4f}\n")
-                f.write(f"Recall: {recall:.4f}\n")
-                f.write(f"F1-Score: {f1:.4f}\n")
-                f.write("-"*50 + "\n")  # Separador visual
-
-            """
+        #End FAB -> Treinamento YOLO
 
         else:
 
@@ -393,9 +393,9 @@ def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5,
                         f"Tempo de treinamento={end_time - start_time:.2f} s\n")
                 
             plot_convergence(history, model.__name__, angle, fold, message)
+
         
 
-        delete_folder("dataset_fold")
         K.clear_session()
         gc.collect()
 
@@ -833,48 +833,31 @@ def segment_and_save_pngdataset(model_path, input_dir, output_dir, ext_txt=".txt
                     cv2.imwrite(out_path, segmented)
                     print(f"[Salvo] {out_path}")
 
-#FABS
+#FAB
+#save_split_to_png(X_test, y_test, "test", root=f"Yolos_cls/dataset_fold_{fold+1}")
 def save_split_to_png(images, labels, split_name, root="dataset_fold"):
-    """
-    Salva um split de imagens/labels em formato PNG no layout aceito pelo YOLOv8n-cls.
 
-    └── dataset_fold/
-        ├── train/
-        │   ├── 0/
-        │   │   ├── 00000.png
-        │   │   └── ...
-        │   └── 1/
-        ├── val/
-        └── test/
-    Args
-    ----
-    images : np.ndarray  (N, H, W, C) ou (N, H, W)
-    labels : Sequence[int]  rótulo inteiro por imagem
-    split_name : str  "train" | "val" | "test"
-    root : str ou Path  diretório-raiz do dataset
-    """
     out_base = Path(root) / split_name
     out_base.mkdir(parents=True, exist_ok=True)
 
     for idx, (img, cls) in enumerate(zip(images, labels)):
-        # Converte para uint8 [0-255] caso ainda esteja em float [0-1]
+        # de float [0-1] para uint8 [0-255]
         if img.dtype != np.uint8:
             img = np.clip(img * 255, 0, 255).astype(np.uint8)
 
-        # Garante 3 canais
+        # 3 canais
         if img.ndim == 2:
             img = np.stack([img]*3, axis=-1)
 
-        # YOLO-cls quer as pastas por classe
+        # pastas por split
         class_dir = out_base / str(cls)
         class_dir.mkdir(parents=True, exist_ok=True)
 
         fname = class_dir / f"{idx:06d}.png"
-        # cv2 espera BGR; converta se seu array já estiver RGB
+        # cv2 RGB
         cv2.imwrite(str(fname), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
     print(f"✓ {split_name} salvo em {out_base}")
-
 
 
 if __name__ == "__main__":
@@ -888,6 +871,11 @@ if __name__ == "__main__":
     tf.random.set_seed(semente)
 
     delete_folder("runs/classify")
+    # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_1")
+    # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_2")
+    # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_3")
+    # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_4")
+    # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_5")
 
     train_model_cv("yolo",
                    raw_root="filtered_raw_dataset",
@@ -898,7 +886,7 @@ if __name__ == "__main__":
                    batch=8,
                    seed= semente,
                    segmenter="yolo",
-                   message="Yolon_seg_Yolos_cls",
+                   message="Yolos_Seg_Yolos_cls",
                    seg_model_path="runs/segment/train22/weights/best.pt")
     
 

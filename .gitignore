@@ -89,3 +89,10 @@ yolov8s-cls.pt
 testandoLETTERBOX/
 testandoLETTERBOX_1/
 
+
+#Fabricio
+Yolos_Seg_Yolos_cls/
+Yolos_cls/
+Yolox_Seg_Yolos_cls/
+datasets/
+

@@ -54,3 +54,26 @@ def create_folder(folder_path):
         print(f"Pasta {folder_path} criada.")
     else:
         print(f"Pasta {folder_path} já existe.")
+
+def move_folder(source_folder, destination_folder):
+    try:
+        if os.path.exists(source_folder):
+            # Verifica se o destino é um diretório existente
+            if os.path.isdir(destination_folder):
+                # Obtém o nome da pasta de origem para manter no destino
+                folder_name = os.path.basename(source_folder)
+                new_path = os.path.join(destination_folder, folder_name)
+                
+                # Verifica se já existe uma pasta com o mesmo nome no destino
+                if os.path.exists(new_path):
+                    print(f"Erro: Já existe uma pasta com o nome '{folder_name}' em {destination_folder}")
+                    return
+                
+                shutil.move(source_folder, destination_folder)
+                print(f"Pasta {source_folder} movida para {destination_folder}")
+            else:
+                print(f"Erro: O destino {destination_folder} não é um diretório válido")
+        else:
+            print(f"Erro: A pasta de origem {source_folder} não existe")
+    except Exception as e:
+        print(f"Erro ao mover pasta: {str(e)}")
