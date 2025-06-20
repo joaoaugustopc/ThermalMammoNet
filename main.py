@@ -1032,7 +1032,32 @@ def evaluate_model_cm(model_path,
 
 if __name__ == "__main__":
 
+    VALUE_SEED = int(time.time()*1000) % 15000
+    random.seed(VALUE_SEED)
+    semente = random.randint(0,15000)
 
+    tf.config.experimental.enable_op_determinism()
+    np.random.seed(semente)
+    tf.random.set_seed(semente)
+
+    delete_folder("runs/classify")
+    # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_1")
+    # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_2")
+    # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_3")
+    # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_4")
+    # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_5")
+
+    train_model_cv("yolo",
+                   raw_root="filtered_raw_dataset",
+                   angle="Frontal",
+                   k=5,                 
+                   resize_to=224,
+                   n_aug=2,             
+                   batch=8,
+                   seed= semente,
+                   segmenter="yolo",
+                   message="Yolos_Seg_Yolos_cls",
+                   seg_model_path="runs/segment/train22/weights/best.pt")
     
     # Geração de matrizes de confusão para os modelos treinados
     ######## INICIO
