@@ -287,16 +287,15 @@ def apply_transformation(image, transformation):
     return:
     all_imagens, all_labels : imagens e labels originais + aug
 """
-def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=False, target_size=0):
+def apply_augmentation_and_expand(train, labels, num_augmented_copies, seed =42, resize=False, target_size=0):
 
     print("Aumentando o dataset com cópias aumentadas...")
     print("Shape original das imagens:", train.shape)
     print("Shape original das máscaras:", labels.shape)
 
     #VALUE_SEED = int(time.time() * 1000) % 15000
-    VALUE_SEED = 12274
-    random.seed(VALUE_SEED)
-    print(f"***SEMENTE USADA****: {VALUE_SEED}")
+    #VALUE_SEED = 12274
+    random.seed(seed)
 
     train = np.expand_dims(train, axis=-1)
     
@@ -898,7 +897,7 @@ def load_raw_images(angle_dir, exclude=False, exclude_set=None):
                 print(f"Erro ao processar {fpath}: {e}")
                 continue
 
-    return np.array(imgs), np.array(labels), np.array(ids, dtype= float)
+    return np.array(imgs), np.array(labels), np.array(ids, dtype= int)
 
 
 from sklearn.model_selection import StratifiedGroupKFold, GroupShuffleSplit
@@ -923,12 +922,12 @@ def make_tvt_splits(imgs, labels, ids, k=5, val_size=0.25, seed=42):
 
 
 
-def augment_train_fold(x_train, y_train, n_aug=1, seed=None):
+def augment_train_fold(x_train, y_train, n_aug=1, seed=42):
     """
     Recebe dados de treino de UM fold e concatena n_aug versões aumentadas.
     """
     aug_imgs, aug_labels = apply_augmentation_and_expand(
-                               x_train, y_train, n_aug, resize=False)
+                               x_train, y_train, n_aug,seed, resize=False)
 
     return aug_imgs, aug_labels
 
