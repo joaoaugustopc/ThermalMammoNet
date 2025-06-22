@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir ultralytics
 RUN pip install --no-cache-dir opencv-python
 
 
+
 COPY . /experiment
 
 ENV PYTHONBUFFERED=1

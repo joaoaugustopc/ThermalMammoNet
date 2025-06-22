@@ -36,3 +36,14 @@ raw_png_dataset/
 filtered_raw_dataset/
 Yolo_dataset_aug_10_05/
 Yolo_dataset_10_05/
+
+
+#Fab
+Yolos_cls/
+Yolos_Seg_Yolos_cls/
+Yolox_Seg_Yolos_cls/
+dataset_fold/
+datasets/
+filtered_raw_dataset/
+runs/
+

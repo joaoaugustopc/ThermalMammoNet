@@ -11,8 +11,6 @@ import json
 import glob
 from sklearn.metrics import classification_report
 
-import cv2
-from ultralytics import YOLO
 from tensorflow.keras import backend as K
 import gc
 import numpy as np
@@ -27,6 +25,16 @@ import csv
 import os
 import json as json_module  # Alias seguro
 import json
+
+import cv2
+import torch
+
+from pytorch_grad_cam import EigenCAM
+from pytorch_grad_cam.utils.image import show_cam_on_image
+from ultralytics import solutions
+
+from yolo_cam.eigen_cam import EigenCAM
+from yolo_cam.utils.image import show_cam_on_image, scale_cam_image
 
 
 
@@ -292,7 +300,7 @@ def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5,
             modelY = YOLO('yolov8s-cls.pt')
             modelY.train(
                 data=f"Yolos_Seg_Yolos_cls/dataset_fold_{fold+1}",                                    #AQUI
-                epochs=500,
+                epochs=1,
                 patience=50, #'20'
                 batch=16,
                 imgsz=224,
@@ -352,6 +360,9 @@ def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5,
             # Salvar em JSON
             with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
                 json_module.dump(results_to_save, f, indent=4)
+
+            
+
         #End FAB -> Treinamento YOLO
 
         else:
@@ -1027,7 +1038,7 @@ def evaluate_model_cm(model_path,
 
     
     K.clear_session(); gc.collect()
-    
+
 
 
 if __name__ == "__main__":
@@ -1040,25 +1051,52 @@ if __name__ == "__main__":
     np.random.seed(semente)
     tf.random.set_seed(semente)
 
-    delete_folder("runs/classify")
+
+################################ FAB
+
+    img = cv2.imread("Yolos_Seg_Yolos_cls/dataset_fold_1/test/0/000000.png")
+    img = cv2.resize(img, (640, 640))
+
+    rgb_img = img.copy()
+    img = np.float32(img) / 255
+
+    model = YOLO('runs/classify/YOLOv8_cls_fold_1_seed_4230/weights/best.pt') 
+    model = model.cpu()
+    target_layers =[model.model.model[-2]]
+
+    cam = EigenCAM(model, target_layers,task='cls')
+
+    grayscale_cam = cam(rgb_img)[0, :, :]
+    cam_image = show_cam_on_image(img, grayscale_cam, use_rgb=True)
+
+    cv2.imwrite("heatmap_result.png", cam_image)
+
+    # delete_folder("runs/classify")
     # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_1")
     # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_2")
     # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_3")
     # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_4")
     # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_5")
 
-    train_model_cv("yolo",
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= semente,
-                   segmenter="yolo",
-                   message="Yolos_Seg_Yolos_cls",
-                   seg_model_path="runs/segment/train22/weights/best.pt")
+    # train_model_cv("yolo",
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= semente,
+    #                segmenter="yolo",
+    #                message="Yolos_Seg_Yolos_cls",
+    #                seg_model_path="runs/segment/train22/weights/best.pt")
+
+
+################################ FAB
+
     
+
+
+
     # Geração de matrizes de confusão para os modelos treinados
     ######## INICIO
     # for i in range(5):
@@ -1084,9 +1122,9 @@ if __name__ == "__main__":
 
     
 
-# Exemplo de uso da função EIGEMCAM (Gerar Mapas de Calor)
-# Cada laço, carrega as imagens de teste (indices no caminho especificado) de cada fold, processa (ppeprocessEigenCam) e gera os mapas de calor com a função run_eigencam.
-########## INICIO
+#Exemplo de uso da função EIGEMCAM (Gerar Mapas de Calor)
+#Cada laço, carrega as imagens de teste (indices no caminho especificado) de cada fold, processa (ppeprocessEigenCam) e gera os mapas de calor com a função run_eigencam.
+######### INICIO
 
     # X, y , patient_ids = load_raw_images(
     #     "filtered_raw_dataset/Frontal")
@@ -1127,7 +1165,7 @@ if __name__ == "__main__":
     #     )
 
 
-    ############# FIM
+    ############ FIM
 
 
 
