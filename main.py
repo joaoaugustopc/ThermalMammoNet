@@ -300,8 +300,8 @@ def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5,
             modelY = YOLO('yolov8s-cls.pt')
             modelY.train(
                 data=f"Yolos_Seg_Yolos_cls/dataset_fold_{fold+1}",                                    #AQUI
-                epochs=1,
-                patience=50, #'20'
+                epochs=500,
+                patience=500, #'20'
                 batch=16,
                 imgsz=224,
                 optimizer='AdamW', 
@@ -1054,29 +1054,13 @@ if __name__ == "__main__":
 
 ################################ FAB
 
-    img = cv2.imread("Yolos_Seg_Yolos_cls/dataset_fold_1/test/0/000000.png")
-    img = cv2.resize(img, (640, 640))
-
-    rgb_img = img.copy()
-    img = np.float32(img) / 255
-
-    model = YOLO('runs/classify/YOLOv8_cls_fold_1_seed_4230/weights/best.pt') 
-    model = model.cpu()
-    target_layers =[model.model.model[-2]]
-
-    cam = EigenCAM(model, target_layers,task='cls')
-
-    grayscale_cam = cam(rgb_img)[0, :, :]
-    cam_image = show_cam_on_image(img, grayscale_cam, use_rgb=True)
-
-    cv2.imwrite("heatmap_result.png", cam_image)
-
     # delete_folder("runs/classify")
     # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_1")
     # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_2")
     # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_3")
     # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_4")
     # delete_folder("Yolox_Seg_Yolos_cls/dataset_fold_5")
+    # delete_folder("heatmap_results")
 
     # train_model_cv("yolo",
     #                raw_root="filtered_raw_dataset",
@@ -1090,6 +1074,53 @@ if __name__ == "__main__":
     #                message="Yolos_Seg_Yolos_cls",
     #                seg_model_path="runs/segment/train22/weights/best.pt")
 
+    for fold in range(5):
+
+        os.listdir(f"Yolos_cls/dataset_fold_{fold+1}/test/0/")
+        for file in os.listdir(f"Yolos_cls/dataset_fold_{fold+1}/test/0/"):
+            full_path = os.path.join(f"Yolos_cls/dataset_fold_{fold+1}/test/0/", file)
+            img = cv2.imread(full_path)
+            #img = cv2.resize(img, (640, 640))
+
+            rgb_img = img.copy()
+            img = np.float32(img) / 255
+
+            model = YOLO('best.pt') #Mexer!!!
+            model = model.cuda()
+            target_layers =[model.model.model[-2]]
+
+            cam = EigenCAM(model, target_layers,task='cls')
+
+            grayscale_cam = cam(rgb_img)[0, :, :]
+            cam_image = show_cam_on_image(img, grayscale_cam, use_rgb=True)
+
+            os.makedirs(f"heatmap_results/Yolos_cls/dataset_fold_{fold+1}/0", exist_ok=True)
+            full_path = os.path.join(f"heatmap_results/Yolos_cls/dataset_fold_{fold+1}/0", file)
+            cv2.imwrite(full_path, cam_image)
+
+        
+        os.listdir(f"Yolos_cls/dataset_fold_{fold+1}/test/1/")
+        for file in os.listdir(f"Yolos_cls/dataset_fold_{fold+1}/test/1/"):
+            full_path = os.path.join(f"Yolos_cls/dataset_fold_{fold+1}/test/1/", file)
+            img = cv2.imread(full_path)
+            #img = cv2.resize(img, (640, 640))
+
+            rgb_img = img.copy()
+            img = np.float32(img) / 255
+
+            model = YOLO('best.pt') #Mexer!!!
+            model = model.cuda()
+            target_layers =[model.model.model[-2]]
+
+            cam = EigenCAM(model, target_layers,task='cls')
+
+            grayscale_cam = cam(rgb_img)[0, :, :]
+            cam_image = show_cam_on_image(img, grayscale_cam, use_rgb=True)
+
+            os.makedirs(f"heatmap_results/Yolos_cls/dataset_fold_{fold+1}/1", exist_ok=True)
+            full_path = os.path.join(f"heatmap_results/Yolos_cls/dataset_fold_{fold+1}/1", file)
+            cv2.imwrite(full_path, cam_image)
+
 
 ################################ FAB
 
@@ -1097,8 +1128,8 @@ if __name__ == "__main__":
 
 
 
-    # Geração de matrizes de confusão para os modelos treinados
-    ######## INICIO
+    # #Geração de matrizes de confusão para os modelos treinados
+    # ###### INICIO
     # for i in range(5):
     #     model_path = F"modelos/ResNet34/ResNet_yolon_AUG_CV_2.0_Frontal_F{i}.h5"
     #     split_path = F"splits/ResNet_yolon_AUG_CV_2.0_Frontal_F{i}.json"
@@ -1116,7 +1147,7 @@ if __name__ == "__main__":
     #                     segmenter="yolo",
     #                     seg_model_path="runs/segment/train22/weights/best.pt",
     #                     classes=("Healthy", "Sick"))
-    ############ FIM
+    # ########## FIM
         
     
 

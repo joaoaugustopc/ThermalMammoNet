@@ -101,4 +101,5 @@ Yolos_Seg_Yolos_cls/
 Yolos_cls/
 Yolox_Seg_Yolos_cls/
 datasets/
+heatmaps_salvos/
 
