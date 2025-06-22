@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox
+from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas
 from utils.files_manipulation import move_files_within_folder, create_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model
@@ -203,13 +203,15 @@ def segment_with_yolo( X_train, X_valid, X_test, model_path):
 def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5, 
                     resize = True, resize_to = 224, n_aug = 0, batch = 8, seed = 42, segmenter = "none", seg_model_path = ""):
     
+    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
+    
     X, y , patient_ids = load_raw_images(
-        os.path.join(raw_root, angle))
+        os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
     
 
     with open("modelos/random_seed.txt", "a") as f:
         f.write(f"{message}\n"
-                f"SEMENTE: {seed}")
+                f"SEMENTE: {seed}\n")
 
 
 
@@ -265,7 +267,10 @@ def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5,
         # augmenta & concatena
         if n_aug > 0:
             X_tr, y_tr = augment_train_fold(X_tr, y_tr,
-                                                n_aug=n_aug, seed=fold)
+                                                n_aug=n_aug, seed=seed)
+            
+            with open("modelos/random_seed.txt", "a") as f:
+                f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}\n")
         
 
         if segmenter != "none":
@@ -1048,7 +1053,6 @@ def evaluate_model_cm(model_path,
 
 
 if __name__ == "__main__":
-
 
     
     # Geração de matrizes de confusão para os modelos treinados
