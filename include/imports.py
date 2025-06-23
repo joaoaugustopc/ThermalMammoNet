@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 import os
-from src.models.resNet_34 import ResNet34, ResidualUnit
+from src.models.resNet_34 import ResNet34, ResidualUnit, ResNet34_retangular
 from src.models.Vgg_16 import Vgg_16
 from src.models.googleLenet import googleLenet
 from src.models.alexnet import AlexNet
