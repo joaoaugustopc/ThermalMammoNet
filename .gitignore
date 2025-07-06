@@ -102,3 +102,5 @@ Confusion_Matrix/
 modelofab.pt
 
 Resultados/
+
+yolo_nano_model/
