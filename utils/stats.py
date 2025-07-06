@@ -102,6 +102,9 @@ def data_distribution():
         print("Train Sick:",len(labels_train[labels_train == 1]))
 
 def plot_convergence(history, model_name, angulo, i, mensagem = ""):
+    
+        os.makedirs(f"history/{model_name}", exist_ok=True)
+    
         # Gráfico de perda de treinamento
         plt.figure(figsize=(10, 6))
         plt.plot(history.history['loss'], label='Training Loss')

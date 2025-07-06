@@ -5,6 +5,7 @@ from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_i
 from utils.files_manipulation import move_files_within_folder, create_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model
+from src.models.Vgg_16 import Vgg_16
 
 # Use o tempo atual em segundos como semente
 VALUE_SEED = int(time.time() * 1000) % 15000
@@ -25,12 +26,10 @@ with open("seed_global", "w") as seed_file:
     seed_file.write(f"Random Seed: {seed}\n")
 
 
-def train_models(models_objects, dataset: str, resize=False, target = 0, message=""):
+def train_models(model, dataset: str, resize=False, target = 0, message="", learning_rate=0.00001):
     list = ["Frontal"]
-    models = models_objects
                 
     for angulo in list:
-        
 
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo, dataset)
         
@@ -51,83 +50,84 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
             imagens_test = np.squeeze(imagens_test, axis=-1)
         
         #treinando cada modelo da lista
-        for model_func in models_objects:
 
-            #criando pasta com gráficos dos modelos
-            os.makedirs(f"history/{model_func.__name__}", exist_ok=True)
+        #criando pasta com gráficos dos modelos
+        os.makedirs(f"history/unet_vgg16/{model.__name__}", exist_ok=True)
+        
+        with open(f"modelos/random_seed.txt", "a") as f:
+            f.write(f"Modelo:{model.__name__}\n")
+            f.write(f"Angulo: {angulo}\n")
+
+        for i in range(10):
             
-            with open(f"modelos/random_seed.txt", "a") as f:
-                f.write(f"Modelo:{model_func.__name__}\n")
-                f.write(f"Angulo: {angulo}\n")
+            VALUE_SEED = int(time.time()*1000) % 15000
+            random.seed(VALUE_SEED)
+            
+            seed = random.randint(0,15000)  
+            
+            tf.keras.utils.set_random_seed(seed)
+            tf.config.experimental.enable_op_determinism()
+            
+            print(f"history/unet_vgg16/{model.__name__}/{model.__name__}_{angulo}_{i}_time.txt")
+            
+            start_time = time.time()
+            
+            checkpoint_path = f"modelos/unet_vgg16/{model.__name__}/{message}_{angulo}_{i}.h5"
+            checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True, 
+                                                        save_weights_only=False, mode='auto')
+            
+            earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
 
-            for i in range(10):
-                
-                VALUE_SEED = int(time.time()*1000) % 15000
-                random.seed(VALUE_SEED)
-                
-                seed = random.randint(0,15000)  
-                
-                tf.keras.utils.set_random_seed(seed)
-                tf.config.experimental.enable_op_determinism()
-                
-                print(f"history/{model_func.__name__}/{model_func.__name__}_{angulo}_{i}_time.txt")
-                
-                start_time = time.time()
-                
-                checkpoint_path = f"modelos/{model_func.__name__}/{message}_{angulo}_{i}.h5"
-                checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True, 
-                                                            save_weights_only=False, mode='auto')
-                
-                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
+            #reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.05,patience=15, min_lr=1e-5, min_delta=0.0001)
 
-                #reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.05,patience=15, min_lr=1e-5, min_delta=0.0001)
+            #criando objeto e usando o modelo
+            modelo_object = model(learning_rate=learning_rate)
+            modelo_train = modelo_object.model
 
-                #criando objeto e usando o modelo
-                model = model_func().model
+            
+            # Salva a seed em um arquivo de texto
+            with open("random_seed_vgg.txt", "a") as file:
+                file.write(str(seed))
+                file.write("\n")
 
-                model.summary()
-                
-                # Salva a seed em um arquivo de texto
-                with open("random_seed_vgg.txt", "a") as file:
-                    file.write(str(seed))
-                    file.write("\n")
+            print("Seed gerada e salva em random_seed.txt:", seed)
+    
 
-                print("Seed gerada e salva em random_seed.txt:", seed)
-                
 
-                history = model.fit(imagens_train, labels_train, epochs = 500, validation_data= (imagens_valid, labels_valid),
-                                    callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
-                
-                end_time = time.time()
-                
-                # Avaliação do modelo com conjunto de teste
-                if model_func.__name__ == "ResNet34":
-                    with custom_object_scope({'ResidualUnit': ResidualUnit}):
-                        best_model = keras.models.load_model(checkpoint_path)
-                elif model_func.__name__ == "ResNet101":
-                    with custom_object_scope({'BottleneckResidualUnit': BottleneckResidualUnit}):
-                        best_model = keras.models.load_model(checkpoint_path)
-                else:
+            history = modelo_train.fit(imagens_train, labels_train, epochs = 500, validation_data= (imagens_valid, labels_valid),
+                                callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
+            
+            end_time = time.time()
+            
+            # Avaliação do modelo com conjunto de teste
+            if model.__name__ == "ResNet34":
+                with custom_object_scope({'ResidualUnit': ResidualUnit}):
                     best_model = keras.models.load_model(checkpoint_path)
+            elif model.__name__ == "ResNet101":
+                with custom_object_scope({'BottleneckResidualUnit': BottleneckResidualUnit}):
+                    best_model = keras.models.load_model(checkpoint_path)
+            else:
+                best_model = keras.models.load_model(checkpoint_path)
 
-                test_loss, test_accuracy = best_model.evaluate(imagens_test, labels_test, verbose=1)
+            test_loss, test_accuracy = best_model.evaluate(imagens_test, labels_test, verbose=1)
 
-                directory = f"history/{model_func.__name__}/{angulo}/treinamento/"
-                os.makedirs(directory, exist_ok=True)
+            directory = f"history/unet-vgg16/{model.__name__}/{angulo}/treinamento/"
+            os.makedirs(directory, exist_ok=True)
 
-                with open(f"{directory}/{message}_{i}_time.txt", "w") as f:
-                    f.write(f"Modelo: {model_func.__name__}\n")
-                    f.write(f"Tempo de execução: {end_time - start_time}\n")
-                    f.write(f"Loss: {history.history['loss']}\n")
-                    f.write(f"Val_loss: {history.history['val_loss']}\n")
-                    f.write(f"Accuracy: {history.history['accuracy']}\n")
-                    f.write(f"Val_accuracy: {history.history['val_accuracy']}\n")
-                    f.write(f"Test Loss: {test_loss}\n")
-                    f.write(f"Test Accuracy: {test_accuracy}\n")
-                    f.write("\n")
+
+            with open(f"{directory}/{message}_{i}_time.txt", "w") as f:
+                f.write(f"Modelo: {model.__name__}\n")
+                f.write(f"Tempo de execução: {end_time - start_time}\n")
+                f.write(f"Loss: {history.history['loss']}\n")
+                f.write(f"Val_loss: {history.history['val_loss']}\n")
+                f.write(f"Accuracy: {history.history['accuracy']}\n")
+                f.write(f"Val_accuracy: {history.history['val_accuracy']}\n")
+                f.write(f"Test Loss: {test_loss}\n")
+                f.write(f"Test Accuracy: {test_accuracy}\n")
+                f.write("\n")
                     
-                plot_convergence(history, model_func.__name__, angulo, i, "Vgg_16")
-
+            plot_convergence(history,f"{model.__name__}_unet_vgg16", angulo, i, "Vgg_16_unet")
+            
 #TODO: calcular f1, IoU, recall, accuracy
 #TODO: comparar unet com yolo
 
@@ -281,6 +281,26 @@ def segment_and_save_numpydataset(model_path, input_dir, output_dir, view):
     np.save(os.path.join(output_dir, f"labels_test_{view}.npy"), labels_test)
 
     print(f"Segmentação concluída e dataset salvo para: {view}")
+    
+    
+def analysis_dataset(npy_data, dir):
+    
+    os.makedirs(dir, exist_ok=True)
+    dataset = np.load(npy_data)
+    
+    print(dataset.shape)
+    
+    cont = 0
+    for img in dataset:
+        # Desnormaliza (de [0, 1] para [0, 255]) e converte para uint8
+        img_uint8 = (img * 255).astype(np.uint8)
+
+        filename = os.path.join(dir, f"imagem_{cont}.png")
+        # Salva como imagem
+        cv2.imwrite(filename, img_uint8)
+        cont += 1
+
+        
 
 
 """
@@ -332,6 +352,16 @@ def segment_and_save_pngdataset(model_path, input_dir, output_dir, ext_txt=".txt
                     cv2.imwrite(out_path, segmented)
                     print(f"[Salvo] {out_path}")
 
+"""
+    Verificar se o dataset está normalizado
+"""
+def test_normalize(dataset):
+    data = np.load(dataset)
+    
+    if np.min(data) >= 0 and np.max(data) <= 1:
+        print("Normalizado")
+    else:
+        print("Nao normalizado")
 
 if __name__ == "__main__":
 
@@ -728,8 +758,12 @@ if __name__ == "__main__":
     
 
     # # train_yolo_seg(type="n", epochs=200, dataset="dataset.yaml", imgsize=224, seed=VALUE_SEED)
+
     
-    # train_models(Vgg_16, "segmented_yolonano_frontal", resize=True, target=224, message="vgg_yolo_nano")
+
+
+
+    train_models(Vgg_16, "Unet", resize=True, target=224, message="vgg_unet", learning_rate=0.00001)
+    # create_folder("history/Vgg_16_yolo_x")
     
-    
-    
+

@@ -32,7 +32,7 @@ import cv2
 def train_yolo_seg(type, epochs, dataset, imgsize, seed=-1):
     model = YOLO(f'yolov8{type}-seg.pt')  # load a pretrained model (recommended for training)
 
-    deterministic = True if seed is not -1 else False
+    deterministic = True if seed != -1 else False
     model.train(data=dataset, epochs=epochs, imgsz=imgsize, seed=seed, deterministic=deterministic)
 
 

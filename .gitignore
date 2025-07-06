@@ -53,3 +53,8 @@ segmented_yolonano_frontal/
 seed_value_seg.txt
 yolo_dataset_nano
 random_seed_vgg.txt
+
+analysis_yolo_nano/
+Unet/
+Yolo-x/
+yolo_nano_model/
