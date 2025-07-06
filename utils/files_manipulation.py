@@ -54,3 +54,13 @@ def create_folder(folder_path):
         print(f"Pasta {folder_path} criada.")
     else:
         print(f"Pasta {folder_path} já existe.")
+
+
+def copy_file(source_file, destination_folder):
+    if not os.path.exists(destination_folder):
+        os.makedirs(destination_folder)
+    if os.path.exists(source_file):
+        shutil.copy(source_file, destination_folder)
+        print(f"Arquivo {source_file} copiado para {destination_folder}.")
+    else:
+        print(f"Arquivo {source_file} não encontrado.")

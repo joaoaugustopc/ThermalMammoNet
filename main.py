@@ -1,15 +1,42 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients
+from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop
 from utils.files_manipulation import move_files_within_folder, create_folder
 from src.models.yolo_seg import train_yolo_seg
-from src.models.u_net import unet_model
+from src.models.u_net import unet_model, unet_model_retangular
+from utils.stats import precision_score_, recall_score_, accuracy_score_, dice_coef_, iou_ 
+from eigemCAM import run_eigencam
+import json
+import glob
+from sklearn.metrics import classification_report
+from utils.files_manipulation import copy_file
+
+import cv2
+from ultralytics import YOLO
+from tensorflow.keras import backend as K
+import gc
+import numpy as np
+import os, json, time, shutil, random, gc
+from pathlib import Path
+from typing import List, Union
+
+from pathlib import Path
+import numpy as np
+import cv2   # ou PIL.Image, se preferir
+import csv
+import os
+import json as json_module  # Alias seguro
+import json
+
+
+
 from src.models.Vgg_16 import Vgg_16
 
 # Use o tempo atual em segundos como semente
-VALUE_SEED = int(time.time() * 1000) % 15000
-
+##VALUE_SEED = int(time.time() * 1000) % 15000
+"""
+VALUE_SEED = 7758
 random.seed(VALUE_SEED)
 
 seed = random.randint(0, 15000)
@@ -17,16 +44,931 @@ seed = random.randint(0, 15000)
 tf.random.set_seed(seed)
 
 np.random.seed(seed)
-
-print("***SEMENTE USADA****:", VALUE_SEED)
-
-# Salvar a semente em um arquivo de texto
-with open("seed_global", "w") as seed_file:
-    seed_file.write(f"VALUE_SEED: {VALUE_SEED}\n")
-    seed_file.write(f"Random Seed: {seed}\n")
+"""
 
 
-def train_models(model, dataset: str, resize=False, target = 0, message="", learning_rate=0.00001):
+
+
+
+def unet_segmenter(data_train, data_valid, data_test, path_model):
+    model = tf.keras.models.load_model(path_model)
+    train_predictions = model.predict(data_train, batch_size=4)
+    valid_predictions = model.predict(data_valid, batch_size=4)
+    test_predictions = model.predict(data_test, batch_size=4)
+
+    masks_train = (train_predictions > 0.5).astype(np.uint8)
+    masks_valid = (valid_predictions > 0.5).astype(np.uint8)
+    masks_test = (test_predictions > 0.5).astype(np.uint8)
+
+    masks_train = np.squeeze(masks_train, axis=-1)
+    masks_valid = np.squeeze(masks_valid, axis=-1)
+    masks_test = np.squeeze(masks_test, axis=-1)
+
+    segmented_images_train = data_train * masks_train
+    segmented_images_valid = data_valid * masks_valid
+    segmented_images_test = data_test * masks_test
+
+    return segmented_images_train, segmented_images_valid, segmented_images_test
+
+
+def segment_with_yolo( X_train, X_valid, X_test, model_path):
+    """
+    Segmenta X_train, X_valid e X_test usando YOLO-Seg.
+    Retorna as imagens segmentadas nas mesmas ordens.
+    """
+    
+    def prepare_image(img):
+        """Prepara imagem para o YOLO: uint8 RGB 3 canais, redimensionada"""
+        if img.dtype != np.uint8:
+            img = (img * 255).astype(np.uint8)
+        if img.ndim == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        elif img.ndim == 3 and img.shape[2] == 1:
+            img = np.repeat(img, 3, axis=-1)
+        return img
+
+    def segment_batch(images, model):
+        segmented = []
+        for img in images:
+            img_prepared = prepare_image(img)
+
+            results = model.predict(img_prepared, verbose=False)
+
+            res = results[0]
+
+            has_masks = (
+            res.masks is not None and
+            res.masks.data is not None and
+            len(res.masks.data) > 0)
+
+            if has_masks:
+                mask_tensor = results[0].masks.data[0]
+                mask = mask_tensor.cpu().numpy()
+
+                if mask.shape[:2] != (224, 224):
+                    mask = cv2.resize(mask, (224, 224))
+
+
+                binary_mask = (mask > 0.5).astype(np.uint8)
+                if binary_mask.ndim == 2:
+                    binary_mask = np.expand_dims(binary_mask, axis=-1)
+
+                segmented_img = img_prepared * binary_mask
+            else:
+                print("Não encontrou mask")
+                segmented_img = img_prepared
+
+            segmented.append(segmented_img)
+        return np.array(segmented)
+
+    # Carrega modelo YOLO
+    model = YOLO(model_path)
+
+    # Segmenta os três conjuntos
+    seg_train = segment_batch(X_train, model)
+    seg_valid = segment_batch(X_valid, model)
+    seg_test  = segment_batch(X_test, model)
+
+    #a, b, c, d, e, f = load_data("Frontal", "Yolo_dataset")
+
+    array = []
+
+    # Exemplo hipotético de loop processando imagens
+    for i, img in enumerate(seg_train):
+        # Se a imagem tiver 3 canais (H, W, 3), converta para cinza
+        if img.ndim == 3 and img.shape[-1] == 3:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # (H, W)
+            gray = np.expand_dims(gray, axis=-1)          # (H, W, 1)
+            img = gray
+            img = (img / 255.0).astype(np.float32)
+        
+        # Se ela já tiver shape (H, W, 1), não precisa fazer nada
+        # Se estiver em 2D (H, W) e você quiser (H, W, 1), basta expandir a dimensão
+        elif img.ndim == 2:
+            img = np.expand_dims(img, axis=-1)
+        
+        # Agora 'img' tem shape (H, W, 1), pronto para o modelo de classificação
+        # ...
+
+        array.append(img)
+
+    seg_train = np.array(array).squeeze(axis=-1)
+
+    array = []
+
+    for i, img in enumerate(seg_valid):
+        # Se a imagem tiver 3 canais (H, W, 3), converta para cinza
+        if img.ndim == 3 and img.shape[-1] == 3:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # (H, W)
+            gray = np.expand_dims(gray, axis=-1)          # (H, W, 1)
+            img = gray
+            img = (img / 255.0).astype(np.float32)
+        
+        # Se ela já tiver shape (H, W, 1), não precisa fazer nada
+        # Se estiver em 2D (H, W) e você quiser (H, W, 1), basta expandir a dimensão
+        elif img.ndim == 2:
+            img = np.expand_dims(img, axis=-1)
+        
+        # Agora 'img' tem shape (H, W, 1), pronto para o modelo de classificação
+        # ...
+
+        array.append(img)
+
+    seg_valid = np.array(array).squeeze(axis=-1)
+
+    array = []
+
+    for i, img in enumerate(seg_test):
+        # Se a imagem tiver 3 canais (H, W, 3), converta para cinza
+        if img.ndim == 3 and img.shape[-1] == 3:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)  # (H, W)
+            gray = np.expand_dims(gray, axis=-1)          # (H, W, 1)
+            img = gray
+            img = (img / 255.0).astype(np.float32)
+        
+        # Se ela já tiver shape (H, W, 1), não precisa fazer nada
+        # Se estiver em 2D (H, W) e você quiser (H, W, 1), basta expandir a dimensão
+        elif img.ndim == 2:
+            img = np.expand_dims(img, axis=-1)
+        
+        # Agora 'img' tem shape (H, W, 1), pronto para o modelo de classificação
+        # ...
+
+        array.append(img)
+
+    seg_test = np.array(array).squeeze(axis=-1)
+    
+
+
+    return seg_train, seg_valid, seg_test
+
+def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5, 
+                    resize = True, resize_to = 224, n_aug = 0, batch = 8, seed = 42, segmenter = "none", seg_model_path = ""):
+    
+    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
+    
+    X, y , patient_ids = load_raw_images(
+        os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
+    
+
+    with open("modelos/random_seed.txt", "a") as f:
+        f.write(f"{message}\n"
+                f"SEMENTE: {seed}\n")
+
+
+
+    for fold, (tr_idx, va_idx, te_idx) in enumerate(
+                        make_tvt_splits(X, y, patient_ids,
+                                        k=k, val_size=0.25, seed=seed)):
+        
+        # salva índices para reuso posterior
+        split_file = f"splits/{message}_{angle}_F{fold}.json"
+        os.makedirs("splits", exist_ok=True)
+        with open(split_file, "w") as f:
+            json.dump({
+                "train_idx": tr_idx.tolist(),
+                "val_idx": va_idx.tolist(),
+                "test_idx": te_idx.tolist()
+            }, f)
+
+        # ------ prepara dados -----------
+        X_tr, y_tr = X[tr_idx], y[tr_idx]
+        X_val,    y_val = X[va_idx], y[va_idx]
+
+        X_test,   y_test= X[te_idx], y[te_idx]
+
+        # min/max APENAS dos originais
+        mn, mx = X_tr.min(), X_tr.max()
+
+        # normaliza
+        X_tr = normalize(X_tr, mn, mx)
+        X_val= normalize(X_val,    mn, mx)
+        X_test=normalize(X_test,   mn, mx)
+
+        if resize:
+
+            X_tr = np.expand_dims(X_tr, axis=-1)
+            X_val= np.expand_dims(X_val, axis=-1)
+            X_test= np.expand_dims(X_test, axis=-1)
+
+            # X_tr= tf.image.resize_with_pad(X_tr, resize_to, resize_to, method="bicubic")
+            # X_val= tf.image.resize_with_pad(X_val, resize_to, resize_to, method="bicubic")
+            # X_test= tf.image.resize_with_pad(X_test, resize_to, resize_to, method="bicubic")
+
+            X_tr = tf_letterbox(X_tr, resize_to)
+            X_val = tf_letterbox(X_val, resize_to)
+            X_test = tf_letterbox(X_test, resize_to)
+
+            X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
+            X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
+            X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
+
+        
+        
+        
+        # augmenta & concatena
+        if n_aug > 0:
+            X_tr, y_tr = augment_train_fold(X_tr, y_tr,
+                                                n_aug=n_aug, seed=seed)
+            
+            with open("modelos/random_seed.txt", "a") as f:
+                f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}\n")
+        
+
+        if segmenter != "none":
+            if segmenter == "unet":
+                X_tr, X_val, X_test = unet_segmenter(X_tr, X_val, X_test, seg_model_path)
+                print(f"Segmentação com UNet concluída.")   
+            elif segmenter == "yolo":
+                X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, seg_model_path)
+                print(f"Segmentação com YOLO concluída.")
+            else:
+                raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
+        
+
+        if model == "yolo":
+            save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
+
+            print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
+
+            # Treinamento YOLO
+            model_f = YOLO('yolov8s-cls.pt')
+            start_time = time.time() 
+
+            model_f.train(
+                data=f"dataset_fold_{fold+1}",
+                epochs=100,
+                patience=50,
+                batch=16,
+                #lr0=0.0005,
+                optimizer='AdamW',
+                #weight_decay=0.0005,
+                #hsv_h=0.1,
+                #hsv_s=0.2,
+                #flipud=0.3,
+                #mosaic=0.1,
+                #mixup=0.1,
+                workers=0,
+                pretrained=False,
+                amp=False,
+                deterministic=True,
+                seed=seed,
+                project="runs/classify",
+                name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
+            )
+            
+            end_time = time.time()
+
+            # Validação
+            metrics = model_f.val(
+                data=f"dataset_fold_{fold+1}",
+                project="runs/classify/val",
+                name=f"fold_{fold+1}_seed_{seed}",
+                save_json=True
+            )
+
+            # Dados para salvar
+            results_to_save = {
+                'top1_accuracy': metrics.top1,
+                'top5_accuracy': metrics.top5,
+                'fitness': metrics.fitness,
+                'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
+                'all_metrics': metrics.results_dict,
+                'speed': metrics.speed
+            }
+
+            # Salvar em JSON
+            with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
+                json_module.dump(results_to_save, f, indent=4)
+
+            """
+            # Extraindo métricas
+            accuracy = metrics.results_dict['accuracy_top1']
+            precision = metrics.results_dict['precision']
+            recall = metrics.results_dict['recall']
+            f1 = metrics.results_dict['f1']
+
+            # Salvando no mesmo arquivo de log dos outros modelos
+            with open(log_txt, "a") as f:
+                f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
+                f.write(f"Accuracy: {accuracy:.4f}\n")
+                f.write(f"Precision: {precision:.4f}\n")
+                f.write(f"Recall: {recall:.4f}\n")
+                f.write(f"F1-Score: {f1:.4f}\n")
+                f.write("-"*50 + "\n")  # Separador visual
+
+            """
+
+        else:
+
+            model_f   = model()
+            ckpt    = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
+            log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
+            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
+            os.makedirs(os.path.dirname(log_txt), exist_ok=True)
+
+
+            start_time = time.time()
+            
+            history = model_f.fit(X_tr, y_tr,
+                        epochs=500,
+                        validation_data=(X_val, y_val),
+                        batch_size=batch,
+                        callbacks=[
+                            tf.keras.callbacks.EarlyStopping(
+                                monitor='val_loss', patience=50,
+                                min_delta=0.01, restore_best_weights=True),
+                            tf.keras.callbacks.ModelCheckpoint(
+                                ckpt, monitor='val_loss',
+                                save_best_only=True)
+                        ],
+                        verbose=2, shuffle=True)
+            
+            end_time = time.time()
+
+            # ---------- avaliação ----------
+            y_pred = (model_f.predict(X_test) > 0.5).astype(int).ravel()
+
+            acc = accuracy_score(y_test, y_pred)
+            prec, rec, f1, _ = precision_recall_fscore_support(
+                                    y_test, y_pred, average="binary",
+                                    zero_division=0)
+
+            # salva métrica fold‐a‐fold
+            with open(log_txt, "a") as f:
+                f.write(f"Fold {fold:02d}  "
+                        f"Acc={acc:.4f}  "
+                        f"Prec={prec:.4f}  "
+                        f"Rec={rec:.4f}  "
+                        f"F1={f1:.4f}\n"
+                        f"Tempo de treinamento={end_time - start_time:.2f} s\n")
+                
+            plot_convergence(history, model.__name__, angle, fold, message)
+        
+
+        delete_folder("dataset_fold")
+        K.clear_session()
+        gc.collect()
+
+
+
+def train_model_cv_retangular(model, raw_root , message, angle = "Frontal", k = 5, 
+                    resize = True, resize_to = 224, n_aug = 0, batch = 8, seed = 42, segmenter = "none", seg_model_path = ""):
+    
+    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
+    
+    X, y , patient_ids = load_raw_images(
+        os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
+    
+
+    with open("modelos/random_seed.txt", "a") as f:
+        f.write(f"{message}\n"
+                f"SEMENTE: {seed}\n")
+
+
+
+    for fold, (tr_idx, va_idx, te_idx) in enumerate(
+                        make_tvt_splits(X, y, patient_ids,
+                                        k=k, val_size=0.25, seed=seed)):
+        
+        # salva índices para reuso posterior
+        split_file = f"splits/{message}_{angle}_F{fold}.json"
+        os.makedirs("splits", exist_ok=True)
+        with open(split_file, "w") as f:
+            json.dump({
+                "train_idx": tr_idx.tolist(),
+                "val_idx": va_idx.tolist(),
+                "test_idx": te_idx.tolist()
+            }, f)
+
+        # ------ prepara dados -----------
+        X_tr, y_tr = X[tr_idx], y[tr_idx]
+        X_val,    y_val = X[va_idx], y[va_idx]
+
+        X_test,   y_test= X[te_idx], y[te_idx]
+
+        # min/max APENAS dos originais
+        mn, mx = X_tr.min(), X_tr.max()
+
+        # normaliza
+        X_tr = normalize(X_tr, mn, mx)
+        X_val= normalize(X_val,    mn, mx)
+        X_test=normalize(X_test,   mn, mx)
+
+        if resize:
+
+            X_tr = np.expand_dims(X_tr, axis=-1)
+            X_val= np.expand_dims(X_val, axis=-1)
+            X_test= np.expand_dims(X_test, axis=-1)
+
+            # X_tr= tf.image.resize_with_pad(X_tr, resize_to, resize_to, method="bicubic")
+            # X_val= tf.image.resize_with_pad(X_val, resize_to, resize_to, method="bicubic")
+            # X_test= tf.image.resize_with_pad(X_test, resize_to, resize_to, method="bicubic")
+
+            X_tr = tf_letterbox_Sem_padding(X_tr, resize_to)
+            X_val = tf_letterbox_Sem_padding(X_val, resize_to)
+            X_test = tf_letterbox_Sem_padding(X_test, resize_to)
+
+            X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
+            X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
+            X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
+
+        
+        
+        
+        # augmenta & concatena
+        if n_aug > 0:
+            X_tr, y_tr = augment_train_fold(X_tr, y_tr,
+                                                n_aug=n_aug, seed=seed)
+            
+            with open("modelos/random_seed.txt", "a") as f:
+                f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}\n")
+        
+
+        if segmenter != "none":
+            if segmenter == "unet":
+                X_tr, X_val, X_test = unet_segmenter(X_tr, X_val, X_test, seg_model_path)
+                print(f"Segmentação com UNet concluída.")   
+            elif segmenter == "yolo":
+                X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, seg_model_path)
+                print(f"Segmentação com YOLO concluída.")
+            else:
+                raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
+        
+
+        if model == "yolo":
+            save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
+
+            print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
+
+            # Treinamento YOLO
+            model_f = YOLO('yolov8s-cls.pt')
+            start_time = time.time() 
+
+            model_f.train(
+                data=f"dataset_fold_{fold+1}",
+                epochs=100,
+                patience=50,
+                batch=16,
+                #lr0=0.0005,
+                optimizer='AdamW',
+                #weight_decay=0.0005,
+                #hsv_h=0.1,
+                #hsv_s=0.2,
+                #flipud=0.3,
+                #mosaic=0.1,
+                #mixup=0.1,
+                workers=0,
+                pretrained=False,
+                amp=False,
+                deterministic=True,
+                seed=seed,
+                project="runs/classify",
+                name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
+            )
+            
+            end_time = time.time()
+
+            # Validação
+            metrics = model_f.val(
+                data=f"dataset_fold_{fold+1}",
+                project="runs/classify/val",
+                name=f"fold_{fold+1}_seed_{seed}",
+                save_json=True
+            )
+
+            # Dados para salvar
+            results_to_save = {
+                'top1_accuracy': metrics.top1,
+                'top5_accuracy': metrics.top5,
+                'fitness': metrics.fitness,
+                'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
+                'all_metrics': metrics.results_dict,
+                'speed': metrics.speed
+            }
+
+            # Salvar em JSON
+            with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
+                json_module.dump(results_to_save, f, indent=4)
+
+            """
+            # Extraindo métricas
+            accuracy = metrics.results_dict['accuracy_top1']
+            precision = metrics.results_dict['precision']
+            recall = metrics.results_dict['recall']
+            f1 = metrics.results_dict['f1']
+
+            # Salvando no mesmo arquivo de log dos outros modelos
+            with open(log_txt, "a") as f:
+                f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
+                f.write(f"Accuracy: {accuracy:.4f}\n")
+                f.write(f"Precision: {precision:.4f}\n")
+                f.write(f"Recall: {recall:.4f}\n")
+                f.write(f"F1-Score: {f1:.4f}\n")
+                f.write("-"*50 + "\n")  # Separador visual
+
+            """
+
+        else:
+
+            model_f   = model()
+            ckpt    = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
+            log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
+            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
+            os.makedirs(os.path.dirname(log_txt), exist_ok=True)
+
+
+            start_time = time.time()
+            
+            history = model_f.fit(X_tr, y_tr,
+                        epochs=500,
+                        validation_data=(X_val, y_val),
+                        batch_size=batch,
+                        callbacks=[
+                            tf.keras.callbacks.EarlyStopping(
+                                monitor='val_loss', patience=50,
+                                min_delta=0.01, restore_best_weights=True),
+                            tf.keras.callbacks.ModelCheckpoint(
+                                ckpt, monitor='val_loss',
+                                save_best_only=True)
+                        ],
+                        verbose=2, shuffle=True)
+            
+            end_time = time.time()
+
+            # ---------- avaliação ----------
+            y_pred = (model_f.predict(X_test) > 0.5).astype(int).ravel()
+
+            acc = accuracy_score(y_test, y_pred)
+            prec, rec, f1, _ = precision_recall_fscore_support(
+                                    y_test, y_pred, average="binary",
+                                    zero_division=0)
+
+            # salva métrica fold‐a‐fold
+            with open(log_txt, "a") as f:
+                f.write(f"Fold {fold:02d}  "
+                        f"Acc={acc:.4f}  "
+                        f"Prec={prec:.4f}  "
+                        f"Rec={rec:.4f}  "
+                        f"F1={f1:.4f}\n"
+                        f"Tempo de treinamento={end_time - start_time:.2f} s\n")
+                
+            plot_convergence(history, model.__name__, angle, fold, message)
+        
+
+        delete_folder("dataset_fold")
+        K.clear_session()
+        gc.collect()
+
+
+def train_model_cv_recortado(model, raw_root , message, angle = "Frontal", k = 5, 
+                    resize = True, resize_to = 224, n_aug = 0, batch = 8, seed = 42, segmenter = "none", seg_model_path = ""):
+    
+    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
+    
+    X, y , patient_ids = load_raw_images(
+        os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
+    
+
+    with open("modelos/random_seed.txt", "a") as f:
+        f.write(f"{message}\n"
+                f"SEMENTE: {seed}\n")
+
+
+
+    for fold, (tr_idx, va_idx, te_idx) in enumerate(
+                        make_tvt_splits(X, y, patient_ids,
+                                        k=k, val_size=0.25, seed=seed)):
+        
+        # salva índices para reuso posterior
+        split_file = f"splits/{message}_{angle}_F{fold}.json"
+        os.makedirs("splits", exist_ok=True)
+        with open(split_file, "w") as f:
+            json.dump({
+                "train_idx": tr_idx.tolist(),
+                "val_idx": va_idx.tolist(),
+                "test_idx": te_idx.tolist()
+            }, f)
+
+        # ------ prepara dados -----------
+        X_tr, y_tr = X[tr_idx], y[tr_idx]
+        X_val,    y_val = X[va_idx], y[va_idx]
+
+        X_test,   y_test= X[te_idx], y[te_idx]
+
+        # min/max APENAS dos originais
+        mn, mx = X_tr.min(), X_tr.max()
+
+        # normaliza
+        X_tr = normalize(X_tr, mn, mx)
+        X_val= normalize(X_val,    mn, mx)
+        X_test=normalize(X_test,   mn, mx)
+
+        if resize:
+
+            X_tr = np.expand_dims(X_tr, axis=-1)
+            X_val= np.expand_dims(X_val, axis=-1)
+            X_test= np.expand_dims(X_test, axis=-1)
+
+            # X_tr= tf.image.resize_with_pad(X_tr, resize_to, resize_to, method="bicubic")
+            # X_val= tf.image.resize_with_pad(X_val, resize_to, resize_to, method="bicubic")
+            # X_test= tf.image.resize_with_pad(X_test, resize_to, resize_to, method="bicubic")
+
+            X_tr = letterbox_center_crop(X_tr, resize_to)
+            X_val = letterbox_center_crop(X_val, resize_to)
+            X_test = letterbox_center_crop(X_test, resize_to)
+
+            X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
+            X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
+            X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
+
+        
+        
+        
+        # augmenta & concatena
+        if n_aug > 0:
+            X_tr, y_tr = augment_train_fold(X_tr, y_tr,
+                                                n_aug=n_aug, seed=seed)
+            
+            with open("modelos/random_seed.txt", "a") as f:
+                f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}\n")
+        
+
+        if segmenter != "none":
+            if segmenter == "unet":
+                X_tr, X_val, X_test = unet_segmenter(X_tr, X_val, X_test, seg_model_path)
+                print(f"Segmentação com UNet concluída.")   
+            elif segmenter == "yolo":
+                X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, seg_model_path)
+                print(f"Segmentação com YOLO concluída.")
+            else:
+                raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
+        
+
+        if model == "yolo":
+            save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
+
+            print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
+
+            # Treinamento YOLO
+            model_f = YOLO('yolov8s-cls.pt')
+            start_time = time.time() 
+
+            model_f.train(
+                data=f"dataset_fold_{fold+1}",
+                epochs=100,
+                patience=50,
+                batch=16,
+                #lr0=0.0005,
+                optimizer='AdamW',
+                #weight_decay=0.0005,
+                #hsv_h=0.1,
+                #hsv_s=0.2,
+                #flipud=0.3,
+                #mosaic=0.1,
+                #mixup=0.1,
+                workers=0,
+                pretrained=False,
+                amp=False,
+                deterministic=True,
+                seed=seed,
+                project="runs/classify",
+                name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
+            )
+            
+            end_time = time.time()
+
+            # Validação
+            metrics = model_f.val(
+                data=f"dataset_fold_{fold+1}",
+                project="runs/classify/val",
+                name=f"fold_{fold+1}_seed_{seed}",
+                save_json=True
+            )
+
+            # Dados para salvar
+            results_to_save = {
+                'top1_accuracy': metrics.top1,
+                'top5_accuracy': metrics.top5,
+                'fitness': metrics.fitness,
+                'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
+                'all_metrics': metrics.results_dict,
+                'speed': metrics.speed
+            }
+
+            # Salvar em JSON
+            with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
+                json_module.dump(results_to_save, f, indent=4)
+
+            """
+            # Extraindo métricas
+            accuracy = metrics.results_dict['accuracy_top1']
+            precision = metrics.results_dict['precision']
+            recall = metrics.results_dict['recall']
+            f1 = metrics.results_dict['f1']
+
+            # Salvando no mesmo arquivo de log dos outros modelos
+            with open(log_txt, "a") as f:
+                f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
+                f.write(f"Accuracy: {accuracy:.4f}\n")
+                f.write(f"Precision: {precision:.4f}\n")
+                f.write(f"Recall: {recall:.4f}\n")
+                f.write(f"F1-Score: {f1:.4f}\n")
+                f.write("-"*50 + "\n")  # Separador visual
+
+            """
+
+        else:
+
+            model_f   = model()
+            ckpt    = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
+            log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
+            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
+            os.makedirs(os.path.dirname(log_txt), exist_ok=True)
+
+
+            start_time = time.time()
+            
+            history = model_f.fit(X_tr, y_tr,
+                        epochs=500,
+                        validation_data=(X_val, y_val),
+                        batch_size=batch,
+                        callbacks=[
+                            tf.keras.callbacks.EarlyStopping(
+                                monitor='val_loss', patience=50,
+                                min_delta=0.01, restore_best_weights=True),
+                            tf.keras.callbacks.ModelCheckpoint(
+                                ckpt, monitor='val_loss',
+                                save_best_only=True)
+                        ],
+                        verbose=2, shuffle=True)
+            
+            end_time = time.time()
+
+            # ---------- avaliação ----------
+            y_pred = (model_f.predict(X_test) > 0.5).astype(int).ravel()
+
+            acc = accuracy_score(y_test, y_pred)
+            prec, rec, f1, _ = precision_recall_fscore_support(
+                                    y_test, y_pred, average="binary",
+                                    zero_division=0)
+
+            # salva métrica fold‐a‐fold
+            with open(log_txt, "a") as f:
+                f.write(f"Fold {fold:02d}  "
+                        f"Acc={acc:.4f}  "
+                        f"Prec={prec:.4f}  "
+                        f"Rec={rec:.4f}  "
+                        f"F1={f1:.4f}\n"
+                        f"Tempo de treinamento={end_time - start_time:.2f} s\n")
+                
+            plot_convergence(history, model.__name__, angle, fold, message)
+        
+
+        delete_folder("dataset_fold")
+        K.clear_session()
+        gc.collect()
+
+
+def evaluate_segmentation(model_path, x_val, y_val):
+    model = tf.keras.models.load_model(model_path)
+    pred    = (model.predict(x_val) > 0.5).astype(np.uint8)
+    true    = (y_val > 0.5).astype(np.uint8)
+
+    pred    = np.squeeze(pred, axis=-1)
+
+    metrics = {
+        "precision": precision_score_(true, pred),
+        "recall"   : recall_score_(true, pred),
+        "accuracy" : accuracy_score_(true, pred),
+        "dice"     : dice_coef_(true, pred),
+        "iou"      : iou_(true, pred)
+    }
+    return metrics
+
+def evaluate_yolo_on_folder(model_path, ds_root,
+                            split="val", imgsz=(224,224), thr=0.5):
+    """
+    ds_root/
+      ├ images/val/*.png
+      ├ masks/val/*.png   (branco‑preto 0/255 ou 0/1)
+    """
+    model   = YOLO(model_path)
+    img_dir = os.path.join(ds_root, "images", split)
+    msk_dir = os.path.join(ds_root, "masks",  split)
+
+    y_true, y_pred = [], []
+
+    for img_file in glob.glob(os.path.join(img_dir, "*")):
+        name   = os.path.splitext(os.path.basename(img_file))[0]
+        msk_gt = cv2.imread(os.path.join(msk_dir, name + ".png"),
+                            cv2.IMREAD_GRAYSCALE)
+        # garante mesma resolução
+        msk_gt = cv2.resize(msk_gt, imgsz, interpolation=cv2.INTER_NEAREST)
+        msk_gt = (msk_gt > 127).astype(np.uint8)
+
+        # --- predição ------------------------------------
+        img = cv2.imread(img_file)
+        img = cv2.resize(img, imgsz)
+        res = model.predict(img, verbose=False)
+        canvas = np.zeros(imgsz, np.uint8)
+        if res and len(res[0].masks):
+            for m in res[0].masks.data:
+                m = cv2.resize(m.cpu().numpy(), imgsz)
+                canvas |= (m > thr).astype(np.uint8)
+
+        # ---- armazena vetores 1‑D p/ métricas ------------
+        y_true.append(msk_gt.ravel())
+        y_pred.append(canvas.ravel())
+
+    y_true = np.concatenate(y_true)
+    y_pred = np.concatenate(y_pred)
+
+    metrics = {
+        "precision": precision_score_(y_true, y_pred),
+        "recall"   : recall_score_(   y_true, y_pred),
+        "accuracy" : accuracy_score_( y_true, y_pred),
+        "dice"     : dice_coef_(y_true, y_pred),
+        "iou"      : iou_(y_true, y_pred)
+    }
+    return metrics
+
+#Função para transformar as imagens de .txt para .jpg
+def raw_dataset_to_png(directory, exclude = False, exclude_set = None):
+
+    arquivos = os.listdir(directory)
+
+    print(arquivos)
+
+    healthy_path = os.path.join(directory, 'healthy')
+    sick_path = os.path.join(directory, 'sick')
+
+    healthy = os.listdir(healthy_path)
+    sick = os.listdir(sick_path)
+
+    imagens = []
+    labels = []
+    ids = []
+
+    for arquivo in healthy:
+
+        if exclude and arquivo in exclude_set:
+            print(f"Excluindo {arquivo}")
+            continue
+
+        path = os.path.join(healthy_path, arquivo)
+        try:
+          with open(path, 'r') as f:
+            primeira_linha = f.readline()
+            if ';' in primeira_linha:
+              delimiter = ';'
+            else:
+              delimiter = ' '
+          imagem = np.loadtxt(path, delimiter=delimiter)
+
+          os.makedirs("raw_png_dataset/Frontal/healthy", exist_ok=True)
+
+          #Salvar a imagem como .png
+          plt.imsave(os.path.join("raw_png_dataset/Frontal/healthy", arquivo.replace('.txt', '.png')), imagem, cmap='gray')
+          
+        except ValueError as e:
+          print(e)
+          print(arquivo)
+          continue
+
+    for arquivo in sick:
+
+        if exclude and arquivo in exclude_set:
+            print(f"Excluindo {arquivo}")
+            continue
+
+        path = os.path.join(sick_path, arquivo)
+        try:
+          with open(path, 'r') as f:
+            primeira_linha = f.readline()
+            if ';' in primeira_linha:
+              delimiter = ';'
+            else:
+              delimiter = ' '
+            f.seek(0)
+          imagem = np.loadtxt(path, delimiter=delimiter)
+
+          os.makedirs("raw_png_dataset/Frontal/sick", exist_ok=True)
+          
+          plt.imsave(os.path.join("raw_png_dataset/Frontal/sick", arquivo.replace('.txt', '.png')), imagem, cmap='gray')
+
+        except ValueError as e:
+          print(e)
+          print(arquivo)
+          continue
+
+def train_models(models_objects, dataset: str, resize=False, target = 0, message=""):
     list = ["Frontal"]
                 
     for angulo in list:
@@ -40,9 +982,9 @@ def train_models(model, dataset: str, resize=False, target = 0, message="", lear
             imagens_valid = np.expand_dims(imagens_valid, axis=-1) 
             imagens_test = np.expand_dims(imagens_test, axis=-1)
 
-            imagens_train = tf.image.resize_with_pad(imagens_train, target, target, method="bicubic")
-            imagens_valid = tf.image.resize_with_pad(imagens_valid, target, target, method="bicubic")
-            imagens_test = tf.image.resize_with_pad(imagens_test, target, target, method="bicubic")
+            imagens_train = tf.image.resize_with_pad(imagens_train, target, target, method="bilinear")
+            imagens_valid = tf.image.resize_with_pad(imagens_valid, target, target, method="bilinear")
+            imagens_test = tf.image.resize_with_pad(imagens_test, target, target, method="bilinear")
             
             # Remover a dimensão do canal de cor
             imagens_train = np.squeeze(imagens_train, axis=-1)
@@ -82,13 +1024,15 @@ def train_models(model, dataset: str, resize=False, target = 0, message="", lear
 
             #criando objeto e usando o modelo
             modelo_object = model(learning_rate=learning_rate)
-            modelo_train = modelo_object.model
+            modelo_train = modelo_object
 
-            
-            # Salva a seed em um arquivo de texto
-            with open("random_seed_vgg.txt", "a") as file:
-                file.write(str(seed))
-                file.write("\n")
+                model.summary()
+                
+
+                # Salva a seed em um arquivo de texto
+                with open("modelos/random_seed.txt", "a") as file:
+                    file.write(str(seed))
+                    file.write("\n")
 
             print("Seed gerada e salva em random_seed.txt:", seed)
     
@@ -124,16 +1068,13 @@ def train_models(model, dataset: str, resize=False, target = 0, message="", lear
                 f.write(f"Val_accuracy: {history.history['val_accuracy']}\n")
                 f.write(f"Test Loss: {test_loss}\n")
                 f.write(f"Test Accuracy: {test_accuracy}\n")
+                    f.write(f"SEED{str(seed)}\n")
                 f.write("\n")
                     
-            plot_convergence(history,f"{model.__name__}_unet_vgg16", angulo, i, "Vgg_16_unet")
-            
+                plot_convergence(history, model_func.__name__, angulo, i, message)
+
 #TODO: calcular f1, IoU, recall, accuracy
 #TODO: comparar unet com yolo
-
-import cv2
-from ultralytics import YOLO
-
 
 # Função para calcular Pixel Accuracy
 def pixel_accuracy(y_true, y_pred):
@@ -141,8 +1082,6 @@ def pixel_accuracy(y_true, y_pred):
     correct = np.sum(y_true == y_pred)
     total = y_true.size
     return correct / total
-
-import numpy as np
 
 def dice_coefficient(y_true, y_pred, smooth=1):
     
@@ -178,7 +1117,6 @@ def txt_to_image(txt_file, output_image_path):
     image = Image.fromarray(image_array)
     image.save(output_image_path)
     print(f"Imagem salva em: {output_image_path}")
-    
 
 def transform_channels_normalize(angle, origin_folder, result_folder):
     """
@@ -352,418 +1290,241 @@ def segment_and_save_pngdataset(model_path, input_dir, output_dir, ext_txt=".txt
                     cv2.imwrite(out_path, segmented)
                     print(f"[Salvo] {out_path}")
 
-"""
-    Verificar se o dataset está normalizado
-"""
-def test_normalize(dataset):
-    data = np.load(dataset)
+#FABS
+def save_split_to_png(images, labels, split_name, root="dataset_fold"):
+    """
+    Salva um split de imagens/labels em formato PNG no layout aceito pelo YOLOv8n-cls.
+
+    └── dataset_fold/
+        ├── train/
+        │   ├── 0/
+        │   │   ├── 00000.png
+        │   │   └── ...
+        │   └── 1/
+        ├── val/
+        └── test/
+    Args
+    ----
+    images : np.ndarray  (N, H, W, C) ou (N, H, W)
+    labels : Sequence[int]  rótulo inteiro por imagem
+    split_name : str  "train" | "val" | "test"
+    root : str ou Path  diretório-raiz do dataset
+    """
+    out_base = Path(root) / split_name
+    out_base.mkdir(parents=True, exist_ok=True)
+
+    for idx, (img, cls) in enumerate(zip(images, labels)):
+        # Converte para uint8 [0-255] caso ainda esteja em float [0-1]
+        if img.dtype != np.uint8:
+            img = np.clip(img * 255, 0, 255).astype(np.uint8)
+
+        # Garante 3 canais
+        if img.ndim == 2:
+            img = np.stack([img]*3, axis=-1)
+
+        # YOLO-cls quer as pastas por classe
+        class_dir = out_base / str(cls)
+        class_dir.mkdir(parents=True, exist_ok=True)
+
+        fname = class_dir / f"{idx:06d}.png"
+        # cv2 espera BGR; converta se seu array já estiver RGB
+        cv2.imwrite(str(fname), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+
+    print(f"✓ {split_name} salvo em {out_base}")
+
+
+
+
+
+
+
+def ppeprocessEigenCam(X, y, splits_path, segment = None, segmenter_path ="" ):
     
-    if np.min(data) >= 0 and np.max(data) <= 1:
-        print("Normalizado")
-    else:
-        print("Nao normalizado")
+    
+    with open (splits_path, "r") as f:
+        splits = json.load(f)
+
+
+    
+    train_idx = splits["train_idx"]
+    val_idx = splits["val_idx"]
+    test_idx = splits["test_idx"]
+
+    X_test = X[test_idx]
+    y_test = y[test_idx]
+
+    X_train = X[train_idx]
+    y_train = y[train_idx]
+
+    X_val = X[val_idx]
+    y_val = y[val_idx]
+
+
+    mn, mx = X_train.min(), X_train.max()
+
+    # normaliza
+    X_test=normalize(X_test,   mn, mx)
+    X_tr=normalize(X_train, mn, mx)
+    X_val=normalize(X_val,   mn, mx)
+
+    
+
+    X_tr = np.expand_dims(X_tr, axis=-1)
+    X_val= np.expand_dims(X_val, axis=-1)
+    X_test= np.expand_dims(X_test, axis=-1)
+
+    # X_tr= tf.image.resize_with_pad(X_tr, 224, 224, method="bicubic")
+    # X_val= tf.image.resize_with_pad(X_val, 224, 224, method="bicubic")
+    # X_test= tf.image.resize_with_pad(X_test, 224, 224, method="bicubic")
+
+    X_tr= tf_letterbox(X_tr, 224)
+    X_val= tf_letterbox(X_val, 224)
+    X_test= tf_letterbox(X_test, 224)
+
+    X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
+    X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
+    X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
+
+    if segment != None:
+        if segment == "unet":
+            X_tr, X_val, X_test = unet_segmenter(X_tr, X_val, X_test, segmenter_path)
+            print(f"Segmentação com UNet concluída.")   
+        elif segment == "yolo":
+            X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, segmenter_path)
+            print(f"Segmentação com YOLO concluída.")
+
+
+    X_test = np.expand_dims(X_test, axis=-1)
+
+    return X_test
+
+
+
+
+def prep_test_data(raw_root, angle, split_json, 
+                    resize = True, resize_to = 224,
+                    segmenter = "none", seg_model_path=""):
+    
+    """
+    Função para preparar as imagens de teste para gerar as matrizes de confusão.
+    Segue o mesmo procedimento de processamento do PipeLine de treinamento (train_models_cv)
+    """
+    
+    X, y, patient_ids = load_raw_images(os.path.join(raw_root, angle))
+    with open(split_json, "r") as f:
+        split = json.load(f)
+    tr_idx, te_idx = np.array(split["train_idx"]), np.array(split["test_idx"])
+    
+    X_tr, X_test = X[tr_idx], X[te_idx]
+    y_test       = y[te_idx]
+
+    mn, mx = X_tr.min(), X_tr.max()
+
+    X_test = normalize(X_test, mn, mx)
+
+    if resize:
+        X_test = np.expand_dims(X_test, -1)
+        
+        #X_test = tf.image.resize_with_pad(X_test, resize_to, resize_to, method="bicubic")
+        X_test = tf_letterbox(X_test, resize_to)
+        #X_test = tf_letterbox_Sem_padding(X_test, resize_to)
+        #X_test = letterbox_center_crop(X_test, resize_to)
+        X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(-1)
+
+    if segmenter == "unet":
+        _, _, X_test = unet_segmenter(X_test, X_test, X_test, seg_model_path)
+        print(f"Segmentação com UNet concluída.")
+    elif segmenter == "yolo":
+        _, _, X_test = segment_with_yolo(X_test, X_test, X_test, seg_model_path)
+        print(f"Segmentação com YOLO concluída.")
+
+    return X_test, y_test
+
+
+def _plot_and_save_cm(cm, classes, title, out_png):
+
+    """
+    Recebe a matriz de confusão `cm` e os nomes das classes `classes`
+    e plota a matriz de confusão com os rótulos das classes.
+    O gráfico é salvo no caminho `out_png`.
+    """
+
+
+    plt.figure(figsize=(4, 4))
+    sns.heatmap(cm, annot=True, fmt="d", square=True,
+                xticklabels=classes, yticklabels=classes, cmap="Blues")
+    plt.xlabel("Predito"); plt.ylabel("Real"); plt.title(title)
+    plt.tight_layout()
+    plt.savefig(out_png, dpi=300)
+    plt.close()
+
+
+def evaluate_model_cm(model_path,          
+                      output_path, 
+                      split_json,      
+                      raw_root,
+                      message,
+                      angle="Frontal",
+                      resize=True,
+                      resize_to=224,
+                      segmenter="none",
+                      seg_model_path="",
+                      classes=("Healthy", "Sick")):
+    """
+    Avalia o modelo salvo no fold especificado e gera matriz de confusão.
+    """
+    os.makedirs(output_path, exist_ok=True)
+
+    X_test, y_test = prep_test_data(raw_root, angle, split_json,
+                                     resize, resize_to,
+                                     segmenter, seg_model_path)
+
+    
+    
+    with custom_object_scope({'ResidualUnit': ResidualUnit}):
+        model = tf.keras.models.load_model(model_path, compile=False)
+    y_pred_prob = model.predict(X_test, verbose=0).ravel()
+    y_pred = (y_pred_prob > 0.5).astype(int)
+
+    
+
+    cm = confusion_matrix(y_test, y_pred)
+    clf_rep = classification_report(y_test, y_pred, target_names=classes,
+                                    output_dict=True, zero_division=0)
+
+
+    out_png = os.path.join(output_path, f"cm_{message}_{angle}.png")
+    
+    _plot_and_save_cm(cm, classes,
+                      f"Confusion Matrix – {message}",
+                      out_png = out_png)
+
+    
+    K.clear_session(); gc.collect()
+    
+
 
 if __name__ == "__main__":
 
-    
-
-    # format_data("raw_dataset", "np_dataset_v2", exclude=True, exclude_path="Termografias_Dataset_Segmentação/images")
-
-
-
-    #U-Net
-    ##################################################################################################
-
-    ######Código que possibilita testar a U-NEt em imagens especificas e verificar de forma visual######
-    """
-    img_test = np.load("np_dataset/imagens_test_Frontal.npy")
-
-    print(img_test.shape)
-
-    img = img_test[22]
-    origin = img
-
-    img = np.expand_dims(img, axis=0)
-    img = np.expand_dims(img, axis=-1)
-
-    print(img.shape)
-
-
-    model = tf.keras.models.load_model("modelos/unet/unet.h5")
-
-    pred = model.predict(img)
-
-    pred = np.squeeze(pred, axis=0)
-
-    if pred.shape[-1] == 1:
-        pred = pred[:, :, 0]
-        mask = (pred > 0.5).astype(np.uint8)
-    else:
-        mask = np.argmax(pred, axis=-1)
-
-    plt.figure(figsize=(10, 5))
-    plt.imshow(origin, cmap='gray')
-    plt.imshow(mask, cmap='jet', alpha=0.5)
-    plt.axis('off')
-    plt.savefig("unet_pred.png")
-    plt.close()
-    """
-
-    #train_yolo_seg()
-    
-    #pred_yolo_seg()
-    """
-    img = cv2.imread("imgTESTE()2.jpg", cv2.IMREAD_GRAYSCALE)
-
-    mask = cv2.imread("output.png", cv2.IMREAD_GRAYSCALE)
-
-    mask = (mask > 0).astype(np.uint8)
-
-    plt.figure(figsize=(10, 5))
-    plt.imshow(img, cmap='gray')
-    plt.imshow(mask, cmap='jet', alpha=0.5)
-    plt.axis('off')
-    plt.savefig("YOLO_pred_TESTE.png")
-    plt.close()
-    """
-    """
-    # Transformar uma imagem em numpy para jpg em 224x224 e salvar
-    img_test = np.load("np_dataset/imagens_test_Frontal.npy")
-
-    img = img_test[16]
-    origin = img
-
-    img = np.expand_dims(img, axis=0)
-    img = np.expand_dims(img, axis=-1)
-
-    print(img.shape)
-
-    img = tf.image.resize_with_pad(img, 224, 224, method="bicubic")
-
-    img = np.squeeze(img, axis=-1)
-    img = np.squeeze(img, axis=0)
-
-    # Converter a imagem para o modo 'L' (luminância)
-    img = Image.fromarray((img * 255).astype(np.uint8), mode='L')
-
-    img.save("ImgTESTE()2.jpg")  
-
-    """
-    #pred_yolo_seg()
-
-    #train_yolo_seg()
-
-    #YoLo_Data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
-    """
-    angles = ["Frontal", "Left45", "Right45", "Left90", "Right90"]
-
-    for angle in angles:
-        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angle, "aug_dataset")
-
-        # Mudança para encaixar na rede (se necessário)
-        
-        imagens_test = np.expand_dims(imagens_test, axis=-1)
-        imagens_test = tf.image.resize_with_pad(imagens_test, 224, 224, method="bicubic")
-        imagens_test = np.squeeze(imagens_test, axis=-1)
-
-        # Lista para armazenar as matrizes de confusão
-
-        for i in range(10):
-            i = i + 1
-            # Carregar o modelo
-            
-            with custom_object_scope({'ResidualUnit': ResidualUnit}):
-                model = tf.keras.models.load_model(f"modelos/ResNet34/ResNet34_224x224_{angle}_{i}.h5")
-
-            #Avaliação do modelo
-
-            loss, accuracy = model.evaluate(imagens_test, labels_test, verbose=0)
-
-            print(f"Modelo {angle}_{i}")
-            print(f"Loss: {loss}")
-            print(f"Accuracy: {accuracy}")
-            print("\n")            
-    """    
-
-    #load_data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
-
-    """
-    imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(imgs, masks, test_size=0.2, random_state=42)
-
-
-
-    loss, acc = model.evaluate(imgs_valid, masks_valid, verbose=1)
-
-    print(f"Loss: {loss}")
-    print(f"Accuracy: {acc}")
-    """
-
-    """
-    model = tf.keras.models.load_model("modelos/unet/unet.h5")
-    
-    imagem = Image.open("output/ImgTESTE.jpg").convert('L')
-
-    imagem = np.array(imagem)
-
-    imagem = np.expand_dims(imagem, axis=0)
-    imagem = np.expand_dims(imagem, axis=-1)
-
-    imagem = imagem / 255.0
-
-    pred = model.predict(imagem)
-
-    pred = np.squeeze(pred, axis=0)
 
     
-    mask = (pred > 0.5).astype(np.uint8)
+    SEMENTE = 13388
 
-    
+    tf.config.experimental.enable_op_determinism()
+    tf.random.set_seed(SEMENTE)
 
-    plt.figure(figsize=(10, 5))
-    plt.imshow(imagem[0], cmap='gray')
-    plt.imshow(mask, cmap='jet', alpha=0.5)
-    plt.axis('off')
-    plt.savefig("unet_pred_TESTE.png")
-    plt.close()
-    """
-
-    ######train U-Net model######
-    """
-    #imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks("Left45", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
-    
-    model = unet_model()
-
-    model.summary()
-
-    earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=20, verbose=1, mode='auto')
-
-    checkpoint = tf.keras.callbacks.ModelCheckpoint("modelos/unet/L45unet.h5", monitor='val_loss', verbose=1, save_best_only=True, 
-                                                            save_weights_only=False, mode='auto')
-
-    history = model.fit(imgs_train, masks_train, epochs = 200, validation_data= (imgs_valid, masks_valid), callbacks= [checkpoint, earlystop], batch_size = 4, verbose = 1, shuffle = True)
-    
-    # Gráfico de perda de treinamento
-    plt.figure(figsize=(10, 6))
-    plt.plot(history.history['loss'], label='Training Loss')
-    plt.title(f'Training Loss Convergence for unet - Frontal')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(f"unet_loss_convergence_L45.png")
-    plt.close()
-    
-    plt.figure(figsize=(10, 6))
-    plt.plot(history.history['val_loss'], label='Validation Loss')
-    plt.title(f'Validation Loss Convergence for unet - Frontal')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(f"unet_val_loss_convergence_L45.png")
-    plt.close()
-    """
-
-
-    ######Código para avaliar o modelo U-Net######
-    """
-    model = keras.models.load_model("modelos/unet/L45unet.h5")
-
-    img_test = np.load("np_dataset/imagens_test_Left45.npy")
-
-    print(img_test.shape)
-
-    loss, acc = model.evaluate(imgs_valid, masks_valid, verbose=1)
-
-    print(f"Loss: {loss}")
-    print(f"Accuracy: {acc}")
-    """
-    ########################################################################################################
-    #U-NET
-
-
-
-    #YOLO
-    ########################################################################################################
-    
-    #Função para montar dataset para o modelo YOLO
-    """
-    YoLo_Data("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks")
-    """
-
-    #Função para treinar o modelo YOLO
-    """
-    train_yolo_seg()
-    """
-
-    #Caminho para carregar o modelo YOLO
-    """
-    model_path = 'runs/segment/train9/weights/best.pt'
-    """
-
-    # Transformar uma imagem em numpy para jpg em 224x224 e salvar
-    """
-    img_test = np.load("np_dataset/imagens_test_Frontal.npy")
-
-    img = img_test[16]
-    origin = img
-
-    img = np.expand_dims(img, axis=0)
-    img = np.expand_dims(img, axis=-1)
-
-    print(img.shape)
-
-    img = tf.image.resize_with_pad(img, 224, 224, method="bicubic")
-
-    img = np.squeeze(img, axis=-1)
-    img = np.squeeze(img, axis=0)
-
-    # Converter a imagem para o modo 'L' (luminância)
-    img = Image.fromarray((img * 255).astype(np.uint8), mode='L')
-
-    img.save("ImgTESTE()2.jpg")  
-    """
-
-    ########################################################################################################
-    #YOLO
-
-
-    
-    
-    #AVALIANDO YOLO E U-NET
-    ########################################################################################################
-    """
-    imgs, masks = load_imgs_masks_only("Frontal", "Yolo_dataset/images/val", "Yolo_dataset/masks/val")
-
-    print(imgs.shape)
-    print(masks.shape)
-
-    model = tf.keras.models.load_model("modelos/unet/unet.h5")
-
-    pred = model.predict(imgs)
-
-    print(pred.shape)
-
-    pred_masks = (pred > 0.5).astype(np.uint8)
-
-    pred_masks = np.squeeze(pred_masks, axis=-1)
-
-    acuracies = []
-
-
-
-    for i in range(len(masks)):
-        #pred_masks[i]= np.squeeze(pred_masks[i], axis=-1)
-
-        acc = dice_coefficient(masks[i], pred_masks[i])
-        print(f"Pixel Accuracy: {acc:.4f}")
-        acuracies.append(acc)
-
-    mean_accuracy = np.mean(acuracies)
-    print(f"Pixel Accuracy Média: {mean_accuracy:.4f}")
-
-    # Carregando o modelo YOLOv8-seg
-    model = YOLO('runs/segment/train9/weights/best.pt')
-
-    img_path = "Yolo_dataset/images/val"
-    img_files = os.listdir(img_path)
-
-    mask_path = "Yolo_dataset/masks/val"
-    mask_files = os.listdir(mask_path)
-
-    predicted_masks = []
-
-    # Processa as imagens e gera as máscaras preditas
-    for img_file in img_files:
-        image_full_path = os.path.join(img_path, img_file)
-    
-        # Obtém as predições para a imagem
-        results = model.predict(image_full_path, task='segment')
-    
-        # Cria uma máscara vazia com dimensões fixas (certifique-se de que são compatíveis com a ground truth)
-        mask_union = np.zeros((192, 224), dtype=np.uint8)
-    
-        if results[0].masks is not None:
-            for mask in results[0].masks.data:
-                mask_np = mask.cpu().numpy()
-                mask_bin = (mask_np > 0.5).astype(np.uint8)
-                mask_union = np.logical_or(mask_union, mask_bin).astype(np.uint8)
-    
-        predicted_masks.append(mask_union)
-
-    # Carrega as máscaras ground truth (garantindo que sejam do mesmo tamanho e binárias)
-    ground_truth_masks = []
-    for mask_file in mask_files:
-        mask_full_path = os.path.join(mask_path, mask_file)
-        # Lê a imagem em escala de cinza
-        mask_img = cv2.imread(mask_full_path, cv2.IMREAD_GRAYSCALE)
-    
-        # Redimensiona, se necessário, para (192, 224)
-        mask_img = cv2.resize(mask_img, (224, 192))
-    
-        # Binariza a máscara (ajuste o limiar conforme necessário)
-        mask_bin = (mask_img > 127).astype(np.uint8)
-        ground_truth_masks.append(mask_bin)
-
-    # Calcula a Pixel Accuracy para cada par de máscara ground truth e predita
-    pixel_accuracies = []
-    for gt_mask, pred_mask in zip(ground_truth_masks, predicted_masks):
-        acc = dice_coefficient(gt_mask, pred_mask)
-        pixel_accuracies.append(acc)
-
-    mean_accuracy = np.mean(pixel_accuracies)
-    print(f"Pixel Accuracy Média: {mean_accuracy:.4f}")
-    """
-
-# criando mascaras
-
-    # # Definir os caminhos
-    # model_path = 'runs/segment/train6/weights/best.pt'
-    # input_images_dir = 'train_pacients'
-    # output_masks_dir = 'output_masks'
-
-    # # Carregar o modelo YOLO com os pesos especificados
-    # model = YOLO(model_path)
-
-    # create_folder("output_masks")
-
-    # # Processar cada imagem na pasta de entrada
-    # for image_file in os.listdir(input_images_dir):
-    #     if image_file.endswith('.txt'):
-    #         txt_path = os.path.join(input_images_dir, image_file)
-    #         output_image_path = os.path.join(input_images_dir, f"{os.path.splitext(image_file)[0]}.png")
-            
-    #         # Converte o arquivo txt para uma imagem
-    #         txt_to_image(txt_path, output_image_path)
-            
-    #         # Carrega a imagem convertida
-    #         img = cv2.imread(output_image_path)
-    #         if img is None:
-    #             print(f"Erro ao carregar a imagem: {output_image_path}")
-    #             continue
-
-    #         H, W, _ = img.shape
-
-    #         # Aplicar o modelo YOLO na imagem
-    #         results = model(img)
-
-    #      # Processar os resultados e salvar as máscaras
-    #         for result in results:
-    #             for j, mask in enumerate(result.masks.data):
-    #                 mask = mask.cpu().numpy() * 255  # Mover o tensor para a CPU antes de converter para numpy
-    #                 mask = cv2.resize(mask, (W, H))
-    #                 output_mask_path = os.path.join(output_masks_dir, f"{os.path.splitext(image_file)[0]}_mask_{j}.png")
-    #                 cv2.imwrite(output_mask_path, mask)
-    #                 print(f"Máscara salva em: {output_mask_path}")
-    
-
-    # # train_yolo_seg(type="n", epochs=200, dataset="dataset.yaml", imgsize=224, seed=VALUE_SEED)
 
     
 
 
 
-    train_models(Vgg_16, "Unet", resize=True, target=224, message="vgg_unet", learning_rate=0.00001)
-    # create_folder("history/Vgg_16_yolo_x")
     
 
+
+
+    
+
+    
+
+
+    

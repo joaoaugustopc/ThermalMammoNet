@@ -508,6 +508,7 @@ def get_mean_metrics(model_name, mensagem = ""):
 
 
 
+"""
 # Função para calcular Pixel Accuracyv < Métrica de avaliação segmentação >
 def pixel_accuracy(y_true, y_pred):
     # y_true e y_pred devem ter a mesma dimensão e serem binários
@@ -526,3 +527,30 @@ def dice_coefficient(y_true, y_pred, smooth=1):
     dice = (2. * intersection + smooth) / (np.sum(y_true_f) + np.sum(y_pred_f) + smooth)
     
     return dice
+"""
+
+
+
+def precision_score_(y_true, y_pred, eps=1e-7):
+    intersect = np.sum(y_pred & y_true)
+    total_pred = np.sum(y_pred)
+    return round(intersect / (total_pred + eps), 3)
+
+def recall_score_(y_true, y_pred, eps=1e-7):
+    intersect = np.sum(y_pred & y_true)
+    total_true = np.sum(y_true)
+    return round(intersect / (total_true + eps), 3)
+
+def accuracy_score_(y_true, y_pred):
+    # pixel accuracy clássica
+    return round(np.mean(y_true == y_pred), 3)
+
+def dice_coef_(y_true, y_pred, eps=1e-7):
+    intersect = np.sum(y_pred & y_true)
+    total = np.sum(y_pred) + np.sum(y_true)
+    return round((2 * intersect) / (total + eps), 3)
+
+def iou_(y_true, y_pred, eps=1e-7):
+    intersect = np.sum(y_pred & y_true)
+    union = np.sum(y_pred) + np.sum(y_true) - intersect
+    return round(intersect / (union + eps), 3)

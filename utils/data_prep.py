@@ -14,7 +14,7 @@ random.seed(SEED)
 """
 
 #Arrays Numpy
-def load_data(angulo, folder = "np_dataset"):
+def load_data(angulo, folder = ""):
 
     imagens_train = np.load(f"{folder}/imagens_train_{angulo}.npy")
     labels_train = np.load(f"{folder}/labels_train_{angulo}.npy")
@@ -185,10 +185,10 @@ def format_data(directory_raw, output_dir = "output_dir", exclude = False, exclu
 
             list = listar_imgs_nao_usadas(exclude_path, angle)
             
-            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"raw_dataset/{angle}", list)
+            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"{directory_raw}/{angle}", True, list)
 
         else:
-            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"raw_dataset/{angle}")
+            imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = to_array(f"{directory_raw}/{angle}")
 
         print("ANGLE:",angle)
         print("Train shape:",imagens_train.shape)
@@ -265,14 +265,16 @@ def save_numpy_data(images, labels, output_dir, position):
 
 # Funções lambda para cada transformação separada
 random_flip = lambda: keras.layers.RandomFlip("horizontal")
-random_rotation = lambda: keras.layers.RandomRotation(0.05)
-random_zoom = lambda: keras.layers.RandomZoom(0.3, 0.5)
+random_rotation = lambda: keras.layers.RandomRotation(0.04, interpolation="bilinear")
+random_rotation_mask = lambda: keras.layers.RandomRotation(0.04, interpolation="nearest")
+random_zoom = lambda: keras.layers.RandomZoom(0.2, 0.2, interpolation="bilinear")
+random_zoom_mask = lambda: keras.layers.RandomZoom(0.2, 0.2, interpolation="nearest")
 random_brightness = lambda: keras.layers.RandomBrightness(factor=0.3, value_range=(0.0, 1.0))
 random_contrast = lambda: keras.layers.RandomContrast(factor=0.3)
 
 # Função para aplicar as transformações individualmente
 def apply_transformation(image, transformation):
-    return transformation()(image)
+    return transformation()(image).numpy()
 
 """
     Params:
@@ -285,8 +287,15 @@ def apply_transformation(image, transformation):
     return:
     all_imagens, all_labels : imagens e labels originais + aug
 """
-def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=False, target_size=0):
+def apply_augmentation_and_expand(train, labels, num_augmented_copies, seed =42, resize=False, target_size=0):
 
+    print("Aumentando o dataset com cópias aumentadas...")
+    print("Shape original das imagens:", train.shape)
+    print("Shape original das máscaras:", labels.shape)
+
+    #VALUE_SEED = int(time.time() * 1000) % 15000
+    #VALUE_SEED = 12274
+    random.seed(seed)
 
     train = np.expand_dims(train, axis=-1)
     
@@ -299,17 +308,25 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
         all_images.append(image)
         all_labels.append(label)
     
-    transformations = [random_rotation, random_zoom, random_brightness, random_contrast]
+    #transformations = [random_rotation, random_zoom, random_brightness, random_contrast]
+    transformations = [random_rotation, random_zoom, random_brightness]
+
 
     #aplicar cada transformação separado
     for _ in range(num_augmented_copies):
         i = 0
         for image, label in zip(train, labels):
             for transformation in transformations:  # Aplicar cada transformação separadamente
+                
+                seed = random.randint(0, 10000)
+                
+                random.seed(seed)
+                
                 augmented_image = apply_transformation(image, transformation)
                 
                 # Aleatoriamente decidir se vai aplicar random_flip
                 if random.random() > 0.5:  # 50% de chance de aplicar o flip
+                    random.seed(seed)
                     augmented_image = apply_transformation(augmented_image, random_flip)
                 
 
@@ -340,7 +357,7 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
     
     #se passado como parametro
     if resize:
-        all_images = tf.image.resize_with_pad(all_images, target_size, target_size, method="bicubic")
+        all_images = tf.image.resize_with_pad(all_images, target_size, target_size, method="bilenear")
     
     
     all_images = np.squeeze(all_images, axis=-1)
@@ -351,6 +368,8 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, resize=Fa
     
     #teste
     #visualize_augmentation(all_images[:10], all_images[156:166], 10)
+
+    print("Shape das imagens aumentadas:", all_images.shape)
     
     
     return all_images, all_labels    
@@ -382,7 +401,7 @@ def visualize_augmentation(original_img, aug_img, num_images=5):
     plt.savefig("foto_aug/")
 
 
-def create_aug_dataset(val_aug, output_dir="dataset_aug"):
+def create_aug_dataset(val_aug, input_dir ="", output_dir=""):
     
     angles_list = ["Frontal", "Left45", "Left90", "Right45", "Right90"]
     
@@ -390,7 +409,7 @@ def create_aug_dataset(val_aug, output_dir="dataset_aug"):
         os.makedirs(output_dir)
     
     for position in angles_list:
-        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(position)
+        imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(position, input_dir)
         imagens_train, labels_train = apply_augmentation_and_expand(imagens_train, labels_train, val_aug, resize=False)
         
         #salvar imagens e labels em arquivos separados
@@ -442,7 +461,7 @@ def filtrar_imgs_masks(angulo, img_path, mask_path):
     return data_imgs, data_masks
 
 
-def load_imgs_masks(angulo, img_path, mask_path):
+def load_imgs_masks(angulo, img_path, mask_path, augment=False, resize=False, target = 224):
     """
     Carrega imagens e máscaras em formato numpy arrays normalizados (0 a 1).
     Retorna as listas imgs_train, imgs_valid, masks_train, masks_valid.
@@ -452,11 +471,42 @@ def load_imgs_masks(angulo, img_path, mask_path):
     imagens = [np.array(Image.open(img).convert('L')) / 255.0 for img in data_imgs]
     mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
 
+    if resize:
+
+        imagens = np.expand_dims(imagens, axis=-1)
+        mascaras = np.expand_dims(mascaras, axis=-1)
+
+        # imagens = tf.image.resize_with_pad(imagens, target, target, method="bilinear")
+        # mascaras = tf.image.resize_with_pad(mascaras, target, target, method="nearest")
+
+        imagens = tf_letterbox(imagens, target, mode="bilinear")
+        mascaras = tf_letterbox(mascaras, target, mode="nearest")
+
+        imagens = np.squeeze(imagens, axis=-1)
+        mascaras = np.squeeze(mascaras, axis=-1)
+
+    
+
     imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(
         imagens, mascaras, test_size=0.2, random_state=42
     )
 
-    return np.array(imgs_train), np.array(imgs_valid), np.array(masks_train), np.array(masks_valid)
+    imgs_train = np.array(imgs_train)
+    masks_train = np.array(masks_train)
+    imgs_valid = np.array(imgs_valid)
+    masks_valid = np.array(masks_valid)
+
+    print("Train shape:", imgs_train.shape)
+    print("Valid shape:", imgs_valid.shape)
+
+    if augment:
+        imgs_train_aug, masks_train_aug = apply_augmentation_and_expand_seg(
+            imgs_train, masks_train, num_augmented_copies = 2, resize=False
+        )
+
+        return imgs_train_aug, imgs_valid, masks_train_aug, masks_valid
+    
+    return imgs_train, imgs_valid, masks_train, masks_valid
 
 def load_imgs_masks_only(angulo, img_path, mask_path):
     """
@@ -471,43 +521,43 @@ def load_imgs_masks_only(angulo, img_path, mask_path):
     return np.array(imagens), np.array(mascaras)
 
 
-def criar_pastas_yolo():
+def criar_pastas_yolo(Directory = ""):
     """
     Cria a estrutura de diretórios para armazenar as imagens e máscaras do YOLO.
     """
     pastas = [
-        "Yolo_dataset",
-        "Yolo_dataset/images",
-        "Yolo_dataset/images/train",
-        "Yolo_dataset/images/val",
-        "Yolo_dataset/masks",
-        "Yolo_dataset/masks/train",
-        "Yolo_dataset/masks/val",
-        "Yolo_dataset/labels/train",
-        "Yolo_dataset/labels/val"
+        f"{Directory}",
+        f"{Directory}/images",
+        f"{Directory}/images/train",
+        f"{Directory}/images/val",
+        f"{Directory}/masks",
+        f"{Directory}/masks/train",
+        f"{Directory}/masks/val",
+        f"{Directory}/labels/train",
+        f"{Directory}/labels/val"
     ]
     
     for pasta in pastas:
         os.makedirs(pasta, exist_ok=True)
 
 
-def mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid):
+def mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid, Directory = ""):
     """
     Move imagens e máscaras para os diretórios adequados dentro de Yolo_dataset.
     """
-    criar_pastas_yolo()
+    criar_pastas_yolo(Directory)
 
     for img in imgs_train:
-        shutil.copy(img, "Yolo_dataset/images/train")
+        shutil.copy(img, f"{Directory}/images/train")
     for img in imgs_valid:
-        shutil.copy(img, "Yolo_dataset/images/val")
+        shutil.copy(img, f"{Directory}/images/val")
     for mask in masks_train:
-        shutil.copy(mask, "Yolo_dataset/masks/train")
+        shutil.copy(mask, f"{Directory}/masks/train")
     for mask in masks_valid:
-        shutil.copy(mask, "Yolo_dataset/masks/val")
+        shutil.copy(mask, f"{Directory}/masks/val")
 
 
-def YoLo_Data(angulo, img_path, mask_path):
+def YoLo_Data(angulo, img_path, mask_path, outputDir="", augment=False):
     """
     Prepara os dados de imagens e máscaras e move para a estrutura YOLO.
     """
@@ -517,18 +567,23 @@ def YoLo_Data(angulo, img_path, mask_path):
         data_imgs, data_masks, test_size=0.2, random_state=42
     )
 
-    mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid)
-    
-    input_dir = 'Yolo_dataset/masks/val'
+    mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid, outputDir)
 
-    output_dir = 'Yolo_dataset/labels/val'
+    if augment:
 
-    masks_to_polygons(input_dir, output_dir)
-    
-    input_dir = 'Yolo_dataset/masks/train'
-    output_dir = 'Yolo_dataset/labels/train'
-    
-    masks_to_polygons(input_dir, output_dir)
+        augment_and_save(
+            imgs_train, masks_train, outputDir, num_augmented_copies=2
+        )
+
+
+    masks_to_polygons(
+        input_dir= f"{outputDir}/masks/train",
+        output_dir=f"{outputDir}/labels/train"
+    )
+    masks_to_polygons(
+        input_dir=f"{outputDir}/masks/val",
+        output_dir=f"{outputDir}/labels/val"
+    )
     
 
     
@@ -627,6 +682,68 @@ def listar_imgs_nao_usadas(directory, angulo):
     return nomesexcluidos
 
 
+def apply_augmentation_and_expand_seg(images, masks, num_augmented_copies, resize=False, target_size=0):
+
+    print("Aumentando o dataset com cópias aumentadas...")
+    print("Shape original das imagens:", images.shape)
+    print("Shape original das máscaras:", masks.shape)
+
+    #VALUE_SEED = int(time.time() * 1000) % 15000
+    VALUE_SEED = 12274
+    random.seed(VALUE_SEED)
+    print(f"***SEMENTE USADA****: {VALUE_SEED}")
+    
+    
+    images = np.expand_dims(images, axis=-1)
+    masks = np.expand_dims(masks, axis=-1)
+
+    all_images = []
+    all_masks = []
+
+    # Adiciona os dados originais
+    for img, mask in zip(images, masks):
+        all_images.append(img)
+        all_masks.append(mask)
+
+    # Transformações espaciais que devem ser aplicadas de forma sincronizada
+    spatial_transformations_img = [random_rotation, random_zoom, random_flip]
+    spatial_transformations_mask = [random_rotation_mask, random_zoom_mask, random_flip]
+
+    for _ in range(num_augmented_copies):
+        for transformation_img, transformation_mask in zip (spatial_transformations_img, spatial_transformations_mask):
+            for img, mask in zip(images, masks):    
+                # Usa um seed para garantir que a transformação aplicada na imagem e na máscara seja a mesma
+                seed = random.randint(0, 10000)
+                
+                random.seed(seed)
+                aug_img = apply_transformation(img, transformation_img)
+                
+                random.seed(seed)
+                aug_mask = apply_transformation(mask, transformation_mask)
+                
+                all_images.append(aug_img)
+                all_masks.append(aug_mask)
+
+    # Converte as listas em arrays do numpy
+    all_images = np.array(all_images)
+    all_masks = np.array(all_masks)
+
+    # Se solicitado, redimensiona as imagens e máscaras com padding utilizando TensorFlow
+    if resize:
+        all_images = tf.image.resize_with_pad(all_images, target_size, target_size, method="bilinear")
+        all_masks = tf.image.resize_with_pad(all_masks, target_size, target_size, method="bilinear")
+
+    # Se o canal adicionado não for necessário para o treinamento, pode-se remover a dimensão extra
+    all_images = np.squeeze(all_images, axis=-1)
+    all_masks = np.squeeze(all_masks, axis=-1)
+
+    # Visualização ou prints de verificação (opcional)
+    print("Shape das imagens aumentadas:", all_images.shape)
+    print("Shape das máscaras aumentadas:", all_masks.shape)
+    
+    return all_images, all_masks
+
+
 
 
 
@@ -676,4 +793,343 @@ def copy_images_excluding_patients(source_folders, exclude_folders, destination_
                     print(f"Imagem {filename} copiada para {destination_folder}")
 
 
+def augment_and_save(img_paths, mask_paths, outputDir, num_augmented_copies):
+    """
+    Gera augmentations para cada par imagem/máscara em img_paths/mask_paths,
+    salva em outputDir/images/train e outputDir/masks/train preservando
+    o nome original e prefixo 'aug_'.
+    """
+
+    VALUE_SEED = 12274
+    random.seed(VALUE_SEED)
+    print(f"***SEMENTE USADA****: {VALUE_SEED}")
     
+    spatial_transformations_img = [random_rotation, random_zoom, random_flip]
+    spatial_transformations_mask = [random_rotation_mask, random_zoom_mask, random_flip]
+
+    for i, (img_path, mask_path) in enumerate(zip(img_paths, mask_paths)):
+        base_name = os.path.basename(img_path)
+        # Carrega e normaliza
+        img = np.expand_dims(np.array(Image.open(img_path).convert('L')) / 255.0, axis=-1)
+        mask = np.expand_dims(np.array(Image.open(mask_path).convert('L')) / 255.0, axis=-1)
+
+        
+
+        # Transformações espaciais (sincronizadas)
+        for j in range(num_augmented_copies):
+            i = 0
+            for trans_img, trans_mask in zip(spatial_transformations_img, spatial_transformations_mask):
+                i = i + 1
+                seed = random.randint(0, 10000)
+                random.seed(seed)
+                aug_img = apply_transformation(img, trans_img)
+                random.seed(seed)
+                aug_mask = apply_transformation(mask, trans_mask)
+
+                fname = f"aug_{j}.{i}_{base_name}"
+                img_out = (aug_img.squeeze() * 255).astype(np.uint8)
+                mask_out = (aug_mask.squeeze() * 255).astype(np.uint8)
+
+                Image.fromarray(img_out).save(os.path.join(outputDir, 'images/train', fname))
+                Image.fromarray(mask_out).save(os.path.join(outputDir, 'masks/train', fname))
+
+
+def filter_dataset_by_id(src_dir: str, dst_dir: str, ids_to_remove):
+    """
+    Copia recursivamente todo o conteúdo de `src_dir` para `dst_dir`, exceto
+    os arquivos cujo nome comece com qualquer um dos IDs em `ids_to_remove`.
+
+    :param src_dir: caminho para o dataset original (ex: "raw_dataset")
+    :param dst_dir: caminho para onde será salva a cópia filtrada
+    :param ids_to_remove: lista (ou set) de IDs (string ou int) a excluir
+    """
+    ids_str = {str(i) for i in ids_to_remove}
+
+    for root, dirs, files in os.walk(src_dir):
+        rel_path = os.path.relpath(root, src_dir)
+        target_root = os.path.join(dst_dir, rel_path)
+        os.makedirs(target_root, exist_ok=True)
+
+        for fname in files:
+            file_id = fname.split('_', 1)[0]
+            if file_id in ids_str:
+                print(f"Excluindo {fname} do diretório {root}")
+                continue
+
+            src_path = os.path.join(root, fname)
+            dst_path = os.path.join(target_root, fname)
+
+            shutil.copy2(src_path, dst_path)
+
+
+def load_raw_images(angle_dir, exclude=False, exclude_set=None):
+    
+    imgs, labels, ids = [], [], []
+
+    for label_name, label_val in [('healthy', 0), ('sick', 1)]:
+        for file in os.listdir(os.path.join(angle_dir, label_name)):
+            if exclude and file in exclude_set:
+                print(f"Excluindo {file} do diretório {angle_dir}/{label_name}")
+                continue
+
+            fpath = os.path.join(angle_dir, label_name, file)
+
+            try:
+                with open(fpath, 'r') as f:
+                    delim = ';' if ';' in f.readline() else ' '
+                    f.seek(0)
+                arr = np.loadtxt(fpath, delimiter=delim, dtype=np.float32)
+
+                
+                """
+                arr = arr[..., None]
+
+                # Redimensionamento com padding bicúbico
+                arr_resized = tf.image.resize_with_pad(
+                    arr, resize_to, resize_to, method='bicubic'
+                ).numpy().squeeze()
+                """
+                
+                imgs.append(arr)
+                labels.append(label_val)
+                ids.append(extract_id(file))  # sua função
+
+            except Exception as e:
+                print(f"Erro ao processar {fpath}: {e}")
+                continue
+
+    return np.array(imgs), np.array(labels), np.array(ids, dtype= int)
+
+
+from sklearn.model_selection import StratifiedGroupKFold, GroupShuffleSplit
+
+def make_tvt_splits(imgs, labels, ids, k=5, val_size=0.25, seed=42):
+    
+    sgkf = StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=seed)
+
+    for outer_train_val, test in sgkf.split(imgs, labels, groups=ids):
+        # Dentro do conjunto que resta, sorteia validação
+        gss = GroupShuffleSplit(
+            n_splits=1, test_size=val_size,
+            random_state=seed)
+        train, val = next(gss.split(imgs[outer_train_val],
+                                    labels[outer_train_val],
+                                    groups=ids[outer_train_val]))
+        
+        # Ajusta índices ao vetor global
+        train_idx = outer_train_val[train]
+        val_idx   = outer_train_val[val]
+        yield train_idx, val_idx, test
+
+
+
+def augment_train_fold(x_train, y_train, n_aug=1, seed=42):
+    """
+    Recebe dados de treino de UM fold e concatena n_aug versões aumentadas.
+    """
+    aug_imgs, aug_labels = apply_augmentation_and_expand(
+                               x_train, y_train, n_aug,seed, resize=False)
+
+    return aug_imgs, aug_labels
+
+def normalize(arr, min_v, max_v):
+    return (arr - min_v) / (max_v - min_v + 1e-8)
+
+
+
+
+
+
+def tf_letterbox(images, target = 224, mode = 'bilinear'):
+
+
+    TARGET = target          
+    PAD_COLOR = 114/255.0  
+
+    #PAD_COLOR = 0.0
+
+    h, w = tf.shape(images)[1], tf.shape(images)[2]
+    
+    r = tf.cast(tf.minimum(TARGET / tf.cast(h, tf.float32),
+                           TARGET / tf.cast(w, tf.float32)), tf.float32)
+    
+    new_h = tf.cast(tf.round(tf.cast(h, tf.float32) * r), tf.int32)
+    new_w = tf.cast(tf.round(tf.cast(w, tf.float32) * r), tf.int32)
+
+    # Resize todas as imagens do batch
+    resized = tf.image.resize(images, (new_h, new_w), method=mode)
+
+    # Calcula padding necessário
+    pad_h = TARGET - new_h
+    pad_w = TARGET - new_w
+    top = pad_h // 2
+    bottom = pad_h - top
+    left = pad_w // 2
+    right = pad_w - left
+
+    paddings = [[0, 0], [top, bottom], [left, right], [0, 0]]
+    
+    padded = tf.pad(resized, 
+				    paddings, 
+				    mode='CONSTANT', 
+				    constant_values=PAD_COLOR)
+
+    return padded
+
+
+
+# Redimensiona as imagens sem adicionar padding
+def tf_letterbox_Sem_padding(images, target = 224, mode = 'bilinear'):
+
+
+    # TARGET = target          
+    # PAD_COLOR = 114/255.0  
+
+    # #PAD_COLOR = 0.0
+
+    # h, w = tf.shape(images)[1], tf.shape(images)[2]
+    
+    # r = tf.cast(tf.minimum(TARGET / tf.cast(h, tf.float32),
+    #                        TARGET / tf.cast(w, tf.float32)), tf.float32)
+    
+    # new_h = tf.cast(tf.round(tf.cast(h, tf.float32) * r), tf.int32)
+    # new_w = tf.cast(tf.round(tf.cast(w, tf.float32) * r), tf.int32)
+
+    # Resize todas as imagens do batch
+    resized = tf.image.resize(images, (160, 224), method=mode)
+
+    
+    return resized
+
+def letterbox_center_crop(images, target=224, mode='bilinear'):
+    """
+    images: tensor [B, H, W, C]
+    Retorna: tensor [B, 224, 224, C] — sem padding.
+    """
+    h = tf.cast(tf.shape(images)[1], tf.float32)  # altura original
+    w = tf.cast(tf.shape(images)[2], tf.float32)  # largura original
+
+    # 1) fator de escala — faz o lado MENOR virar 'target'
+    r = tf.maximum(target / h, target / w)        # garante min(h, w) → target
+
+    new_h = tf.cast(tf.round(h * r), tf.int32)
+    new_w = tf.cast(tf.round(w * r), tf.int32)
+
+    # 2) redimensiona proporcionalmente
+    resized = tf.image.resize(images, (new_h, new_w), method=mode)
+
+    # 3) calcula deslocamentos p/ crop central
+    offset_h = (new_h - target) // 2
+    offset_w = (new_w - target) // 2
+
+    # 4) recorta [224 × 224]
+    cropped = tf.image.crop_to_bounding_box(
+        resized, offset_h, offset_w, target, target
+    )
+    return cropped
+
+
+def load_imgs_masks_sem_padding(angulo, img_path, mask_path, augment=False, resize=False, target = 224):
+    """
+    Carrega imagens e máscaras em formato numpy arrays normalizados (0 a 1).
+    Retorna as listas imgs_train, imgs_valid, masks_train, masks_valid.
+    """
+    data_imgs, data_masks = filtrar_imgs_masks(angulo, img_path, mask_path)
+
+    imagens = [np.array(Image.open(img).convert('L')) / 255.0 for img in data_imgs]
+    mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
+
+    if resize:
+
+        imagens = np.expand_dims(imagens, axis=-1)
+        mascaras = np.expand_dims(mascaras, axis=-1)
+
+        # imagens = tf.image.resize_with_pad(imagens, target, target, method="bilinear")
+        # mascaras = tf.image.resize_with_pad(mascaras, target, target, method="nearest")
+
+        imagens = tf_letterbox_Sem_padding(imagens, target, mode="bilinear")
+        mascaras = tf_letterbox_Sem_padding(mascaras, target, mode="nearest")
+
+        imagens = np.squeeze(imagens, axis=-1)
+        mascaras = np.squeeze(mascaras, axis=-1)
+
+    
+
+    imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(
+        imagens, mascaras, test_size=0.2, random_state=42
+    )
+
+    imgs_train = np.array(imgs_train)
+    masks_train = np.array(masks_train)
+    imgs_valid = np.array(imgs_valid)
+    masks_valid = np.array(masks_valid)
+
+    print("Train shape:", imgs_train.shape)
+    print("Valid shape:", imgs_valid.shape)
+
+    if augment:
+        imgs_train_aug, masks_train_aug = apply_augmentation_and_expand_seg(
+            imgs_train, masks_train, num_augmented_copies = 2, resize=False
+        )
+
+        return imgs_train_aug, imgs_valid, masks_train_aug, masks_valid
+    
+    return imgs_train, imgs_valid, masks_train, masks_valid
+
+def load_imgs_masks_recortado(angulo, img_path, mask_path, augment=False, resize=False, target = 224):
+    """
+    Carrega imagens e máscaras em formato numpy arrays normalizados (0 a 1).
+    Retorna as listas imgs_train, imgs_valid, masks_train, masks_valid.
+    """
+    data_imgs, data_masks = filtrar_imgs_masks(angulo, img_path, mask_path)
+
+    imagens = [np.array(Image.open(img).convert('L')) / 255.0 for img in data_imgs]
+    mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
+
+    if resize:
+
+        imagens = np.expand_dims(imagens, axis=-1)
+        mascaras = np.expand_dims(mascaras, axis=-1)
+
+        # imagens = tf.image.resize_with_pad(imagens, target, target, method="bilinear")
+        # mascaras = tf.image.resize_with_pad(mascaras, target, target, method="nearest")
+
+        imagens = letterbox_center_crop(imagens, target, mode="bilinear")
+        mascaras = letterbox_center_crop(mascaras, target, mode="nearest")
+
+        imagens = np.squeeze(imagens, axis=-1)
+        mascaras = np.squeeze(mascaras, axis=-1)
+
+    
+
+    imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(
+        imagens, mascaras, test_size=0.2, random_state=42
+    )
+
+    imgs_train = np.array(imgs_train)
+    masks_train = np.array(masks_train)
+    imgs_valid = np.array(imgs_valid)
+    masks_valid = np.array(masks_valid)
+
+    print("Train shape:", imgs_train.shape)
+    print("Valid shape:", imgs_valid.shape)
+
+    if augment:
+        imgs_train_aug, masks_train_aug = apply_augmentation_and_expand_seg(
+            imgs_train, masks_train, num_augmented_copies = 2, resize=False
+        )
+
+        return imgs_train_aug, imgs_valid, masks_train_aug, masks_valid
+    
+    return imgs_train, imgs_valid, masks_train, masks_valid
+
+
+
+
+    
+    
+
+
+
+
+
