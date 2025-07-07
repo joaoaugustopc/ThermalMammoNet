@@ -202,6 +202,19 @@ def segment_with_yolo( X_train, X_valid, X_test, model_path):
 
     return seg_train, seg_valid, seg_test
 
+def load_and_convert_temp(image_path):
+    # Carregue seus dados de temperatura (ajuste conforme seu formato)
+    temp_data = np.loadtxt(image_path)  # Ou outro método de carregamento
+    
+    # Aplicar os passos 1-3 acima
+    temp_normalized = (temp_data - temp_data.min()) / (temp_data.ptp())
+    temp_uint8 = (temp_normalized * 255).astype(np.uint8)
+    temp_rgb = cv2.applyColorMap(temp_uint8, cv2.COLORMAP_INFERNO)
+    return cv2.cvtColor(temp_rgb, cv2.COLOR_BGR2RGB)
+
+"""
+FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
+"""
 def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5, 
                     resize = True, resize_to = 224, n_aug = 0, batch = 8, seed = 42, segmenter = "none", seg_model_path = ""):
     
@@ -240,11 +253,14 @@ def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5,
         # min/max APENAS dos originais
         mn, mx = X_tr.min(), X_tr.max()
 
-        # normaliza
-        X_tr = normalize(X_tr, mn, mx)
-        X_val= normalize(X_val,    mn, mx)
-        X_test=normalize(X_test,   mn, mx)
-
+        # vgg pre treinada nao é nornalizada
+        if model.__name__ != 'Vgg_16_pre_trained':
+            # normaliza
+            X_tr = normalize(X_tr, mn, mx)
+            X_val= normalize(X_val,    mn, mx)
+            X_test=normalize(X_test,   mn, mx)
+        
+        
         if resize:
 
             X_tr = np.expand_dims(X_tr, axis=-1)
@@ -263,7 +279,44 @@ def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5,
             X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
             X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
 
+        # ------------------------------------------------
+        if model.__name__ == 'Vgg_16_pre_trained':
+            def convert_to_rgb(temp_data):
+                temp_normalized = (temp_data - temp_data.min()) / (temp_data.ptp())
+                temp_uint8 = (temp_normalized * 255).astype(np.uint8)
+                temp_rgb = cv2.applyColorMap(temp_uint8, cv2.COLORMAP_INFERNO)
+                return cv2.cvtColor(temp_rgb, cv2.COLOR_BGR2RGB)
+
+            X_tr = np.array([convert_to_rgb(img) for img in X_tr])
+            X_val = np.array([convert_to_rgb(img) for img in X_val])
+            X_test = np.array([convert_to_rgb(img) for img in X_test])
         
+        # Visualização de exemplo (apenas para o primeiro batch)--------------
+        plt.figure(figsize=(12, 6))
+        
+        # Imagem original (temperatura)
+        plt.subplot(1, 2, 1)
+        original_img = X[tr_idx[0]]  # Primeira imagem do conjunto de treino
+        plt.imshow(original_img, cmap='gray')
+        plt.title(f'Original (Temperatura)\nMin: {original_img.min():.2f}°C, Max: {original_img.max():.2f}°C')
+        plt.colorbar(label='Temperatura (°C)')
+        
+        # Imagem convertida (RGB)
+        plt.subplot(1, 2, 2)
+        plt.imshow(X_tr[0])  # Primeira imagem convertida
+        plt.title('Colorizada (RGB)')
+        plt.colorbar(label='Intensidade')
+        
+        plt.suptitle(f'Comparação para {model.__name__} - Fold {fold+1}', y=1.05)
+        plt.tight_layout()
+        
+        # Salva a visualização
+        os.makedirs("visualizacoes", exist_ok=True)
+        plt.savefig(f'visualizacoes/conversao_fold_{fold+1}.png', bbox_inches='tight', dpi=300)
+        plt.close()  # Fecha a figura para não mostrar durante o treino
+        
+        print(f"Visualização salva em: visualizacoes/conversao_fold_{fold+1}.png")
+        # ------------------------------------------------
         
         
         # augmenta & concatena
@@ -284,8 +337,10 @@ def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5,
                 print(f"Segmentação com YOLO concluída.")
             else:
                 raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
-        
-
+       
+       
+       
+       
         if model == "yolo":
             save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
             save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
@@ -1026,13 +1081,13 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
             modelo_object = model(learning_rate=learning_rate)
             modelo_train = modelo_object
 
-                model.summary()
+            #model.summary()
                 
 
-                # Salva a seed em um arquivo de texto
-                with open("modelos/random_seed.txt", "a") as file:
-                    file.write(str(seed))
-                    file.write("\n")
+            # Salva a seed em um arquivo de texto
+            with open("modelos/random_seed.txt", "a") as file:
+                file.write(str(seed))
+                file.write("\n")
 
             print("Seed gerada e salva em random_seed.txt:", seed)
     
@@ -1068,7 +1123,7 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
                 f.write(f"Val_accuracy: {history.history['val_accuracy']}\n")
                 f.write(f"Test Loss: {test_loss}\n")
                 f.write(f"Test Accuracy: {test_accuracy}\n")
-                    f.write(f"SEED{str(seed)}\n")
+                f.write(f"SEED{str(seed)}\n")
                 f.write("\n")
                     
                 plot_convergence(history, model_func.__name__, angulo, i, message)
@@ -1512,6 +1567,8 @@ if __name__ == "__main__":
 
     tf.config.experimental.enable_op_determinism()
     tf.random.set_seed(SEMENTE)
+    
+    train_model_cv(Vgg_16_pre_trained, 'filtered_raw_dataset', 'DUPLICATED_frontal_vgg_pre_trained')
 
 
     
