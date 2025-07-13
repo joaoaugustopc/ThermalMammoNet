@@ -32,3 +32,4 @@ from sklearn.metrics import roc_auc_score, roc_curve
 from src.models.resNet_101 import ResNet101, BottleneckResidualUnit
 
 from src.models.vgg_16_trained import Vgg_16_pre_trained
+from tensorflow.keras.applications.vgg16 import preprocess_input
