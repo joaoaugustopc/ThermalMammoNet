@@ -480,7 +480,8 @@ def load_imgs_masks(angulo, img_path, mask_path, augment=False, resize=False, ta
         # mascaras = tf.image.resize_with_pad(mascaras, target, target, method="nearest")
 
         imagens = tf_letterbox(imagens, target, mode="bilinear")
-        mascaras = tf_letterbox(mascaras, target, mode="nearest")
+        mascaras = tf_letterbox_black(mascaras, target, mode="nearest")
+
 
         imagens = np.squeeze(imagens, axis=-1)
         mascaras = np.squeeze(mascaras, axis=-1)
@@ -557,7 +558,7 @@ def mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid, Direct
         shutil.copy(mask, f"{Directory}/masks/val")
 
 
-def YoLo_Data(angulo, img_path, mask_path, outputDir="", augment=False):
+def yolo_data(angulo, img_path, mask_path, outputDir="", augment=False):
     """
     Prepara os dados de imagens e máscaras e move para a estrutura YOLO.
     """
@@ -977,6 +978,43 @@ def tf_letterbox(images, target = 224, mode = 'bilinear'):
     return padded
 
 
+def tf_letterbox_black(images, target = 224, mode = 'bilinear'):
+
+
+    TARGET = target          
+    #PAD_COLOR = 114/255.0  
+
+    PAD_COLOR = 0.0
+
+    h, w = tf.shape(images)[1], tf.shape(images)[2]
+    
+    r = tf.cast(tf.minimum(TARGET / tf.cast(h, tf.float32),
+                           TARGET / tf.cast(w, tf.float32)), tf.float32)
+    
+    new_h = tf.cast(tf.round(tf.cast(h, tf.float32) * r), tf.int32)
+    new_w = tf.cast(tf.round(tf.cast(w, tf.float32) * r), tf.int32)
+
+    # Resize todas as imagens do batch
+    resized = tf.image.resize(images, (new_h, new_w), method=mode)
+
+    # Calcula padding necessário
+    pad_h = TARGET - new_h
+    pad_w = TARGET - new_w
+    top = pad_h // 2
+    bottom = pad_h - top
+    left = pad_w // 2
+    right = pad_w - left
+
+    paddings = [[0, 0], [top, bottom], [left, right], [0, 0]]
+    
+    padded = tf.pad(resized, 
+				    paddings, 
+				    mode='CONSTANT', 
+				    constant_values=PAD_COLOR)
+
+    return padded
+
+
 
 # Redimensiona as imagens sem adicionar padding
 def tf_letterbox_Sem_padding(images, target = 224, mode = 'bilinear'):
@@ -1122,6 +1160,105 @@ def load_imgs_masks_recortado(angulo, img_path, mask_path, augment=False, resize
         return imgs_train_aug, imgs_valid, masks_train_aug, masks_valid
     
     return imgs_train, imgs_valid, masks_train, masks_valid
+
+
+
+def load_imgs_masks_Black_Padding(angulo, img_path, mask_path, augment=False, resize=False, target = 224):
+    """
+    Carrega imagens e máscaras em formato numpy arrays normalizados (0 a 1).
+    Retorna as listas imgs_train, imgs_valid, masks_train, masks_valid.
+    """
+    data_imgs, data_masks = filtrar_imgs_masks(angulo, img_path, mask_path)
+
+    imagens = [np.array(Image.open(img).convert('L')) / 255.0 for img in data_imgs]
+    mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
+
+    if resize:
+
+        imagens = np.expand_dims(imagens, axis=-1)
+        mascaras = np.expand_dims(mascaras, axis=-1)
+
+        # imagens = tf.image.resize_with_pad(imagens, target, target, method="bilinear")
+        # mascaras = tf.image.resize_with_pad(mascaras, target, target, method="nearest")
+
+        imagens = tf_letterbox_black(imagens, target, mode="bilinear")
+        mascaras = tf_letterbox_black(mascaras, target, mode="nearest")
+
+        imagens = np.squeeze(imagens, axis=-1)
+        mascaras = np.squeeze(mascaras, axis=-1)
+
+    
+
+    imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(
+        imagens, mascaras, test_size=0.2, random_state=42
+    )
+
+    imgs_train = np.array(imgs_train)
+    masks_train = np.array(masks_train)
+    imgs_valid = np.array(imgs_valid)
+    masks_valid = np.array(masks_valid)
+
+    print("Train shape:", imgs_train.shape)
+    print("Valid shape:", imgs_valid.shape)
+
+    if augment:
+        imgs_train_aug, masks_train_aug = apply_augmentation_and_expand_seg(
+            imgs_train, masks_train, num_augmented_copies = 2, resize=False
+        )
+
+        return imgs_train_aug, imgs_valid, masks_train_aug, masks_valid
+    
+    return imgs_train, imgs_valid, masks_train, masks_valid
+
+def load_imgs_masks_distorcidas(angulo, img_path, mask_path, augment=False, resize=False, target = 224):
+    """
+    Carrega imagens e máscaras em formato numpy arrays normalizados (0 a 1).
+    Retorna as listas imgs_train, imgs_valid, masks_train, masks_valid.
+    """
+    data_imgs, data_masks = filtrar_imgs_masks(angulo, img_path, mask_path)
+
+    imagens = [np.array(Image.open(img).convert('L')) / 255.0 for img in data_imgs]
+    mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
+
+    if resize:
+
+        imagens = np.expand_dims(imagens, axis=-1)
+        mascaras = np.expand_dims(mascaras, axis=-1)
+
+        # imagens = tf.image.resize_with_pad(imagens, target, target, method="bilinear")
+        # mascaras = tf.image.resize_with_pad(mascaras, target, target, method="nearest")
+
+        imagens = tf.image.resize(imagens, (224, 224), method="bilinear")
+        mascaras = tf.image.resize(mascaras, (224, 224), method="nearest")
+
+        imagens = np.squeeze(imagens, axis=-1)
+        mascaras = np.squeeze(mascaras, axis=-1)
+
+    
+
+    imgs_train, imgs_valid, masks_train, masks_valid = train_test_split(
+        imagens, mascaras, test_size=0.2, random_state=42
+    )
+
+    imgs_train = np.array(imgs_train)
+    masks_train = np.array(masks_train)
+    imgs_valid = np.array(imgs_valid)
+    masks_valid = np.array(masks_valid)
+
+    print("Train shape:", imgs_train.shape)
+    print("Valid shape:", imgs_valid.shape)
+
+    if augment:
+        imgs_train_aug, masks_train_aug = apply_augmentation_and_expand_seg(
+            imgs_train, masks_train, num_augmented_copies = 2, resize=False
+        )
+
+        return imgs_train_aug, imgs_valid, masks_train_aug, masks_valid
+    
+    return imgs_train, imgs_valid, masks_train, masks_valid
+
+
+
 
 
 

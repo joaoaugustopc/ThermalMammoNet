@@ -1,8 +1,8 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, YoLo_Data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop
-from utils.files_manipulation import move_files_within_folder, create_folder
+from utils.data_prep import load_imgs_masks, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas
+from utils.files_manipulation import move_files_within_folder, create_folder, move_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model, unet_model_retangular
 from utils.stats import precision_score_, recall_score_, accuracy_score_, dice_coef_, iou_ 
@@ -28,6 +28,7 @@ import csv
 import os
 import json as json_module  # Alias seguro
 import json
+import torch
 
 
 
@@ -46,8 +47,15 @@ tf.random.set_seed(seed)
 np.random.seed(seed)
 """
 
-
-
+def clear_memory():
+    """
+    Limpa tudo que puder de RAM/VRAM para a próxima tentativa.
+    """
+    tf.keras.backend.clear_session()
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
 
 
 def unet_segmenter(data_train, data_valid, data_test, path_model):
@@ -263,8 +271,9 @@ FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
 """
 #TODO: PEGAR O CAMINNHO DO MODELO NA PASTA JOAO
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
-                  resize=True, resize_to=224, n_aug=0, batch=8, seed=42, 
-                  segmenter="none", seg_model_path="", resize_zero=True):
+                  resize=True, resize_method = "GrayPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
+                  segmenter="none", seg_model_path=""):
+    
     # DEBUG: vendo o nome do modeloo
     print(model.__name__)
     
@@ -282,621 +291,259 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                     make_tvt_splits(X, y, patient_ids,
                                    k=k, val_size=0.25, seed=seed)):
         
-        # salva índices para reuso posterior
-        split_file = f"splits/{message}_{angle}_F{fold}.json"
-        os.makedirs("splits", exist_ok=True)
-        with open(split_file, "w") as f:
-            json.dump({
-                "train_idx": tr_idx.tolist(),
-                "val_idx": va_idx.tolist(),
-                "test_idx": te_idx.tolist()
-            }, f)
-
-        # ------ prepara dados -----------
-        X_tr, y_tr = X[tr_idx], y[tr_idx]
-        X_val, y_val = X[va_idx], y[va_idx]
-        X_test, y_test = X[te_idx], y[te_idx]
+        def run_fold():
         
-#TODO: usar o matlab jet colormap -> ja aplica sozinho replicando os canais 
-#TODO: FAZER O CAMINHO NORMAL PARA IMAGEM SEGMENTADA, DEPOIS DE SEGMENTAR, REPLICAR OS 3 CANAIS 
-#TODO: VOLTAR PARA A FUNCAO RESIZE ANTERIOR 
-    if resize:
-        if resize_zero:
-        # Converter para 3 canais (RGB)
-            X_tr = np.stack((X_tr,) * 3, axis=-1)
-            X_val = np.stack((X_val,) * 3, axis=-1)
-            X_test = np.stack((X_test,) * 3, axis=-1)
-        else:
-            # O primeiro canal contém os dados da imagem original.
-            # Os outros dois canais são criados e preenchidos com zero.
-            X_tr_zeros = np.zeros_like(X_tr)
-            X_val_zeros = np.zeros_like(X_val)
-            X_test_zeros = np.zeros_like(X_test)
+            # salva índices para reuso posterior
+            split_file = f"splits/{message}_{angle}_F{fold}.json"
+            os.makedirs("splits", exist_ok=True)
+            with open(split_file, "w") as f:
+                json.dump({
+                    "train_idx": tr_idx.tolist(),
+                    "val_idx": va_idx.tolist(),
+                    "test_idx": te_idx.tolist()
+                }, f)
 
-            X_tr = np.stack((X_tr, X_tr_zeros, X_tr_zeros), axis=-1)
-            X_val = np.stack((X_val, X_val_zeros, X_val_zeros), axis=-1)
-            X_test = np.stack((X_test, X_test_zeros, X_test_zeros), axis=-1)
+            # ------ prepara dados -----------
+            X_tr, y_tr = X[tr_idx], y[tr_idx]
+            X_val,    y_val = X[va_idx], y[va_idx]
 
-        # Redimensionar mantendo 3 canais E JÁ CONVERTER PARA NUMPY
-        # Isso resolve o erro de 'EagerTensor'
-        X_tr = tf.image.resize(X_tr, [resize_to, resize_to], method="bicubic").numpy()
-        X_val = tf.image.resize(X_val, [resize_to, resize_to], method="bicubic").numpy()
-        X_test = tf.image.resize(X_test, [resize_to, resize_to], method="bicubic").numpy()
-        
-#TODO: tirar os dois canais replicados para modelos criados por nós (ex.> vgg16 e resnet)
-
-    # Depois de redimensionar e converter para NumPy, aplique a normalização específica
-    if model.__name__ == "Vgg_16_pre_trained":
-        # A VGG16 precisa do pré-processamento do ImageNet
-        X_tr = preprocess_input(X_tr)
-        X_val = preprocess_input(X_val)
-        X_test = preprocess_input(X_test)
-    else:
-        # Outros modelos podem usar a normalização min/max
-        # Note que a linha 'tf.clip_by_value' foi removida,
-        # pois ela causava o problema da imagem laranja.
-        mn, mx = X_tr.min(), X_tr.max()
-        X_tr = (X_tr - mn) / (mx - mn)
-        X_val = (X_val - mn) / (mx - mn)
-        X_test = (X_test - mn) / (mx - mn)
-
-  # ----------- VERIFICAÇÃO DA FAIXA DE VALORES -----------
-    print("\n--- Faixas de Valores após o Pré-processamento ---")
-    print(f"Conjunto de Treino: min={X_tr.min():.4f}, max={X_tr.max():.4f}")
-    print(f"Conjunto de Validação: min={X_val.min():.4f}, max={X_val.max():.4f}")
-    print(f"Conjunto de Teste: min={X_test.min():.4f}, max={X_test.max():.4f}")
-    print("---------------------------------------------------\n")
-
-    
-                
-    # augmenta & concatena
-    if n_aug > 0:
-        X_tr, y_tr = augment_train_fold(X_tr, y_tr, n_aug=n_aug, seed=seed)
-        
-        with open("modelos/random_seed.txt", "a") as f:
-            f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}\n")
-    
-    if segmenter != "none":
-        if segmenter == "unet":
-            X_tr, X_val, X_test = unet_segmenter(X_tr, X_val, X_test, seg_model_path)
-            print(f"Segmentação com UNet concluída.")   
-        elif segmenter == "yolo":
-            X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, seg_model_path)
-            print(f"Segmentação com YOLO concluída.")
-        else:
-            raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
-        
-    # ----------------------------- visualizando a imagem ---------------------------------------------
-    # Cria um diretório para salvar as visualizações
-    vis_dir = "visualizacoes_modelos"
-    os.makedirs(vis_dir, exist_ok=True)
-    
-    # visualizando fotos (agora com o caminho completo do arquivo)
-    train_save_path = os.path.join(vis_dir, f"vgg_pre_trained_train_F{fold+1}.png")
-    print(f"Visualizando e salvando imagens de treino para o Fold {fold+1} após o pré-processamento...")
-    visualize_processed_images(X_tr, y_tr, f"vgg_pre_trained_train", save_path=train_save_path)
-    
-    # Visualiza o conjunto de validação (com o caminho completo do arquivo)
-    val_save_path = os.path.join(vis_dir, f"vgg_pre_trained_val_F{fold+1}.png")
-    print(f"Visualizando e salvando imagens de validação para o Fold {fold+1} após o pré-processamento...")
-    visualize_processed_images(X_val, y_val, f"vgg_pre_trained_val", save_path=val_save_path)
-    # ----------------------------- fim visualizando a imagem ---------------------------------------------
-    
-    if model == "yolo":
-        save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
-        save_split_to_png(X_val, y_val, "val", root=f"dataset_fold_{fold+1}")
-        save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
-        print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
-        # Treinamento YOLO
-        model_f = YOLO('yolov8s-cls.pt')
-        start_time = time.time() 
-        model_f.train(
-            data=f"dataset_fold_{fold+1}",
-            epochs=100,
-            patience=50,
-            batch=16,
-            optimizer='AdamW',
-            workers=0,
-            pretrained=False,
-            amp=False,
-            deterministic=True,
-            seed=seed,
-            project="runs/classify",
-            name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
-        )
-        
-        end_time = time.time()
-        # Validação
-        metrics = model_f.val(
-            data=f"dataset_fold_{fold+1}",
-            project="runs/classify/val",
-            name=f"fold_{fold+1}_seed_{seed}",
-            save_json=True
-        )
-        # Dados para salvar
-        results_to_save = {
-            'top1_accuracy': metrics.top1,
-            'top5_accuracy': metrics.top5,
-            'fitness': metrics.fitness,
-            'training_time_formatted': f"{end_time - start_time:.2f} s",
-            'all_metrics': metrics.results_dict,
-            'speed': metrics.speed
-        }
-        # Salvar em JSON
-        with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
-            json.dump(results_to_save, f, indent=4)
-    else:
-        if model.__name__ == 'Vgg_16_pre_trained':
-            # Cria instância e pega o modelo Keras
-            model_f = model().model  # acessa o modelo compilado dentro da classe
-        else:
-            model_f = model()
-        
-        ckpt = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
-        log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
-        os.makedirs(os.path.dirname(ckpt), exist_ok=True)
-        os.makedirs(os.path.dirname(log_txt), exist_ok=True)
-        start_time = time.time()
-        
-        history = model_f.fit(X_tr, y_tr,
-                    epochs=500,
-                    validation_data=(X_val, y_val),
-                    batch_size=batch,
-                    callbacks=[
-                        tf.keras.callbacks.EarlyStopping(
-                            monitor='val_loss', patience=50,
-                            min_delta=0.01, restore_best_weights=True),
-                        tf.keras.callbacks.ModelCheckpoint(
-                            ckpt, monitor='val_loss',
-                            save_best_only=True)
-                    ],
-                    verbose=2, shuffle=True)
-        
-        end_time = time.time()
-        # ---------- avaliação ----------
-        y_pred = (model_f.predict(X_test) > 0.5).astype(int).ravel()
-        acc = accuracy_score(y_test, y_pred)
-        prec, rec, f1, _ = precision_recall_fscore_support(
-                                y_test, y_pred, average="binary",
-                                zero_division=0)
-        # salva métrica fold-a-fold
-        with open(log_txt, "a") as f:
-            f.write(f"Fold {fold:02d}  "
-                    f"Acc={acc:.4f}  "
-                    f"Prec={prec:.4f}  "
-                    f"Rec={rec:.4f}  "
-                    f"F1={f1:.4f}\n"
-                    f"Tempo de treinamento={end_time - start_time:.2f} s\n")
-            
-        plot_convergence(history, model.__name__, angle, fold, message)
-    
-    #delete_folder("dataset_fold")
-    K.clear_session()
-    gc.collect()
-    
-def tran_model_cv_retangular(model, raw_root , message, angle = "Frontal", k = 5, 
-                    resize = True, resize_to = 224, n_aug = 0, batch = 8, seed = 42, segmenter = "none", seg_model_path = ""):
-    
-    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
-    
-    X, y , patient_ids = load_raw_images(
-        os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
-    
-
-    with open("modelos/random_seed.txt", "a") as f:
-        f.write(f"{message}\n"
-                f"SEMENTE: {seed}\n")
-
-
-
-    for fold, (tr_idx, va_idx, te_idx) in enumerate(
-                        make_tvt_splits(X, y, patient_ids,
-                                        k=k, val_size=0.25, seed=seed)):
-        
-        # salva índices para reuso posterior
-        split_file = f"splits/{message}_{angle}_F{fold}.json"
-        os.makedirs("splits", exist_ok=True)
-        with open(split_file, "w") as f:
-            json.dump({
-                "train_idx": tr_idx.tolist(),
-                "val_idx": va_idx.tolist(),
-                "test_idx": te_idx.tolist()
-            }, f)
-
-        # ------ prepara dados -----------
-        X_tr, y_tr = X[tr_idx], y[tr_idx]
-        X_val,    y_val = X[va_idx], y[va_idx]
-
-        X_test,   y_test= X[te_idx], y[te_idx]
-
-        # min/max APENAS dos originais
-        mn, mx = X_tr.min(), X_tr.max()
-
-        # normaliza
-        X_tr = normalize(X_tr, mn, mx)
-        X_val= normalize(X_val,    mn, mx)
-        X_test=normalize(X_test,   mn, mx)
-
-        if resize:
-
-            X_tr = np.expand_dims(X_tr, axis=-1)
-            X_val= np.expand_dims(X_val, axis=-1)
-            X_test= np.expand_dims(X_test, axis=-1)
-
-            # X_tr= tf.image.resize_with_pad(X_tr, resize_to, resize_to, method="bicubic")
-            # X_val= tf.image.resize_with_pad(X_val, resize_to, resize_to, method="bicubic")
-            # X_test= tf.image.resize_with_pad(X_test, resize_to, resize_to, method="bicubic")
-
-            X_tr = tf_letterbox_Sem_padding(X_tr, resize_to)
-            X_val = tf_letterbox_Sem_padding(X_val, resize_to)
-            X_test = tf_letterbox_Sem_padding(X_test, resize_to)
+            X_test,   y_test= X[te_idx], y[te_idx]
 
             if model.__name__ != "Vgg_16_pre_trained":
-                X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
-                X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
-                X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
 
-        
-        # augmenta & concatena
-        if n_aug > 0:
-            X_tr, y_tr = augment_train_fold(X_tr, y_tr,
-                                                n_aug=n_aug, seed=seed)
-            
-            with open("modelos/random_seed.txt", "a") as f:
-                f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}\n")
-        
+                # min/max APENAS dos originais
+                mn, mx = X_tr.min(), X_tr.max()
 
-        if segmenter != "none":
-            if segmenter == "unet":
-                X_tr, X_val, X_test = unet_segmenter(X_tr, X_val, X_test, seg_model_path)
-                print(f"Segmentação com UNet concluída.")   
-            elif segmenter == "yolo":
-                X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, seg_model_path)
-                print(f"Segmentação com YOLO concluída.")
-            else:
-                raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
-        
+                # normaliza
+                X_tr = normalize(X_tr, mn, mx)
+                X_val= normalize(X_val,    mn, mx)
+                X_test=normalize(X_test,   mn, mx)
 
-        if model == "yolo":
-            save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
-            save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
-            save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
+            if resize:
 
-            print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
+                if model.__name__ == "Vgg_16_pre_trained":
+                    X_tr = np.stack((X_tr,) * 3, axis=-1)
+                    X_val = np.stack((X_val,) * 3, axis=-1)
+                    X_test = np.stack((X_test,) * 3, axis=-1)
+                else:
+                    X_tr = np.expand_dims(X_tr, axis=-1)
+                    X_val= np.expand_dims(X_val, axis=-1)
+                    X_test= np.expand_dims(X_test, axis=-1)
 
-            # Treinamento YOLO
-            model_f = YOLO('yolov8s-cls.pt')
-            start_time = time.time() 
+                # X_tr= tf.image.resize_with_pad(X_tr, resize_to, resize_to, method="bicubic")
+                # X_val= tf.image.resize_with_pad(X_val, resize_to, resize_to, method="bicubic")
+                # X_test= tf.image.resize_with_pad(X_test, resize_to, resize_to, method="bicubic")
 
-            model_f.train(
-                data=f"dataset_fold_{fold+1}",
-                epochs=100,
-                patience=50,
-                batch=16,
-                #lr0=0.0005,
-                optimizer='AdamW',
-                #weight_decay=0.0005,
-                #hsv_h=0.1,
-                #hsv_s=0.2,
-                #flipud=0.3,
-                #mosaic=0.1,
-                #mixup=0.1,
-                workers=0,
-                pretrained=False,
-                amp=False,
-                deterministic=True,
-                seed=seed,
-                project="runs/classify",
-                name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
-            )
-            
-            end_time = time.time()
+                if resize_method == "GrayPadding":
+                    X_tr = tf_letterbox(X_tr, resize_to)
+                    X_val = tf_letterbox(X_val, resize_to)
+                    X_test = tf_letterbox(X_test, resize_to)
+                elif resize_method == "BlackPadding":
+                    X_tr = tf_letterbox_black(X_tr, resize_to)
+                    X_val = tf_letterbox_black(X_val, resize_to)
+                    X_test = tf_letterbox_black(X_test, resize_to)
+                elif resize_method == "Distorcido":
+                    X_tr = tf.image.resize(X_tr, (224,224), method = "bilinear")
+                    X_val = tf.image.resize(X_val, (224,224), method = "bilinear")
+                    X_test = tf.image.resize(X_test, (224,224), method = "bilinear")
 
-            # Validação
-            metrics = model_f.val(
-                data=f"dataset_fold_{fold+1}",
-                project="runs/classify/val",
-                name=f"fold_{fold+1}_seed_{seed}",
-                save_json=True
-            )
+                if model.__name__ != "Vgg_16_pre_trained":
 
-            # Dados para salvar
-            results_to_save = {
-                'top1_accuracy': metrics.top1,
-                'top5_accuracy': metrics.top5,
-                'fitness': metrics.fitness,
-                'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
-                'all_metrics': metrics.results_dict,
-                'speed': metrics.speed
-            }
-
-            # Salvar em JSON
-            with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
-                json_module.dump(results_to_save, f, indent=4)
-
-            """
-            # Extraindo métricas
-            accuracy = metrics.results_dict['accuracy_top1']
-            precision = metrics.results_dict['precision']
-            recall = metrics.results_dict['recall']
-            f1 = metrics.results_dict['f1']
-
-            # Salvando no mesmo arquivo de log dos outros modelos
-            with open(log_txt, "a") as f:
-                f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
-                f.write(f"Accuracy: {accuracy:.4f}\n")
-                f.write(f"Precision: {precision:.4f}\n")
-                f.write(f"Recall: {recall:.4f}\n")
-                f.write(f"F1-Score: {f1:.4f}\n")
-                f.write("-"*50 + "\n")  # Separador visual
-
-            """
-
-        else:
-          
-            model_f   = model()
-            
-            ckpt    = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
-            log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
-            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
-            os.makedirs(os.path.dirname(log_txt), exist_ok=True)
-
-
-
-            start_time = time.time()
-            
-            history = model_f.fit(X_tr, y_tr,
-                        epochs=500,
-                        validation_data=(X_val, y_val),
-                        batch_size=batch,
-                        callbacks=[
-                            tf.keras.callbacks.EarlyStopping(
-                                monitor='val_loss', patience=50,
-                                min_delta=0.01, restore_best_weights=True),
-                            tf.keras.callbacks.ModelCheckpoint(
-                                ckpt, monitor='val_loss',
-                                save_best_only=True)
-                        ],
-                        verbose=2, shuffle=True)
-            
-            end_time = time.time()
-
-            # ---------- avaliação ----------
-            y_pred = (model_f.predict(X_test) > 0.5).astype(int).ravel()
-
-            acc = accuracy_score(y_test, y_pred)
-            prec, rec, f1, _ = precision_recall_fscore_support(
-                                    y_test, y_pred, average="binary",
-                                    zero_division=0)
-
-            # salva métrica fold‐a‐fold
-            with open(log_txt, "a") as f:
-                f.write(f"Fold {fold:02d}  "
-                        f"Acc={acc:.4f}  "
-                        f"Prec={prec:.4f}  "
-                        f"Rec={rec:.4f}  "
-                        f"F1={f1:.4f}\n"
-                        f"Tempo de treinamento={end_time - start_time:.2f} s\n")
+                    X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
+                    X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
+                    X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
                 
-            plot_convergence(history, model.__name__, angle, fold, message)
-        
+            if model.__name__ == "Vgg_16_pre_trained":
+                # A VGG16 precisa do pré-processamento do ImageNet
+                X_tr = preprocess_input(X_tr)
+                X_val = preprocess_input(X_val)
+                X_test = preprocess_input(X_test)
 
-        delete_folder("dataset_fold")
-        K.clear_session()
-        gc.collect()
+            # ----------- VERIFICAÇÃO DA FAIXA DE VALORES -----------
+            print("\n--- Faixas de Valores após o Pré-processamento ---")
+            print(f"Conjunto de Treino: min={X_tr.min():.4f}, max={X_tr.max():.4f}")
+            print(f"Conjunto de Validação: min={X_val.min():.4f}, max={X_val.max():.4f}")
+            print(f"Conjunto de Teste: min={X_test.min():.4f}, max={X_test.max():.4f}")
+            print("---------------------------------------------------\n")
 
-
-def train_model_cv_recortado(model, raw_root , message, angle = "Frontal", k = 5, 
-                    resize = True, resize_to = 224, n_aug = 0, batch = 8, seed = 42, segmenter = "none", seg_model_path = ""):
-    
-    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
-    
-    X, y , patient_ids = load_raw_images(
-        os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
-    
-
-    with open("modelos/random_seed.txt", "a") as f:
-        f.write(f"{message}\n"
-                f"SEMENTE: {seed}\n")
-
-
-
-    for fold, (tr_idx, va_idx, te_idx) in enumerate(
-                        make_tvt_splits(X, y, patient_ids,
-                                        k=k, val_size=0.25, seed=seed)):
-        
-        # salva índices para reuso posterior
-        split_file = f"splits/{message}_{angle}_F{fold}.json"
-        os.makedirs("splits", exist_ok=True)
-        with open(split_file, "w") as f:
-            json.dump({
-                "train_idx": tr_idx.tolist(),
-                "val_idx": va_idx.tolist(),
-                "test_idx": te_idx.tolist()
-            }, f)
-
-        # ------ prepara dados -----------
-        X_tr, y_tr = X[tr_idx], y[tr_idx]
-        X_val,    y_val = X[va_idx], y[va_idx]
-
-        X_test,   y_test= X[te_idx], y[te_idx]
-
-        # min/max APENAS dos originais
-        mn, mx = X_tr.min(), X_tr.max()
-
-        # normaliza
-        X_tr = normalize(X_tr, mn, mx)
-        X_val= normalize(X_val,    mn, mx)
-        X_test=normalize(X_test,   mn, mx)
-
-        if resize:
-
-            X_tr = np.expand_dims(X_tr, axis=-1)
-            X_val= np.expand_dims(X_val, axis=-1)
-            X_test= np.expand_dims(X_test, axis=-1)
-
-            # X_tr= tf.image.resize_with_pad(X_tr, resize_to, resize_to, method="bicubic")
-            # X_val= tf.image.resize_with_pad(X_val, resize_to, resize_to, method="bicubic")
-            # X_test= tf.image.resize_with_pad(X_test, resize_to, resize_to, method="bicubic")
-
-            X_tr = letterbox_center_crop(X_tr, resize_to)
-            X_val = letterbox_center_crop(X_val, resize_to)
-            X_test = letterbox_center_crop(X_test, resize_to)
-
-            X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
-            X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
-            X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
-
-        
-        
-        
-        # augmenta & concatena
-        if n_aug > 0:
-            X_tr, y_tr = augment_train_fold(X_tr, y_tr,
-                                                n_aug=n_aug, seed=seed)
             
-            with open("modelos/random_seed.txt", "a") as f:
-                f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}\n")
-        
-
-        if segmenter != "none":
-            if segmenter == "unet":
-                X_tr, X_val, X_test = unet_segmenter(X_tr, X_val, X_test, seg_model_path)
-                print(f"Segmentação com UNet concluída.")   
-            elif segmenter == "yolo":
-                X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, seg_model_path)
-                print(f"Segmentação com YOLO concluída.")
-            else:
-                raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
-        
-
-        if model == "yolo":
-            save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
-            save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
-            save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
-
-            print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
-
-            # Treinamento YOLO
-            model_f = YOLO('yolov8s-cls.pt')
-            start_time = time.time() 
-
-            model_f.train(
-                data=f"dataset_fold_{fold+1}",
-                epochs=100,
-                patience=50,
-                batch=16,
-                #lr0=0.0005,
-                optimizer='AdamW',
-                #weight_decay=0.0005,
-                #hsv_h=0.1,
-                #hsv_s=0.2,
-                #flipud=0.3,
-                #mosaic=0.1,
-                #mixup=0.1,
-                workers=0,
-                pretrained=False,
-                amp=False,
-                deterministic=True,
-                seed=seed,
-                project="runs/classify",
-                name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
-            )
             
-            end_time = time.time()
-
-            # Validação
-            metrics = model_f.val(
-                data=f"dataset_fold_{fold+1}",
-                project="runs/classify/val",
-                name=f"fold_{fold+1}_seed_{seed}",
-                save_json=True
-            )
-
-            # Dados para salvar
-            results_to_save = {
-                'top1_accuracy': metrics.top1,
-                'top5_accuracy': metrics.top5,
-                'fitness': metrics.fitness,
-                'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
-                'all_metrics': metrics.results_dict,
-                'speed': metrics.speed
-            }
-
-            # Salvar em JSON
-            with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
-                json_module.dump(results_to_save, f, indent=4)
-
-            """
-            # Extraindo métricas
-            accuracy = metrics.results_dict['accuracy_top1']
-            precision = metrics.results_dict['precision']
-            recall = metrics.results_dict['recall']
-            f1 = metrics.results_dict['f1']
-
-            # Salvando no mesmo arquivo de log dos outros modelos
-            with open(log_txt, "a") as f:
-                f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
-                f.write(f"Accuracy: {accuracy:.4f}\n")
-                f.write(f"Precision: {precision:.4f}\n")
-                f.write(f"Recall: {recall:.4f}\n")
-                f.write(f"F1-Score: {f1:.4f}\n")
-                f.write("-"*50 + "\n")  # Separador visual
-
-            """
-
-        else:
-
-            model_f   = model()
-            ckpt    = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
-            log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
-            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
-            os.makedirs(os.path.dirname(log_txt), exist_ok=True)
-
-
-            start_time = time.time()
             
-            history = model_f.fit(X_tr, y_tr,
-                        epochs=500,
-                        validation_data=(X_val, y_val),
-                        batch_size=batch,
-                        callbacks=[
-                            tf.keras.callbacks.EarlyStopping(
-                                monitor='val_loss', patience=50,
-                                min_delta=0.01, restore_best_weights=True),
-                            tf.keras.callbacks.ModelCheckpoint(
-                                ckpt, monitor='val_loss',
-                                save_best_only=True)
-                        ],
-                        verbose=2, shuffle=True)
-            
-            end_time = time.time()
-
-            # ---------- avaliação ----------
-            y_pred = (model_f.predict(X_test) > 0.5).astype(int).ravel()
-
-            acc = accuracy_score(y_test, y_pred)
-            prec, rec, f1, _ = precision_recall_fscore_support(
-                                    y_test, y_pred, average="binary",
-                                    zero_division=0)
-
-            # salva métrica fold‐a‐fold
-            with open(log_txt, "a") as f:
-                f.write(f"Fold {fold:02d}  "
-                        f"Acc={acc:.4f}  "
-                        f"Prec={prec:.4f}  "
-                        f"Rec={rec:.4f}  "
-                        f"F1={f1:.4f}\n"
-                        f"Tempo de treinamento={end_time - start_time:.2f} s\n")
+            # augmenta & concatena
+            if n_aug > 0:
+                X_tr, y_tr = augment_train_fold(X_tr, y_tr,
+                                                    n_aug=n_aug, seed=seed)
                 
-            plot_convergence(history, model.__name__, angle, fold, message)
+                with open("modelos/random_seed.txt", "a") as f:
+                    f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}\n")
+            
+
+            if segmenter != "none":
+                if segmenter == "unet":
+                    X_tr, X_val, X_test = unet_segmenter(X_tr, X_val, X_test, seg_model_path)
+                    print(f"Segmentação com UNet concluída.")   
+                elif segmenter == "yolo":
+                    X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, seg_model_path)
+                    print(f"Segmentação com YOLO concluída.")
+                else:
+                    raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
+            
+
+            if model == "yolo":
+                save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
+                save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
+                save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
+
+                print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
+
+                # Treinamento YOLO
+                model_f = YOLO('yolov8s-cls.pt')
+                start_time = time.time() 
+
+                model_f.train(
+                    data=f"dataset_fold_{fold+1}",
+                    epochs=100,
+                    patience=50,
+                    batch=16,
+                    #lr0=0.0005,
+                    optimizer='AdamW',
+                    #weight_decay=0.0005,
+                    #hsv_h=0.1,
+                    #hsv_s=0.2,
+                    #flipud=0.3,
+                    #mosaic=0.1,
+                    #mixup=0.1,
+                    workers=0,
+                    pretrained=False,
+                    amp=False,
+                    deterministic=True,
+                    seed=seed,
+                    project="runs/classify",
+                    name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
+                )
+                
+                end_time = time.time()
+
+                # Validação
+                metrics = model_f.val(
+                    data=f"dataset_fold_{fold+1}",
+                    project="runs/classify/val",
+                    name=f"fold_{fold+1}_seed_{seed}",
+                    save_json=True
+                )
+
+                # Dados para salvar
+                results_to_save = {
+                    'top1_accuracy': metrics.top1,
+                    'top5_accuracy': metrics.top5,
+                    'fitness': metrics.fitness,
+                    'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
+                    'all_metrics': metrics.results_dict,
+                    'speed': metrics.speed
+                }
+
+                # Salvar em JSON
+                with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
+                    json_module.dump(results_to_save, f, indent=4)
+
+                """
+                # Extraindo métricas
+                accuracy = metrics.results_dict['accuracy_top1']
+                precision = metrics.results_dict['precision']
+                recall = metrics.results_dict['recall']
+                f1 = metrics.results_dict['f1']
+
+                # Salvando no mesmo arquivo de log dos outros modelos
+                with open(log_txt, "a") as f:
+                    f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
+                    f.write(f"Accuracy: {accuracy:.4f}\n")
+                    f.write(f"Precision: {precision:.4f}\n")
+                    f.write(f"Recall: {recall:.4f}\n")
+                    f.write(f"F1-Score: {f1:.4f}\n")
+                    f.write("-"*50 + "\n")  # Separador visual
+
+                """
+
+            else:
+
+                if model == Vgg_16 or model.__name__ == 'Vgg_16_pre_trained':
+                    obj = model()
+                    model_f = obj.model
+                    print("VGG")
+                else:
+                    model_f   = model()
+                    print("ResNet")
+
+                ckpt    = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
+                log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
+                os.makedirs(os.path.dirname(ckpt), exist_ok=True)
+                os.makedirs(os.path.dirname(log_txt), exist_ok=True)
+
+
+                start_time = time.time()
+                
+                history = model_f.fit(X_tr, y_tr,
+                            epochs=500,
+                            validation_data=(X_val, y_val),
+                            batch_size=batch,
+                            callbacks=[
+                                tf.keras.callbacks.EarlyStopping(
+                                    monitor='val_loss', patience=50,
+                                    min_delta=0.01, restore_best_weights=True),
+                                tf.keras.callbacks.ModelCheckpoint(
+                                    ckpt, monitor='val_loss',
+                                    save_best_only=True)
+                            ],
+                            verbose=2, shuffle=True)
+                
+                end_time = time.time()
+
+                # ---------- avaliação ----------
+                y_pred = (model_f.predict(X_test) > 0.5).astype(int).ravel()
+
+                acc = accuracy_score(y_test, y_pred)
+                prec, rec, f1, _ = precision_recall_fscore_support(
+                                        y_test, y_pred, average="binary",
+                                        zero_division=0)
+
+                # salva métrica fold‐a‐fold
+                with open(log_txt, "a") as f:
+                    f.write(f"Fold {fold:02d}  "
+                            f"Acc={acc:.4f}  "
+                            f"Prec={prec:.4f}  "
+                            f"Rec={rec:.4f}  "
+                            f"F1={f1:.4f}\n"
+                            f"Tempo de treinamento={end_time - start_time:.2f} s\n")
+                    
+                plot_convergence(history, model.__name__, angle, fold, message)
+            
+
+            delete_folder("dataset_fold")
+            clear_memory()
         
+        max_retries = 2
+        
+        for attempt in range(1,max_retries + 1):
+            try:
+                run_fold()
+                break
+            except (tf.errors.ResourceExhaustedError, RuntimeError) as e:
+                error_text = str(e).lower()
+                if ("out of memory" not in error_text and
+                    "oom" not in error_text and
+                    "failed to allocate memory" not in error_text):
+                    raise
+                os.makedirs("logs", exist_ok=True)
+                with open("logs/oom_errors.txt", "a") as f:
+                    f.write(f"[Fold {fold+1}] OOM na tentativa {attempt}\n")
 
-        delete_folder("dataset_fold")
-        K.clear_session()
-        gc.collect()
-
-
+                if attempt == max_retries:
+                    os.makedirs("logs", exist_ok=True)
+                    with open("logs/oom_errors.txt", "a") as f:
+                        f.write(f"Máximo de tentativas atingido. Abortando …")
+                        raise
+                clear_memory()
+                
 def evaluate_segmentation(model_path, x_val, y_val):
     model = tf.keras.models.load_model(model_path)
     pred    = (model.predict(x_val) > 0.5).astype(np.uint8)
@@ -1395,11 +1042,7 @@ def save_split_to_png(images, labels, split_name, root="dataset_fold"):
 
 
 
-
-
-
-
-def ppeprocessEigenCam(X, y, splits_path, segment = None, segmenter_path ="" ):
+def ppeprocessEigenCam(X, y, splits_path, resize_method = "GrayPadding", segment = None, segmenter_path ="" ):
     
     
     with open (splits_path, "r") as f:
@@ -1438,9 +1081,19 @@ def ppeprocessEigenCam(X, y, splits_path, segment = None, segmenter_path ="" ):
     # X_val= tf.image.resize_with_pad(X_val, 224, 224, method="bicubic")
     # X_test= tf.image.resize_with_pad(X_test, 224, 224, method="bicubic")
 
-    X_tr= tf_letterbox(X_tr, 224)
-    X_val= tf_letterbox(X_val, 224)
-    X_test= tf_letterbox(X_test, 224)
+
+    if resize_method == "GrayPadding":
+        X_tr= tf_letterbox(X_tr, 224)
+        X_val= tf_letterbox(X_val, 224)
+        X_test= tf_letterbox(X_test, 224)
+    elif resize_method == "BlackPadding":
+        X_tr= tf_letterbox_black(X_tr, 224)
+        X_val= tf_letterbox_black(X_val, 224)
+        X_test= tf_letterbox_black(X_test, 224)
+    elif resize_method == "Distorcido":
+        X_tr = tf.image.resize(X_tr, (224,224), method = "bilinear")
+        X_val = tf.image.resize(X_val, (224,224), method = "bilinear")
+        X_test = tf.image.resize(X_test, (224,224), method = "bilinear")
 
     X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
     X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
@@ -1463,7 +1116,7 @@ def ppeprocessEigenCam(X, y, splits_path, segment = None, segmenter_path ="" ):
 
 
 def prep_test_data(raw_root, angle, split_json, 
-                    resize = True, resize_to = 224,
+                    resize = True, resize_method = "GrayPadding", resize_to = 224,
                     segmenter = "none", seg_model_path=""):
     
     """
@@ -1487,7 +1140,12 @@ def prep_test_data(raw_root, angle, split_json,
         X_test = np.expand_dims(X_test, -1)
         
         #X_test = tf.image.resize_with_pad(X_test, resize_to, resize_to, method="bicubic")
-        X_test = tf_letterbox(X_test, resize_to)
+        if resize_method == "GrayPadding":
+            X_test = tf_letterbox(X_test, resize_to)
+        elif resize_method == "BlackPadding":
+            X_test = tf_letterbox_black(X_test, resize_to)
+        elif resize_method == "Distorcido":
+            X_test = tf.image.resize(X_test, (resize_to, resize_to), method="bilinear")
         #X_test = tf_letterbox_Sem_padding(X_test, resize_to)
         #X_test = letterbox_center_crop(X_test, resize_to)
         X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(-1)
@@ -1562,16 +1220,91 @@ def evaluate_model_cm(model_path,
 
     
     K.clear_session(); gc.collect()
-    
 
 
-# Exemplo de uso:
+
+# resize_with_tf_letterbox.py
+from pathlib import Path
+import tensorflow as tf
+from tqdm import tqdm  
+
+def resize_imgs_masks_dataset(
+    img_dir: str,
+    mask_dir: str,
+    output_base: str,
+    target: int = 640,
+    resize_method = "GrayPadding"
+):
+    """
+    Redimensiona imagens (.jpg) e máscaras (.png) com tf_letterbox.
+
+    Parâmetros
+    ----------
+    img_dir      Pasta com as .jpg originais
+    mask_dir     Pasta com as .png originais (mesmo nome da imagem)
+    output_base  Nova raiz que conterá:  output_base/images  e  output_base/masks
+    target       Lado do quadrado de saída (ex. 640)
+    """
+    img_dir = Path(img_dir)
+    mask_dir = Path(mask_dir)
+    out_img = Path(output_base) / "images"
+    out_mask = Path(output_base) / "masks"
+    out_img.mkdir(parents=True, exist_ok=True)
+    out_mask.mkdir(parents=True, exist_ok=True)
+
+    for img_path in tqdm(sorted(img_dir.glob("*.jpg")), desc="Redimensionando"):
+        stem = img_path.stem
+        mask_path = mask_dir / f"{stem}.png"
+        if not mask_path.exists():
+            print(f"[aviso] Máscara ausente para {stem} — pulando.")
+            continue
+
+        # ─── Leitura ----------------------------------------------------------------
+        img  = tf.image.decode_jpeg(tf.io.read_file(str(img_path)), channels=3)
+        mask = tf.image.decode_png(tf.io.read_file(str(mask_path)), channels=1)
+
+        img  = tf.image.convert_image_dtype(img,  tf.float32)  # 0-1
+        mask = tf.image.convert_image_dtype(mask, tf.float32)  # 0-1
+
+        # ─── Letter-box (batch=1) ----------------------------------------------------
+        if resize_method == "BlackPadding":
+            img_lb  = tf_letterbox_black(tf.expand_dims(img,  0), target=target, mode='bilinear')
+            mask_lb = tf_letterbox_black(tf.expand_dims(mask, 0), target=target, mode='nearest')
+        elif resize_method == "Distorcido":
+            img_lb  = tf.expand_dims(img,  0)
+            img_lb = tf.image.resize(img_lb, (target, target), method='bilinear')
+            mask_lb = tf.expand_dims(mask, 0)
+            mask_lb = tf.image.resize(mask_lb, (target, target), method='nearest')
+        elif resize_method == "GrayPadding":
+            img_lb  = tf_letterbox(tf.expand_dims(img,  0), target=target, mode='bilinear')
+            mask_lb = tf_letterbox_black(tf.expand_dims(mask, 0), target=target, mode='nearest')
+
+        img_lb  = tf.squeeze(img_lb,  0)          # (H,W,3)
+        mask_lb = tf.squeeze(mask_lb, 0)          # (H,W,1)
+
+        # ─── Pós-processamento -------------------------------------------------------
+        img_uint8  = tf.image.convert_image_dtype(img_lb, tf.uint8, saturate=True)
+        mask_bin   = tf.cast(mask_lb > 0.5, tf.uint8) * 255  # 0 ou 255
+
+        # ─── Grava ------------------------------------------------------------------
+        tf.io.write_file(
+            str(out_img / f"{stem}.jpg"),
+            tf.io.encode_jpeg(img_uint8, quality=95)
+        )
+        tf.io.write_file(
+            str(out_mask / f"{stem}.png"),
+            tf.io.encode_png(mask_bin)
+        )
+
+    print(f"\nConcluído!  Novas pastas:\n  imagens → {out_img}\n  máscaras → {out_mask}")
+
+
 if __name__ == "__main__":
-   
 
+
+    
     SEMENTE = 13388
-
-    tf.config.experimental.enable_op_determinism()
+    
     tf.random.set_seed(SEMENTE)
 
     rename_folder("/history/Vgg_16_pre_trained", "/history/DUPLICATED_Vgg_16_pre_trained")

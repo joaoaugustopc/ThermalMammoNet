@@ -103,5 +103,16 @@ modelofab.pt
 
 Resultados/
 
+Termografias_Dataset_Segmentação_224/
+Termografias_Dataset_Segmentação_224_BlackPadding/
+Termografias_Dataset_Segmentação_224_Distorcao/
+Termografias_Dataset_Segmentação_224_GrayPadding/
+Yolo_dataset_BlackPadding/
+Yolo_dataset_Distorcao/
+Yolo_dataset_GrayPadding/
+segmente_test/
+
+
+
 yolo_nano_model/
 visualizacoes_modelos/
