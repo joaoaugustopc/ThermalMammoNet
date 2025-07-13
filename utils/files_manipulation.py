@@ -64,3 +64,12 @@ def copy_file(source_file, destination_folder):
         print(f"Arquivo {source_file} copiado para {destination_folder}.")
     else:
         print(f"Arquivo {source_file} não encontrado.")
+
+def move_folder(source_folder, destination_folder):
+    if not os.path.exists(destination_folder):
+        os.makedirs(destination_folder)
+    if os.path.exists(source_folder):
+        shutil.move(source_folder, destination_folder)
+        print(f"Pasta {source_folder} movida para {destination_folder}.")
+    else:
+        print(f"Pasta {source_folder} não encontrada.")

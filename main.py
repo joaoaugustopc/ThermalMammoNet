@@ -2,7 +2,7 @@ import cv2
 from ultralytics import YOLO
 from include.imports import *
 from utils.data_prep import load_imgs_masks, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas
-from utils.files_manipulation import move_files_within_folder, create_folder
+from utils.files_manipulation import move_files_within_folder, create_folder, move_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model, unet_model_retangular
 from utils.stats import precision_score_, recall_score_, accuracy_score_, dice_coef_, iou_ 
@@ -1932,9 +1932,9 @@ def ppeprocessEigenCam(X, y, splits_path, segment = None, segmenter_path ="" ):
     # X_val= tf.image.resize_with_pad(X_val, 224, 224, method="bicubic")
     # X_test= tf.image.resize_with_pad(X_test, 224, 224, method="bicubic")
 
-    X_tr= tf_letterbox(X_tr, 224)
-    X_val= tf_letterbox(X_val, 224)
-    X_test= tf_letterbox(X_test, 224)
+    X_tr = tf.image.resize(X_tr, (224,224), method = "bilinear")
+    X_val = tf.image.resize(X_val, (224,224), method = "bilinear")
+    X_test = tf.image.resize(X_test, (224,224), method = "bilinear")
 
     X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
     X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
@@ -1982,6 +1982,8 @@ def prep_test_data(raw_root, angle, split_json,
         
         #X_test = tf.image.resize_with_pad(X_test, resize_to, resize_to, method="bicubic")
         X_test = tf_letterbox(X_test, resize_to)
+        #X_test = tf_letterbox_black(X_test, resize_to)
+        #X_test = tf.image.resize(X_test, (224,224), method = "bilinear")
         #X_test = tf_letterbox_Sem_padding(X_test, resize_to)
         #X_test = letterbox_center_crop(X_test, resize_to)
         X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(-1)
@@ -2262,12 +2264,234 @@ if __name__ == "__main__":
     
     tf.random.set_seed(SEMENTE)
 
+
+    list = [
+    "Resultados/ResNet/cm_ResNet_yolon_AUG_CV_2.0_F4_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_yolon_AUG_CV_2.0_F3_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_yolon_AUG_CV_2.0_F2_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_yolon_AUG_CV_2.0_F1_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_yolon_AUG_CV_2.0_F0_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_unet_AUG_CV_2.0_F4_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_unet_AUG_CV_2.0_F3_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_unet_AUG_CV_2.0_F2_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_unet_AUG_CV_2.0_F1_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_unet_AUG_CV_2.0_F0_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_AUG_CV_2.0_F4_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_AUG_CV_2.0_F3_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_AUG_CV_2.0_F2_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_AUG_CV_2.0_F1_Frontal.png",
+    "Resultados/ResNet/cm_ResNet_AUG_CV_2.0_F0_Frontal.png"
+]
+
+
+    move_files_to_folder(list, "Confusion_Matrix")
+
+
+
+
+    # MODEL_DIRS = {
+    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    # "resnet": "modelos/ResNet34",   # pasta onde salvou os .h5 do ResNet-34
+    # }
+    # CONF_BASE  = "Confusion_Matrix"     # pasta-raiz onde deseja guardar as figuras
+    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    # ANGLE      = "Frontal"              # visão utilizada nos treinos
+
+    # # --------------------------------------------------
+    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # # --------------------------------------------------
+    # experiments = [
+    #     # ---------- VGG-16 -----------------------------
+    #     # BlackPadding
+    #     # "Vgg_unet_AUG_CV_BlackPadding",
+    #     # "Vgg_yolon_AUG_CV_BlackPadding",
+    #     # "Vgg_AUG_CV_BlackPadding",
+    #     # Distorcido
+    #     # "Vgg_unet_AUG_CV_Distorcido",
+    #     # "Vgg_yolon_AUG_CV_Distorcido",
+    #     # "Vgg_AUG_CV_Distorcido",
+    #     # GrayPadding
+    #     "Vgg_unet_AUG_CV_GrayPadding",
+    #     "Vgg_yolon_AUG_CV_GrayPadding",
+    #     "Vgg_AUG_CV_GrayPadding",
+
+    #     # ---------- ResNet-34 --------------------------
+    #     # BlackPadding
+    #     # "ResNet34_unet_AUG_CV_BlackPadding",
+    #     # "ResNet34_yolon_AUG_CV_BlackPadding",
+    #     # "ResNet34_AUG_CV_BlackPadding"
+    #     # Distorcido
+    #     # "ResNet34_unet_AUG_CV_Distorcido",
+    #     # "ResNet34_yolon_AUG_CV_Distorcido",
+    #     # "ResNet34_AUG_CV_Distorcido"
+    #     # GrayPadding
+    #     "ResNet34_unet_AUG_CV_GrayPadding",
+    #     "ResNet34_yolon_AUG_CV_GrayPadding",
+    #     "ResNet34_AUG_CV_GrayPadding"
+    # ]
+
+    # # --------------------------------------------------
+    # # --- LOOP PRINCIPAL -------------------------------
+    # # --------------------------------------------------
+    # for msg in experiments:
+
+    #     # Identifica qual backbone para escolher a pasta correta
+    #     backbone_key = "resnet" if msg.startswith("ResNet") else "vgg"
+    #     model_dir    = MODEL_DIRS[backbone_key]
+
+    #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+    #     variant = msg.split("_")[-1]
+    #     out_dir = Path(CONF_BASE) / variant
+    #     out_dir.mkdir(parents=True, exist_ok=True)
+
+    #     for i in range(5):                                   # k-fold = 5
+    #         # ---- Caminhos de entrada ---------------------
+    #         model_path = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    #         split_path = f"splits/{msg}_Frontal_F{i}.json"
+
+    #         # ---- Nome para salvar arquivos/figura --------
+    #         cm_message = f"{msg}_F{i}"
+
+    #         # ---- Avaliação -------------------------------
+    #         evaluate_model_cm(
+    #             model_path   = model_path,
+    #             output_path  = str(out_dir),
+    #             split_json   = split_path,
+    #             raw_root     = RAW_ROOT,
+    #             message      = cm_message,
+    #             angle        = ANGLE,
+    #             classes      = CLASSES,
+    #         )
+
+    #         print(f"[OK] {cm_message}  →  {out_dir}")
+
+
+
+
+
+    ############ Geração das matrizes de confusão (Essa é a ultima versão, apaguei as anteriores que geraram para os outros modelos treinados com variações de redimensionamento )###########
+    # for i in range(5):
+    #     model_path = F"modelos/ResNet34/ResNet_AUG_CV_GrayPadding_Frontal_F{i}.h5"
+    #     split_path = F"splits/ResNet_AUG_CV_GrayPadding_Frontal_F{i}.json"
+    #     raw_root  = "filtered_raw_dataset"
+    #     output_path = "Confusion_Matrix/GrayPadding"
+    #     message = F"ResNet_AUG_CV_GrayPadding_F{i}"
+    #     angle = "Frontal"
+
+    #     evaluate_model_cm(model_path=model_path,
+    #                     output_path=output_path,
+    #                     split_json=split_path,
+    #                     raw_root=raw_root,
+    #                     message=message,
+    #                     angle=angle,
+    #                     classes=("Healthy", "Sick"))
+
+    ################# FIM ####################
+
+
+
+
+
     # tf.config.experimental.enable_op_determinism()
 
-    gpus = tf.config.list_physical_devices('GPU')
+    # X, y , patient_ids = load_raw_images(
+    #     "filtered_raw_dataset/Frontal")
 
-    for gpu in gpus:
-        tf.config.experimental.set_memory_growth(gpu, True)
+
+    # from pathlib import Path
+
+    # # --------------------------------------------------
+    # # Lista dos experimentos (um dicionário por chamada de treino)
+    # # --------------------------------------------------
+    # experiments = [
+    #     # ---------- BlackPadding ------------------------------------------------
+    #     # {
+    #     #     "message": "ResNet34_unet_AUG_CV_BlackPadding",
+    #     #     "segment": "unet",
+    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
+    #     # },
+    #     # {
+    #     #     "message": "ResNet34_yolon_AUG_CV_BlackPadding",
+    #     #     "segment": "yolo",
+    #     #     "segmenter_path": "runs/segment/train27/weights/best.pt",
+    #     # },
+    #     # {
+    #     #     "message": "ResNet34_AUG_CV_BlackPadding",
+    #     #     "segment": "none",
+    #     #     "segmenter_path": "",
+    #     # }
+
+    #     # ---------- Distorcido --------------------------------------------------
+    #     {
+    #         "message": "ResNet34_unet_AUG_CV_Distorcido",
+    #         "segment": "unet",
+    #         "segmenter_path": "modelos/unet/Frontal_Unet_AUG_Distorcao.h5",
+    #     },
+    #     {
+    #         "message": "ResNet34_yolon_AUG_CV_Distorcido",
+    #         "segment": "yolo",
+    #         "segmenter_path": "runs/segment/train28/weights/best.pt",
+    #     },
+    #     {
+    #         "message": "ResNet34_AUG_CV_Distorcido",
+    #         "segment": "none",
+    #         "segmenter_path": "",
+    #     }
+
+    #     # ---------- GrayPadding -------------------------------------------------
+    #     # {
+    #     #     "message": "ResNet34_unet_AUG_CV_GrayPadding",
+    #     #     "segment": "unet",
+    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_CV_GrayPadding.h5",
+    #     # },
+    #     # {
+    #     #     "message": "ResNet34_yolon_AUG_CV_GrayPadding",
+    #     #     "segment": "yolo",
+    #     #     "segmenter_path": "runs/segment/train29/weights/best.pt",
+    #     # },
+    #     # {
+    #     #     "message": "ResNet34_AUG_CV_GrayPadding",
+    #     #     "segment": "none",
+    #     #     "segmenter_path": "",
+    #     # }
+    # ]
+
+    # # --------------------------------------------------
+    # # Loop principal: percorre todos os folds
+    # # --------------------------------------------------
+    # for exp in experiments:
+    #     msg            = exp["message"]
+    #     segment        = exp["segment"]
+    #     segmenter_path = exp["segmenter_path"]
+
+    #     for i in range(5):                      # k-fold = 5
+    #         # ---------- Pré-processamento ----------
+    #         split_json = f"splits/{msg}_Frontal_F{i}.json"
+    #         X_test = ppeprocessEigenCam(
+    #             X, y,
+    #             split_json,
+    #             segment=segment,
+    #             segmenter_path=segmenter_path,
+    #         )
+
+    #         # ---------- EigenCAM ----------
+    #         model_path = f"modelos/ResNet34/{msg}_Frontal_F{i}.h5"
+    #         out_dir    = f"Resultados/ResNet/Distorcido/CAM_results/{msg}_F{i}"
+    #         Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+    #         run_eigencam(
+    #             imgs       = X_test,
+    #             model_path = model_path,
+    #             out_dir    = out_dir,
+    #         )
+
+    #         print(f"[OK] {msg} | fold {i} → {out_dir}")
+
+
+
+
+    
 
 
     # 1. Treinar Yolo + Unet com BlackPadding 
@@ -2531,117 +2755,117 @@ if __name__ == "__main__":
     #                message="Vgg_yolon_AUG_CV_GrayPadding", seg_model_path="runs/segment/train29/weights/best.pt")
     
 
-    train_model_cv(Vgg_16,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="Vgg_AUG_CV_GrayPadding")
+    # train_model_cv(Vgg_16,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="Vgg_AUG_CV_GrayPadding")
     
 
 
 
     # 5. Treinar ResNet-34 : BlackPadding + Distorção + GrayPadding (Unet + Original + yolo)
 
-    train_model_cv_BlackPadding(ResNet34,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   segmenter="unet",
-                   message="ResNet34_unet_AUG_CV_BlackPadding", seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
+    # train_model_cv_BlackPadding(ResNet34,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                segmenter="unet",
+    #                message="ResNet34_unet_AUG_CV_BlackPadding", seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
     
-    train_model_cv_BlackPadding(ResNet34,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   segmenter= "yolo",
-                   message="ResNet34_yolon_AUG_CV_BlackPadding", seg_model_path="runs/segment/train27/weights/best.pt")
+    # train_model_cv_BlackPadding(ResNet34,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                segmenter= "yolo",
+    #                message="ResNet34_yolon_AUG_CV_BlackPadding", seg_model_path="runs/segment/train27/weights/best.pt")
 
-    train_model_cv_BlackPadding(ResNet34,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="ResNet34_AUG_CV_BlackPadding")
+    # train_model_cv_BlackPadding(ResNet34,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="ResNet34_AUG_CV_BlackPadding")
     
-    train_model_cv_Distorcido(ResNet34,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   segmenter="unet",
-                   message="ResNet34_unet_AUG_CV_Distorcido", seg_model_path="modelos/unet/Frontal_Unet_AUG_Distorcao.h5")
+    # train_model_cv_Distorcido(ResNet34,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                segmenter="unet",
+    #                message="ResNet34_unet_AUG_CV_Distorcido", seg_model_path="modelos/unet/Frontal_Unet_AUG_Distorcao.h5")
     
-    train_model_cv_Distorcido(ResNet34,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   segmenter= "yolo",
-                   message="ResNet34_yolon_AUG_CV_Distorcido", seg_model_path="runs/segment/train28/weights/best.pt")
+    # train_model_cv_Distorcido(ResNet34,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                segmenter= "yolo",
+    #                message="ResNet34_yolon_AUG_CV_Distorcido", seg_model_path="runs/segment/train28/weights/best.pt")
     
-    train_model_cv_Distorcido(ResNet34,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="ResNet34_AUG_CV_Distorcido")
+    # train_model_cv_Distorcido(ResNet34,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="ResNet34_AUG_CV_Distorcido")
     
-    train_model_cv(ResNet34,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   segmenter="unet",
-                   message="ResNet34_unet_AUG_CV_GrayPadding", seg_model_path="modelos/unet/Frontal_Unet_AUG_CV_GrayPadding.h5")
+    # train_model_cv(ResNet34,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                segmenter="unet",
+    #                message="ResNet34_unet_AUG_CV_GrayPadding", seg_model_path="modelos/unet/Frontal_Unet_AUG_CV_GrayPadding.h5")
     
-    train_model_cv(ResNet34,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   segmenter= "yolo",
-                   message="ResNet34_yolon_AUG_CV_GrayPadding", seg_model_path="runs/segment/train29/weights/best.pt")
+    # train_model_cv(ResNet34,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                segmenter= "yolo",
+    #                message="ResNet34_yolon_AUG_CV_GrayPadding", seg_model_path="runs/segment/train29/weights/best.pt")
     
 
-    train_model_cv(ResNet34,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="ResNet34_AUG_CV_GrayPadding")
+    # train_model_cv(ResNet34,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="ResNet34_AUG_CV_GrayPadding")
 
 
 
