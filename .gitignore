@@ -57,7 +57,11 @@ segmented_yolonano_frontal/
 seed_value_seg.txt
 yolo_dataset_nano
 random_seed_vgg.txt
-Yolo_dataset_aug/
+
+analysis_yolo_nano/
+Unet/
+Yolo-x/
+yolo_nano_model/Yolo_dataset_aug/
 Yolo_dataset_AUG/
 AUG_dataset_v2/
 Unet_dataset_AUG/
@@ -108,3 +112,7 @@ Yolo_dataset_Distorcao/
 Yolo_dataset_GrayPadding/
 segmente_test/
 
+
+
+yolo_nano_model/
+visualizacoes_modelos/

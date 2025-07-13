@@ -32,6 +32,7 @@ import torch
 
 
 
+from src.models.Vgg_16 import Vgg_16
 
 # Use o tempo atual em segundos como semente
 ##VALUE_SEED = int(time.time() * 1000) % 15000
@@ -212,24 +213,79 @@ def segment_with_yolo( X_train, X_valid, X_test, model_path):
 
     return seg_train, seg_valid, seg_test
 
-def train_model_cv(model, raw_root , message, angle = "Frontal", k = 5, 
-                    resize = True, resize_to = 224, n_aug = 0, batch = 8, seed = 42, segmenter = "none", seg_model_path = ""):
+def load_and_convert_temp(image_path):
+    # Carregue seus dados de temperatura (ajuste conforme seu formato)
+    temp_data = np.loadtxt(image_path)  # Ou outro método de carregamento
+    
+    # Aplicar os passos 1-3 acima
+    temp_normalized = (temp_data - temp_data.min()) / (temp_data.ptp())
+    temp_uint8 = (temp_normalized * 255).astype(np.uint8)
+    temp_rgb = cv2.applyColorMap(temp_uint8, cv2.COLORMAP_INFERNO)
+    return cv2.cvtColor(temp_rgb, cv2.COLOR_BGR2RGB)
+
+def visualize_processed_images(images, labels, title, save_path="vgg_pre_trained_view"):
+    """
+    Exibe ou salva uma amostra de imagens pré-processadas.
+    
+    Args:
+        images (np.array): Array de imagens.
+        labels (np.array): Array de labels correspondentes.
+        title (str): Título principal do gráfico.
+        save_path (str, optional): Caminho para salvar a imagem. Se None, a imagem será exibida.
+    """
+    plt.figure(figsize=(10, 5))
+    plt.suptitle(title, fontsize=16)
+    num_to_display = min(len(images), 8)
+    
+    # Seleciona algumas imagens aleatórias para visualização
+    indices = random.sample(range(len(images)), num_to_display)
+
+    for i, idx in enumerate(indices):
+        ax = plt.subplot(2, 4, i + 1)
+        img = images[idx]
+        
+        # Normalização min-max para visualização
+        img = (img - img.min()) / (img.max() - img.min())
+        
+        plt.imshow(img.astype("float32"))
+        plt.title(f"Label: {labels[idx]}")
+        plt.axis("off")
+        
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    
+    if save_path:
+        # Garante que o diretório de destino existe
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        # Salva o gráfico com alta resolução (dpi=300) e remove bordas extras
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close() # Fecha a figura para liberar memória
+        print(f"Imagem salva em: {save_path}")
+    else:
+        plt.show()
+
+
+"""
+FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
+"""
+def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
+                  resize=True, resize_to=224, n_aug=0, batch=8, seed=42, 
+                  segmenter="none", seg_model_path=""):
+    # DEBUG: vendo o nome do modeloo
+    print(model.__name__)
+    
     
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
     
-    X, y , patient_ids = load_raw_images(
+    X, y, patient_ids = load_raw_images(
         os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
     
-
     with open("modelos/random_seed.txt", "a") as f:
         f.write(f"{message}\n"
                 f"SEMENTE: {seed}\n")
 
-
-
     for fold, (tr_idx, va_idx, te_idx) in enumerate(
-                        make_tvt_splits(X, y, patient_ids,
-                                        k=k, val_size=0.25, seed=seed)):
+                    make_tvt_splits(X, y, patient_ids,
+                                   k=k, val_size=0.25, seed=seed)):
         
         def run_fold():
         
@@ -1111,6 +1167,7 @@ def train_model_cv_retangular(model, raw_root , message, angle = "Frontal", k = 
                 os.makedirs(os.path.dirname(log_txt), exist_ok=True)
 
 
+
                 start_time = time.time()
                 
                 history = model_f.fit(X_tr, y_tr,
@@ -1545,10 +1602,8 @@ def raw_dataset_to_png(directory, exclude = False, exclude_set = None):
 
 def train_models(models_objects, dataset: str, resize=False, target = 0, message=""):
     list = ["Frontal"]
-    models = models_objects
                 
     for angulo in list:
-        
 
         imagens_train, labels_train, imagens_valid, labels_valid, imagens_test, labels_test = load_data(angulo, dataset)
         
@@ -1569,82 +1624,84 @@ def train_models(models_objects, dataset: str, resize=False, target = 0, message
             imagens_test = np.squeeze(imagens_test, axis=-1)
         
         #treinando cada modelo da lista
-        for model_func in models_objects:
 
-            #criando pasta com gráficos dos modelos
-            os.makedirs(f"history/{model_func.__name__}", exist_ok=True)
+        #criando pasta com gráficos dos modelos
+        os.makedirs(f"history/unet_vgg16/{model.__name__}", exist_ok=True)
+        
+        with open(f"modelos/random_seed.txt", "a") as f:
+            f.write(f"Modelo:{model.__name__}\n")
+            f.write(f"Angulo: {angulo}\n")
+
+        for i in range(10):
             
-            with open(f"modelos/random_seed.txt", "a") as f:
-                f.write(f"Modelo:{model_func.__name__}\n")
-                f.write(f"Angulo: {angulo}\n")
+            VALUE_SEED = int(time.time()*1000) % 15000
+            random.seed(VALUE_SEED)
+            
+            seed = random.randint(0,15000)  
+            
+            tf.keras.utils.set_random_seed(seed)
+            tf.config.experimental.enable_op_determinism()
+            
+            print(f"history/unet_vgg16/{model.__name__}/{model.__name__}_{angulo}_{i}_time.txt")
+            
+            start_time = time.time()
+            
+            checkpoint_path = f"modelos/unet_vgg16/{model.__name__}/{message}_{angulo}_{i}.h5"
+            checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True, 
+                                                        save_weights_only=False, mode='auto')
+            
+            earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
 
-            for i in range(10):
-                
-                VALUE_SEED = int(time.time()*1000) % 15000
-                random.seed(VALUE_SEED)
-                
-                seed = random.randint(0,15000)  
-                
-                tf.keras.utils.set_random_seed(seed)
-                tf.config.experimental.enable_op_determinism()
-                
-                print(f"history/{model_func.__name__}/{model_func.__name__}_{angulo}_{i}_time.txt")
-                
-                start_time = time.time()
-                
-                checkpoint_path = f"modelos/{model_func.__name__}/{message}_{angulo}_{i}.h5"
-                checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path, monitor='val_loss', verbose=1, save_best_only=True, 
-                                                            save_weights_only=False, mode='auto')
-                
-                earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
+            #reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.05,patience=15, min_lr=1e-5, min_delta=0.0001)
 
-                #reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.05,patience=15, min_lr=1e-5, min_delta=0.0001)
+            #criando objeto e usando o modelo
+            modelo_object = model(learning_rate=learning_rate)
+            modelo_train = modelo_object
 
-                #criando objeto e usando o modelo
-                model = model_func()
-
-                model.summary()
+            #model.summary()
                 
 
-                # Salva a seed em um arquivo de texto
-                with open("modelos/random_seed.txt", "a") as file:
-                    file.write(str(seed))
-                    file.write("\n")
+            # Salva a seed em um arquivo de texto
+            with open("modelos/random_seed.txt", "a") as file:
+                file.write(str(seed))
+                file.write("\n")
 
-                print("Seed gerada e salva em random_seed.txt:", seed)
-                
+            print("Seed gerada e salva em random_seed.txt:", seed)
+    
 
-                history = model.fit(imagens_train, labels_train, epochs = 500, validation_data= (imagens_valid, labels_valid),
-                                    callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
-                
-                end_time = time.time()
-                
-                # Avaliação do modelo com conjunto de teste
-                if model_func.__name__ == "ResNet34":
-                    with custom_object_scope({'ResidualUnit': ResidualUnit}):
-                        best_model = keras.models.load_model(checkpoint_path)
-                elif model_func.__name__ == "ResNet101":
-                    with custom_object_scope({'BottleneckResidualUnit': BottleneckResidualUnit}):
-                        best_model = keras.models.load_model(checkpoint_path)
-                else:
+
+            history = modelo_train.fit(imagens_train, labels_train, epochs = 500, validation_data= (imagens_valid, labels_valid),
+                                callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
+            
+            end_time = time.time()
+            
+            # Avaliação do modelo com conjunto de teste
+            if model.__name__ == "ResNet34":
+                with custom_object_scope({'ResidualUnit': ResidualUnit}):
                     best_model = keras.models.load_model(checkpoint_path)
+            elif model.__name__ == "ResNet101":
+                with custom_object_scope({'BottleneckResidualUnit': BottleneckResidualUnit}):
+                    best_model = keras.models.load_model(checkpoint_path)
+            else:
+                best_model = keras.models.load_model(checkpoint_path)
 
-                test_loss, test_accuracy = best_model.evaluate(imagens_test, labels_test, verbose=1)
+            test_loss, test_accuracy = best_model.evaluate(imagens_test, labels_test, verbose=1)
 
-                directory = f"history/{model_func.__name__}/{angulo}/treinamento/"
-                os.makedirs(directory, exist_ok=True)
+            directory = f"history/unet-vgg16/{model.__name__}/{angulo}/treinamento/"
+            os.makedirs(directory, exist_ok=True)
 
-                with open(f"{directory}/{message}_{i}_time.txt", "w") as f:
-                    f.write(f"Modelo: {model_func.__name__}\n")
-                    f.write(f"Tempo de execução: {end_time - start_time}\n")
-                    f.write(f"Loss: {history.history['loss']}\n")
-                    f.write(f"Val_loss: {history.history['val_loss']}\n")
-                    f.write(f"Accuracy: {history.history['accuracy']}\n")
-                    f.write(f"Val_accuracy: {history.history['val_accuracy']}\n")
-                    f.write(f"Test Loss: {test_loss}\n")
-                    f.write(f"Test Accuracy: {test_accuracy}\n")
-                    f.write(f"SEED{str(seed)}\n")
-                    f.write("\n")
+
+            with open(f"{directory}/{message}_{i}_time.txt", "w") as f:
+                f.write(f"Modelo: {model.__name__}\n")
+                f.write(f"Tempo de execução: {end_time - start_time}\n")
+                f.write(f"Loss: {history.history['loss']}\n")
+                f.write(f"Val_loss: {history.history['val_loss']}\n")
+                f.write(f"Accuracy: {history.history['accuracy']}\n")
+                f.write(f"Val_accuracy: {history.history['val_accuracy']}\n")
+                f.write(f"Test Loss: {test_loss}\n")
+                f.write(f"Test Accuracy: {test_accuracy}\n")
+                f.write(f"SEED{str(seed)}\n")
+                f.write("\n")
                     
                 plot_convergence(history, model_func.__name__, angulo, i, message)
 
@@ -1794,6 +1851,26 @@ def segment_and_save_numpydataset(model_path, input_dir, output_dir, view):
     np.save(os.path.join(output_dir, f"labels_test_{view}.npy"), labels_test)
 
     print(f"Segmentação concluída e dataset salvo para: {view}")
+    
+    
+def analysis_dataset(npy_data, dir):
+    
+    os.makedirs(dir, exist_ok=True)
+    dataset = np.load(npy_data)
+    
+    print(dataset.shape)
+    
+    cont = 0
+    for img in dataset:
+        # Desnormaliza (de [0, 1] para [0, 255]) e converte para uint8
+        img_uint8 = (img * 255).astype(np.uint8)
+
+        filename = os.path.join(dir, f"imagem_{cont}.png")
+        # Salva como imagem
+        cv2.imwrite(filename, img_uint8)
+        cont += 1
+
+        
 
 
 """
