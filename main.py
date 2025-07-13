@@ -267,6 +267,7 @@ FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
                   resize=True, resize_method = "GrayPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
                   segmenter="none", seg_model_path=""):
+    
     # DEBUG: vendo o nome do modeloo
     print(model.__name__)
     
@@ -302,19 +303,26 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
 
             X_test,   y_test= X[te_idx], y[te_idx]
 
-            # min/max APENAS dos originais
-            mn, mx = X_tr.min(), X_tr.max()
+            if model.__name__ != "Vgg_16_pre_trained":
 
-            # normaliza
-            X_tr = normalize(X_tr, mn, mx)
-            X_val= normalize(X_val,    mn, mx)
-            X_test=normalize(X_test,   mn, mx)
+                # min/max APENAS dos originais
+                mn, mx = X_tr.min(), X_tr.max()
+
+                # normaliza
+                X_tr = normalize(X_tr, mn, mx)
+                X_val= normalize(X_val,    mn, mx)
+                X_test=normalize(X_test,   mn, mx)
 
             if resize:
 
-                X_tr = np.expand_dims(X_tr, axis=-1)
-                X_val= np.expand_dims(X_val, axis=-1)
-                X_test= np.expand_dims(X_test, axis=-1)
+                if model.__name__ == "Vgg_16_pre_trained":
+                    X_tr = np.stack((X_tr,) * 3, axis=-1)
+                    X_val = np.stack((X_val,) * 3, axis=-1)
+                    X_test = np.stack((X_test,) * 3, axis=-1)
+                else:
+                    X_tr = np.expand_dims(X_tr, axis=-1)
+                    X_val= np.expand_dims(X_val, axis=-1)
+                    X_test= np.expand_dims(X_test, axis=-1)
 
                 # X_tr= tf.image.resize_with_pad(X_tr, resize_to, resize_to, method="bicubic")
                 # X_val= tf.image.resize_with_pad(X_val, resize_to, resize_to, method="bicubic")
@@ -333,9 +341,24 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                     X_val = tf.image.resize(X_val, (224,224), method = "bilinear")
                     X_test = tf.image.resize(X_test, (224,224), method = "bilinear")
 
-                X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
-                X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
-                X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
+                if model.__name__ != "Vgg_16_pre_trained":
+
+                    X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
+                    X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
+                    X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
+                
+            if model.__name__ == "Vgg_16_pre_trained":
+                # A VGG16 precisa do pré-processamento do ImageNet
+                X_tr = preprocess_input(X_tr)
+                X_val = preprocess_input(X_val)
+                X_test = preprocess_input(X_test)
+
+            # ----------- VERIFICAÇÃO DA FAIXA DE VALORES -----------
+            print("\n--- Faixas de Valores após o Pré-processamento ---")
+            print(f"Conjunto de Treino: min={X_tr.min():.4f}, max={X_tr.max():.4f}")
+            print(f"Conjunto de Validação: min={X_val.min():.4f}, max={X_val.max():.4f}")
+            print(f"Conjunto de Teste: min={X_test.min():.4f}, max={X_test.max():.4f}")
+            print("---------------------------------------------------\n")
 
             
             
@@ -437,13 +460,14 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
 
             else:
 
-                if model == Vgg_16:
+                if model == Vgg_16 or model.__name__ == 'Vgg_16_pre_trained':
                     obj = model()
                     model_f = obj.model
                     print("VGG")
                 else:
                     model_f   = model()
                     print("ResNet")
+
                 ckpt    = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
                 log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
                 os.makedirs(os.path.dirname(ckpt), exist_ok=True)
