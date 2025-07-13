@@ -212,15 +212,11 @@ def load_and_convert_temp(image_path):
     temp_rgb = cv2.applyColorMap(temp_uint8, cv2.COLORMAP_INFERNO)
     return cv2.cvtColor(temp_rgb, cv2.COLOR_BGR2RGB)
 
-def visualize_processed_images(images, labels, title, save_path="vgg_pre_trained_view"):
+
+def visualize_processed_images(images, labels, title, save_path=None):
     """
     Exibe ou salva uma amostra de imagens pré-processadas.
-    
-    Args:
-        images (np.array): Array de imagens.
-        labels (np.array): Array de labels correspondentes.
-        title (str): Título principal do gráfico.
-        save_path (str, optional): Caminho para salvar a imagem. Se None, a imagem será exibida.
+    Espera um array de imagens onde os valores não estão na faixa [0, 255].
     """
     plt.figure(figsize=(10, 5))
     plt.suptitle(title, fontsize=16)
@@ -234,31 +230,41 @@ def visualize_processed_images(images, labels, title, save_path="vgg_pre_trained
         img = images[idx]
         
         # Normalização min-max para visualização
-        img = (img - img.min()) / (img.max() - img.min())
+        img_range = img.max() - img.min()
+        if img_range > 0:
+            img_normalized = (img - img.min()) / img_range
+        else:
+            img_normalized = img
+
+        # APLICAÇÃO DO MAPA DE CALOR:
+        # 1. Converte a imagem normalizada (0.0-1.0) para 0-255
+        img_uint8 = (img_normalized * 255).astype(np.uint8)
+        # 2. Aplica o mapa de cores (ex: INFERNO, como no seu exemplo)
+        img_bgr = cv2.applyColorMap(img_uint8, cv2.COLORMAP_INFERNO)
+        # 3. Converte de BGR para RGB para o Matplotlib
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         
-        plt.imshow(img.astype("float32"))
+        plt.imshow(img_rgb)
         plt.title(f"Label: {labels[idx]}")
         plt.axis("off")
         
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     
     if save_path:
-        # Garante que o diretório de destino existe
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        # Salva o gráfico com alta resolução (dpi=300) e remove bordas extras
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close() # Fecha a figura para liberar memória
+        plt.close()
         print(f"Imagem salva em: {save_path}")
     else:
         plt.show()
 
-
 """
 FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
 """
+#TODO: PEGAR O CAMINNHO DO MODELO NA PASTA JOAO
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
                   resize=True, resize_to=224, n_aug=0, batch=8, seed=42, 
-                  segmenter="none", seg_model_path=""):
+                  segmenter="none", seg_model_path="", resize_zero=True):
     # DEBUG: vendo o nome do modeloo
     print(model.__name__)
     
@@ -290,18 +296,34 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
         X_tr, y_tr = X[tr_idx], y[tr_idx]
         X_val, y_val = X[va_idx], y[va_idx]
         X_test, y_test = X[te_idx], y[te_idx]
-
+        
+#TODO: usar o matlab jet colormap -> ja aplica sozinho replicando os canais 
+#TODO: FAZER O CAMINHO NORMAL PARA IMAGEM SEGMENTADA, DEPOIS DE SEGMENTAR, REPLICAR OS 3 CANAIS 
+#TODO: VOLTAR PARA A FUNCAO RESIZE ANTERIOR 
     if resize:
+        if resize_zero:
         # Converter para 3 canais (RGB)
-        X_tr = np.stack((X_tr,) * 3, axis=-1)
-        X_val = np.stack((X_val,) * 3, axis=-1)
-        X_test = np.stack((X_test,) * 3, axis=-1)
+            X_tr = np.stack((X_tr,) * 3, axis=-1)
+            X_val = np.stack((X_val,) * 3, axis=-1)
+            X_test = np.stack((X_test,) * 3, axis=-1)
+        else:
+            # O primeiro canal contém os dados da imagem original.
+            # Os outros dois canais são criados e preenchidos com zero.
+            X_tr_zeros = np.zeros_like(X_tr)
+            X_val_zeros = np.zeros_like(X_val)
+            X_test_zeros = np.zeros_like(X_test)
+
+            X_tr = np.stack((X_tr, X_tr_zeros, X_tr_zeros), axis=-1)
+            X_val = np.stack((X_val, X_val_zeros, X_val_zeros), axis=-1)
+            X_test = np.stack((X_test, X_test_zeros, X_test_zeros), axis=-1)
 
         # Redimensionar mantendo 3 canais E JÁ CONVERTER PARA NUMPY
         # Isso resolve o erro de 'EagerTensor'
         X_tr = tf.image.resize(X_tr, [resize_to, resize_to], method="bicubic").numpy()
         X_val = tf.image.resize(X_val, [resize_to, resize_to], method="bicubic").numpy()
         X_test = tf.image.resize(X_test, [resize_to, resize_to], method="bicubic").numpy()
+        
+#TODO: tirar os dois canais replicados para modelos criados por nós (ex.> vgg16 e resnet)
 
     # Depois de redimensionar e converter para NumPy, aplique a normalização específica
     if model.__name__ == "Vgg_16_pre_trained":
@@ -448,7 +470,7 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             
         plot_convergence(history, model.__name__, angle, fold, message)
     
-    delete_folder("dataset_fold")
+    #delete_folder("dataset_fold")
     K.clear_session()
     gc.collect()
     
@@ -1552,8 +1574,8 @@ if __name__ == "__main__":
     tf.config.experimental.enable_op_determinism()
     tf.random.set_seed(SEMENTE)
 
-    
-    train_model_cv(Vgg_16_pre_trained, 'filtered_raw_dataset', 'DUPLICATED_frontal_vgg_pre_trained')
+    rename_folder("/history/Vgg_16_pre_trained", "/history/DUPLICATED_Vgg_16_pre_trained")
+    train_model_cv(Vgg_16_pre_trained, 'filtered_raw_dataset', 'ZERO_frontal_vgg_pre_trained', resize_zero=False)
 
 
 
