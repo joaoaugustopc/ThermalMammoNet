@@ -266,7 +266,7 @@ FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
 """
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
                   resize=True, resize_method = "GrayPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
-                  segmenter="none", seg_model_path=""):
+                  segmenter="none", seg_model_path="",channel_method ="MapaCalor"):
     
     # DEBUG: vendo o nome do modeloo
     print(model.__name__)
@@ -303,30 +303,28 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
 
             X_test,   y_test= X[te_idx], y[te_idx]
 
-            if model.__name__ != "Vgg_16_pre_trained":
+            
 
-                # min/max APENAS dos originais
-                mn, mx = X_tr.min(), X_tr.max()
+            # min/max APENAS dos originais
+            mn, mx = X_tr.min(), X_tr.max()
 
-                # normaliza
-                X_tr = normalize(X_tr, mn, mx)
-                X_val= normalize(X_val,    mn, mx)
-                X_test=normalize(X_test,   mn, mx)
+            # normaliza
+            X_tr = normalize(X_tr, mn, mx)
+            X_val= normalize(X_val,    mn, mx)
+            X_test=normalize(X_test,   mn, mx)
+
+            if model.__name__ == "Vgg_16_pre_trained" or model.__name__ == "resnet50_pre_trained":
+                X_tr = (X_tr * 255).astype(np.uint8)
+                X_val = (X_val * 255).astype(np.uint8)
+                X_test = (X_test * 255).astype(np.uint8)
+                
 
             if resize:
 
-                if model.__name__ == "Vgg_16_pre_trained":
-                    X_tr = np.stack((X_tr,) * 3, axis=-1)
-                    X_val = np.stack((X_val,) * 3, axis=-1)
-                    X_test = np.stack((X_test,) * 3, axis=-1)
-                else:
-                    X_tr = np.expand_dims(X_tr, axis=-1)
-                    X_val= np.expand_dims(X_val, axis=-1)
-                    X_test= np.expand_dims(X_test, axis=-1)
-
-                # X_tr= tf.image.resize_with_pad(X_tr, resize_to, resize_to, method="bicubic")
-                # X_val= tf.image.resize_with_pad(X_val, resize_to, resize_to, method="bicubic")
-                # X_test= tf.image.resize_with_pad(X_test, resize_to, resize_to, method="bicubic")
+                
+                X_tr = np.expand_dims(X_tr, axis=-1)
+                X_val= np.expand_dims(X_val, axis=-1)
+                X_test= np.expand_dims(X_test, axis=-1)
 
                 if resize_method == "GrayPadding":
                     X_tr = tf_letterbox(X_tr, resize_to)
@@ -341,17 +339,35 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                     X_val = tf.image.resize(X_val, (224,224), method = "bilinear")
                     X_test = tf.image.resize(X_test, (224,224), method = "bilinear")
 
-                if model.__name__ != "Vgg_16_pre_trained":
-
-                    X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
-                    X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
-                    X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
+                X_tr = X_tr.numpy().squeeze(axis=-1)
+                X_val = X_val.numpy().squeeze(axis=-1)
+                X_test = X_test.numpy().squeeze(axis=-1)
                 
-            if model.__name__ == "Vgg_16_pre_trained":
+            if model.__name__ == "Vgg_16_pre_trained" or model.__name__ == "resnet50_pre_trained":
                 # A VGG16 precisa do pré-processamento do ImageNet
-                X_tr = preprocess_input(X_tr)
-                X_val = preprocess_input(X_val)
-                X_test = preprocess_input(X_test)
+
+                if channel_method == "MapaCalor":
+                    X_tr = cv2.applyColorMap(X_tr, cv2.COLORMAP_JET)
+                    X_val = cv2.applyColorMap(X_val, cv2.COLORMAP_JET)
+                    X_test = cv2.applyColorMap(X_test, cv2.COLORMAP_JET)
+
+                    X_tr = cv2.cvtColor(X_tr, cv2.COLOR_BGR2RGB)
+                    X_val = cv2.cvtColor(X_val, cv2.COLOR_BGR2RGB)
+                    X_test = cv2.cvtColor(X_test, cv2.COLOR_BGR2RGB)
+                else:
+                    X_tr = np.stack((X_tr) * 3, axis=-1)
+                    X_val = np.stack((X_val) * 3, axis=-1)
+                    X_test = np.stack((X_test) * 3, axis=-1)
+
+                
+                if model.__name__ == "Vgg_16_pre_trained":
+                    X_tr = vgg_preprocess_input(X_tr)
+                    X_val = vgg_preprocess_input(X_val)
+                    X_test = vgg_preprocess_input(X_test)
+                elif model.__name__ == "resnet50_pre_trained":
+                    X_tr = resnet_preprocess_input(X_tr)
+                    X_val = resnet_preprocess_input(X_val)
+                    X_test = resnet_preprocess_input(X_test)
 
             # ----------- VERIFICAÇÃO DA FAIXA DE VALORES -----------
             print("\n--- Faixas de Valores após o Pré-processamento ---")
@@ -460,7 +476,7 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
 
             else:
 
-                if model == Vgg_16 or model.__name__ == 'Vgg_16_pre_trained':
+                if model == Vgg_16 or model.__name__ == 'Vgg_16_pre_trained' or model.__name__ == 'resnet50_pre_trained':
                     obj = model()
                     model_f = obj.model
                     print("VGG")
@@ -1300,6 +1316,52 @@ if __name__ == "__main__":
     SEMENTE = 13388
     
     tf.random.set_seed(SEMENTE)
+
+
+    X, y, patient_ids = load_raw_images(
+        os.path.join("filtered_raw_dataset", "Frontal"))
+    
+    X = normalize(X, X.min(), X.max())
+
+    X = (X * 255).astype(np.uint8)
+    
+    X = np.expand_dims(X, axis=-1)
+    #X = tf.image.resize(X, (224,224), method = "bilinear")
+    X = tf_letterbox_black(X, 224)
+    X = X.numpy().squeeze(axis=-1).astype(np.uint8)
+
+    img = X[0]
+
+    img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    plt.imsave("teste.jpg", img)
+
+
+
+
+
+    # X, y, patient_ids = load_raw_images(
+    #     os.path.join("filtered_raw_dataset", "Frontal"))
+    
+
+
+    # print(type(X), X.shape, type(y), y.shape)
+
+    # img = X[0]
+
+    # img = normalize(img, img.min(), img.max())
+
+    # img = (img * 255).astype(np.uint8)
+
+    # img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+    # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    # print(type(img), img.shape)
+    # plt.imsave("teste.jpg", img)
+
+
+
 
 
 

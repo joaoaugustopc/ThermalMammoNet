@@ -297,7 +297,8 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, seed =42,
     #VALUE_SEED = 12274
     random.seed(seed)
 
-    train = np.expand_dims(train, axis=-1)
+    if len(train.shape) > 3 and train.shape[-1] != 1:
+        train = np.expand_dims(train, axis=-1)
     
     # listas para armazenar as imagens e labels
     all_images = []
@@ -359,8 +360,8 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, seed =42,
     if resize:
         all_images = tf.image.resize_with_pad(all_images, target_size, target_size, method="bilenear")
     
-    
-    all_images = np.squeeze(all_images, axis=-1)
+    if len(all_images.shape) > 3 and all_images.shape[-1] == 1:
+        all_images = np.squeeze(all_images, axis=-1)
         
     print(all_images.shape)
     print(all_labels[all_labels == 1].shape)
