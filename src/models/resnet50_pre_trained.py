@@ -7,7 +7,7 @@ from tensorflow.keras.applications import ResNet50, preprocess_input
 
 mixed_precision.set_global_policy('mixed_float16')
 
-def build_pre_trained_resnet50(input_shape=(224,224,3), num_classes=1):
+def resnet50_pre_trained(input_shape=(224,224,3), num_classes=1):
     # Carrega o modelo base pré-treinado no ImageNet
     # include_top=False: remove a camada de saída (a que fazia a classificação em 1000 classes)
     # weights='imagenet': carrega os pesos pré-treinados
