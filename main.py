@@ -220,15 +220,11 @@ def load_and_convert_temp(image_path):
     temp_rgb = cv2.applyColorMap(temp_uint8, cv2.COLORMAP_INFERNO)
     return cv2.cvtColor(temp_rgb, cv2.COLOR_BGR2RGB)
 
-def visualize_processed_images(images, labels, title, save_path="vgg_pre_trained_view"):
+
+def visualize_processed_images(images, labels, title, save_path=None):
     """
     Exibe ou salva uma amostra de imagens pré-processadas.
-    
-    Args:
-        images (np.array): Array de imagens.
-        labels (np.array): Array de labels correspondentes.
-        title (str): Título principal do gráfico.
-        save_path (str, optional): Caminho para salvar a imagem. Se None, a imagem será exibida.
+    Espera um array de imagens onde os valores não estão na faixa [0, 255].
     """
     plt.figure(figsize=(10, 5))
     plt.suptitle(title, fontsize=16)
@@ -242,28 +238,38 @@ def visualize_processed_images(images, labels, title, save_path="vgg_pre_trained
         img = images[idx]
         
         # Normalização min-max para visualização
-        img = (img - img.min()) / (img.max() - img.min())
+        img_range = img.max() - img.min()
+        if img_range > 0:
+            img_normalized = (img - img.min()) / img_range
+        else:
+            img_normalized = img
+
+        # APLICAÇÃO DO MAPA DE CALOR:
+        # 1. Converte a imagem normalizada (0.0-1.0) para 0-255
+        img_uint8 = (img_normalized * 255).astype(np.uint8)
+        # 2. Aplica o mapa de cores (ex: INFERNO, como no seu exemplo)
+        img_bgr = cv2.applyColorMap(img_uint8, cv2.COLORMAP_INFERNO)
+        # 3. Converte de BGR para RGB para o Matplotlib
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         
-        plt.imshow(img.astype("float32"))
+        plt.imshow(img_rgb)
         plt.title(f"Label: {labels[idx]}")
         plt.axis("off")
         
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     
     if save_path:
-        # Garante que o diretório de destino existe
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        # Salva o gráfico com alta resolução (dpi=300) e remove bordas extras
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.close() # Fecha a figura para liberar memória
+        plt.close()
         print(f"Imagem salva em: {save_path}")
     else:
         plt.show()
 
-
 """
 FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
 """
+#TODO: PEGAR O CAMINNHO DO MODELO NA PASTA JOAO
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
                   resize=True, resize_method = "GrayPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
                   segmenter="none", seg_model_path="",channel_method ="MapaCalor"):
@@ -1317,6 +1323,7 @@ if __name__ == "__main__":
     
     tf.random.set_seed(SEMENTE)
 
+<<<<<<< HEAD
 
     X, y, patient_ids = load_raw_images(
         os.path.join("filtered_raw_dataset", "Frontal"))
@@ -1373,6 +1380,10 @@ if __name__ == "__main__":
     
 
 
+=======
+    rename_folder("/history/Vgg_16_pre_trained", "/history/DUPLICATED_Vgg_16_pre_trained")
+    train_model_cv(Vgg_16_pre_trained, 'filtered_raw_dataset', 'ZERO_frontal_vgg_pre_trained', resize_zero=False)
+>>>>>>> 4338d7a061afbb25be6f45bcfbcb8c23300e6bc6
 
 
 
