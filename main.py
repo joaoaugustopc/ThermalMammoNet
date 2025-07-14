@@ -1323,53 +1323,6 @@ if __name__ == "__main__":
     
     tf.random.set_seed(SEMENTE)
 
-<<<<<<< HEAD
-
-    X, y, patient_ids = load_raw_images(
-        os.path.join("filtered_raw_dataset", "Frontal"))
-    
-    X = normalize(X, X.min(), X.max())
-
-    X = (X * 255).astype(np.uint8)
-    
-    X = np.expand_dims(X, axis=-1)
-    #X = tf.image.resize(X, (224,224), method = "bilinear")
-    X = tf_letterbox_black(X, 224)
-    X = X.numpy().squeeze(axis=-1).astype(np.uint8)
-
-    img = X[0]
-
-    img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-    plt.imsave("teste.jpg", img)
-
-
-
-
-
-    # X, y, patient_ids = load_raw_images(
-    #     os.path.join("filtered_raw_dataset", "Frontal"))
-    
-
-
-    # print(type(X), X.shape, type(y), y.shape)
-
-    # img = X[0]
-
-    # img = normalize(img, img.min(), img.max())
-
-    # img = (img * 255).astype(np.uint8)
-
-    # img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-    # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-    # print(type(img), img.shape)
-    # plt.imsave("teste.jpg", img)
-
-
-
-
 
 
 
@@ -1380,10 +1333,6 @@ if __name__ == "__main__":
     
 
 
-=======
-    rename_folder("/history/Vgg_16_pre_trained", "/history/DUPLICATED_Vgg_16_pre_trained")
-    train_model_cv(Vgg_16_pre_trained, 'filtered_raw_dataset', 'ZERO_frontal_vgg_pre_trained', resize_zero=False)
->>>>>>> 4338d7a061afbb25be6f45bcfbcb8c23300e6bc6
 
 
 
