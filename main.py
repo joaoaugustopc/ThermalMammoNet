@@ -319,14 +319,9 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             X_val= normalize(X_val,    mn, mx)
             X_test=normalize(X_test,   mn, mx)
 
-            if model.__name__ == "Vgg_16_pre_trained" or model.__name__ == "resnet50_pre_trained":
-                X_tr = (X_tr * 255).astype(np.uint8)
-                X_val = (X_val * 255).astype(np.uint8)
-                X_test = (X_test * 255).astype(np.uint8)
                 
 
             if resize:
-
                 
                 X_tr = np.expand_dims(X_tr, axis=-1)
                 X_val= np.expand_dims(X_val, axis=-1)
@@ -349,42 +344,7 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                 X_val = X_val.numpy().squeeze(axis=-1)
                 X_test = X_test.numpy().squeeze(axis=-1)
                 
-            if model.__name__ == "Vgg_16_pre_trained" or model.__name__ == "resnet50_pre_trained":
-                # A VGG16 precisa do pré-processamento do ImageNet
-
-                if channel_method == "MapaCalor":
-                    X_tr = cv2.applyColorMap(X_tr, cv2.COLORMAP_JET)
-                    X_val = cv2.applyColorMap(X_val, cv2.COLORMAP_JET)
-                    X_test = cv2.applyColorMap(X_test, cv2.COLORMAP_JET)
-
-                    X_tr = cv2.cvtColor(X_tr, cv2.COLOR_BGR2RGB)
-                    X_val = cv2.cvtColor(X_val, cv2.COLOR_BGR2RGB)
-                    X_test = cv2.cvtColor(X_test, cv2.COLOR_BGR2RGB)
-                else:
-                    X_tr = np.stack((X_tr) * 3, axis=-1)
-                    X_val = np.stack((X_val) * 3, axis=-1)
-                    X_test = np.stack((X_test) * 3, axis=-1)
-
                 
-                if model.__name__ == "Vgg_16_pre_trained":
-                    X_tr = vgg_preprocess_input(X_tr)
-                    X_val = vgg_preprocess_input(X_val)
-                    X_test = vgg_preprocess_input(X_test)
-                elif model.__name__ == "resnet50_pre_trained":
-                    X_tr = resnet_preprocess_input(X_tr)
-                    X_val = resnet_preprocess_input(X_val)
-                    X_test = resnet_preprocess_input(X_test)
-
-            # ----------- VERIFICAÇÃO DA FAIXA DE VALORES -----------
-            print("\n--- Faixas de Valores após o Pré-processamento ---")
-            print(f"Conjunto de Treino: min={X_tr.min():.4f}, max={X_tr.max():.4f}")
-            print(f"Conjunto de Validação: min={X_val.min():.4f}, max={X_val.max():.4f}")
-            print(f"Conjunto de Teste: min={X_test.min():.4f}, max={X_test.max():.4f}")
-            print("---------------------------------------------------\n")
-
-            
-            
-            
             # augmenta & concatena
             if n_aug > 0:
                 X_tr, y_tr = augment_train_fold(X_tr, y_tr,
@@ -403,6 +363,66 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                     print(f"Segmentação com YOLO concluída.")
                 else:
                     raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
+                
+                
+            if model.__name__ == "Vgg_16_pre_trained" or model.__name__ == "resnet50_pre_trained":
+                X_tr = (X_tr * 255).astype(np.uint8)
+                X_val = (X_val * 255).astype(np.uint8)
+                X_test = (X_test * 255).astype(np.uint8)
+                
+                # A VGG16 precisa do pré-processamento do ImageNet
+
+                if channel_method == "MapaCalor":
+
+                    imgs_tr = []
+                    imgs_val = []
+                    imgs_test = []
+                    
+                    for img in X_tr:
+                        img = img.astype(np.uint8)
+                        img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        imgs_tr.append(img)
+
+                    for img in X_val:
+                        img = img.astype(np.uint8)
+                        img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        imgs_val.append(img)
+
+                    for img in X_test:
+                        img = img.astype(np.uint8)
+                        img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        imgs_test.append(img)
+
+                    X_tr = np.array(imgs_tr)
+                    X_val = np.array(imgs_val)
+                    X_test = np.array(imgs_test)
+
+                else:
+                    print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
+                    X_tr = np.stack((X_tr,) * 3, axis=-1)
+                    X_val = np.stack((X_val,) * 3, axis=-1)
+                    X_test = np.stack((X_test,) * 3, axis=-1)
+                    print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
+
+                
+                if model.__name__ == "Vgg_16_pre_trained":
+                    X_tr = vgg_preprocess_input(X_tr)
+                    X_val = vgg_preprocess_input(X_val)
+                    X_test = vgg_preprocess_input(X_test)
+                elif model.__name__ == "resnet50_pre_trained":
+                    X_tr = resnet_preprocess_input(X_tr)
+                    X_val = resnet_preprocess_input(X_val)
+                    X_test = resnet_preprocess_input(X_test)
+
+            # # ----------- VERIFICAÇÃO DA FAIXA DE VALORES -----------
+            # print("\n--- Faixas de Valores após o Pré-processamento ---")
+            # print(f"Conjunto de Treino: min={X_tr.min():.4f}, max={X_tr.max():.4f}")
+            # print(f"Conjunto de Validação: min={X_val.min():.4f}, max={X_val.max():.4f}")
+            # print(f"Conjunto de Teste: min={X_test.min():.4f}, max={X_test.max():.4f}")
+            # print("---------------------------------------------------\n")
             
 
             if model == "yolo":
@@ -482,7 +502,7 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
 
             else:
 
-                if model == Vgg_16 or model.__name__ == 'Vgg_16_pre_trained' or model.__name__ == 'resnet50_pre_trained':
+                if model == Vgg_16 or model.__name__ == 'Vgg_16_pre_trained':
                     obj = model()
                     model_f = obj.model
                     print("VGG")
@@ -1315,6 +1335,8 @@ def resize_imgs_masks_dataset(
     print(f"\nConcluído!  Novas pastas:\n  imagens → {out_img}\n  máscaras → {out_mask}")
 
 
+
+
 if __name__ == "__main__":
 
 
@@ -1325,15 +1347,160 @@ if __name__ == "__main__":
 
 
 
-
-
+    # train_model_cv(Vgg_16_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_VGG16_yolo_AUG_JET_BlackPadding",
+    #                resize_method="BlackPadding",
+    #                segmenter="yolo",
+    #                seg_model_path="runs/segment/train27/weights/best.pt")
     
+    # train_model_cv(Vgg_16_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_VGG16_yolo_AUG_3xChannels_BlackPadding",
+    #                resize_method="BlackPadding",
+    #                segmenter="yolo",
+    #                seg_model_path="runs/segment/train27/weights/best.pt",
+    #                channel_method="3xchannel")
 
 
+    # train_model_cv(Vgg_16_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_VGG16_AUG_3xchannel_BlackPadding",
+    #                resize_method="BlackPadding",
+    #                channel_method="3xchannel")
     
+    # train_model_cv(Vgg_16_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8, 
+    #                seed= SEMENTE,  
+    #                message="PreTrained_VGG16_AUG_JET_BlackPadding",
+    #                resize_method="BlackPadding")
+    
+    train_model_cv(Vgg_16_pre_trained,
+                   raw_root="filtered_raw_dataset",
+                   angle="Frontal",
+                   k=5,                 
+                   resize_to=224,
+                   n_aug=2,             
+                   batch=8,
+                   seed= SEMENTE,
+                   message="PreTrained_VGG16_unet_AUG_3xChannels_BlackPadding",
+                   resize_method="BlackPadding",
+                   segmenter="unet",
+                   seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
+                   channel_method="3xchannel")
+    train_model_cv(Vgg_16_pre_trained,
+                   raw_root="filtered_raw_dataset",
+                   angle="Frontal",
+                   k=5,                 
+                   resize_to=224,
+                   n_aug=2,             
+                   batch=8,
+                   seed= SEMENTE,
+                   message="PreTrained_VGG16_unet_AUG_JET_BlackPadding",
+                   resize_method="BlackPadding",
+                   segmenter="unet",
+                   seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
+    
+    # train_model_cv(resnet50_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_resnet50_yolo_AUG_JET_BlackPadding",
+    #                resize_method="BlackPadding",
+    #                segmenter="yolo",
+    #                seg_model_path="runs/segment/train27/weights/best.pt")
+    
+    # train_model_cv(resnet50_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_resnet50_yolo_AUG_3xChannels_BlackPadding",
+    #                resize_method="BlackPadding",
+    #                segmenter="yolo",
+    #                seg_model_path="runs/segment/train27/weights/best.pt",
+    #                channel_method="3xchannel")
 
 
-
+    # train_model_cv(resnet50_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_resnet50_AUG_3xchannel_BlackPadding",
+    #                resize_method="BlackPadding",
+    #                channel_method="3xchannel")
+    
+    # train_model_cv(resnet50_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8, 
+    #                seed= SEMENTE,  
+    #                message="PreTrained_resnet50_AUG_JET_BlackPadding",
+    #                resize_method="BlackPadding")
+    
+    # train_model_cv(resnet50_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_resnet50_unet_AUG_3xChannels_BlackPadding",
+    #                resize_method="BlackPadding",
+    #                segmenter="unet",
+    #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
+    #                channel_method="3xchannel")
+    
+    # train_model_cv(resnet50_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_resnet50_unet_AUG_JET_BlackPadding",
+    #                resize_method="BlackPadding",
+    #                segmenter="unet",
+    #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
 
 
     

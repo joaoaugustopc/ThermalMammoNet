@@ -3,7 +3,7 @@ from tensorflow import keras
 from tensorflow.keras import mixed_precision
 from tensorflow.keras.layers import GlobalAveragePooling2D, Dense
 # Importe o modelo e a função de pré-processamento
-from tensorflow.keras.applications import ResNet50, preprocess_input
+from tensorflow.keras.applications import ResNet50
 
 mixed_precision.set_global_policy('mixed_float16')
 
@@ -22,10 +22,9 @@ def resnet50_pre_trained(input_shape=(224,224,3), num_classes=1):
 
     # Constrói o novo modelo usando a API funcional
     inputs = keras.Input(shape=input_shape)
-    
+
     # Aplica o pré-processamento específico do ImageNet
-    x = preprocess_input(inputs) 
-    x = base_model(x, training=False)
+    x = base_model(inputs, training=False)
     x = GlobalAveragePooling2D()(x)
     x = Dense(num_classes, activation='sigmoid', dtype='float32')(x)
     
