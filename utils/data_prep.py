@@ -214,7 +214,7 @@ def format_data(directory_raw, output_dir = "output_dir", exclude = False, exclu
         np.save(f"{output_dir}/labels_valid_{angle}.npy", labels_valid)
         np.save(f"{output_dir}/imagens_test_{angle}.npy", imagens_test)
         np.save(f"{output_dir}/labels_test_{angle}.npy", labels_test)    
-    
+
 
 def apply_mask():
     masks = os.listdir('masks')
@@ -470,6 +470,7 @@ def load_imgs_masks(angulo, img_path, mask_path, augment=False, resize=False, ta
     data_imgs, data_masks = filtrar_imgs_masks(angulo, img_path, mask_path)
 
     imagens = [np.array(Image.open(img).convert('L')) / 255.0 for img in data_imgs]
+
     mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
 
     if resize:
@@ -1258,16 +1259,110 @@ def load_imgs_masks_distorcidas(angulo, img_path, mask_path, augment=False, resi
     
     return imgs_train, imgs_valid, masks_train, masks_valid
 
-
-
-
-
-
-
+# ------------------------ ESPECIFICO PARA UFPE
+def apply_augmentation_and_expand_jpg_ufpe(train, labels, num_augmented_copies, seed=42, resize=False, target_size=0):
+    """
+    Versão corrigida da função de data augmentation.
     
+    Params:
+        train: np.ndarray -> Imagens de treino (shape: [n_samples, height, width, channels])
+        labels: np.ndarray -> Labels de treino (shape: [n_samples])
+        num_augmented_copies: int -> Número de cópias aumentadas por imagem
+        seed: int -> Semente para reprodutibilidade
+        resize: bool -> Se deve redimensionar as imagens
+        target_size: int -> Novo tamanho para redimensionar
     
+    Returns:
+        all_images, all_labels: np.ndarray -> Dataset aumentado
+    """
+    print("Aumentando o dataset com cópias aumentadas...")
+    print("Shape original das imagens:", train.shape)
+    print("Shape original dos labels:", labels.shape)
 
+    random.seed(seed)
+    np.random.seed(seed)
 
+    # Verifica se as imagens já têm 4 dimensões (incluindo canais)
+    if len(train.shape) == 3:
+        train = np.expand_dims(train, axis=-1)
+        if train.shape[-1] == 1:
+            train = np.repeat(train, 3, axis=-1)  # Converte para 3 canais se for grayscale
 
+    # Listas para armazenar resultados
+    all_images = []
+    all_labels = []
+
+    # Adiciona imagens originais
+    all_images.extend(train)
+    all_labels.extend(labels)
+
+    # Transformações disponíveis
+    transformations = [random_rotation, random_zoom, random_brightness]
+
+    # Aplica augmentations
+    for _ in range(num_augmented_copies):
+        for image, label in zip(train, labels):
+            for transformation in transformations:
+                current_seed = random.randint(0, 10000)
+                random.seed(current_seed)
+                np.random.seed(current_seed)
+
+                # Aplica transformação principal
+                augmented_image = apply_transformation(image, transformation)
+
+                # Aplica flip com 50% de chance
+                if random.random() > 0.5:
+                    augmented_image = apply_transformation(augmented_image, random_flip)
+
+                all_images.append(augmented_image)
+                all_labels.append(label)
+
+                # Aplica augmentation extra para classe 'sick'
+                if label == 1:
+                    extra_seed = random.randint(0, 10000)
+                    random.seed(extra_seed)
+                    np.random.seed(extra_seed)
+                    
+                    extra_augmented = apply_transformation(augmented_image, random_zoom)
+                    all_images.append(extra_augmented)
+                    all_labels.append(label)
+
+    # Converte para numpy array
+    all_images = np.array(all_images)
+    all_labels = np.array(all_labels)
+
+    # Remove dimensões extras (se houver)
+    while len(all_images.shape) > 4:
+        all_images = np.squeeze(all_images, axis=-1)
+
+    # Redimensiona se necessário
+    if resize and target_size > 0:
+        # Usa resize normal do numpy se não estiver usando TF
+        if all_images.shape[1:3] != (target_size, target_size):
+            all_images = np.array([cv2.resize(img, (target_size, target_size)) 
+                                 for img in all_images])
+
+    print("\nResultado final:")
+    print("Shape das imagens aumentadas:", all_images.shape)
+    print("Número de imagens 'sick':", np.sum(all_labels == 1))
+    print("Número de imagens 'healthy':", np.sum(all_labels == 0))
+    print("Proporção sick/healthy: {:.2f}%".format(
+        np.sum(all_labels == 1)/len(all_labels)*100))
+
+    return all_images, all_labels
+
+from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
+# ---------------------- ESPECIFICO PARA UFPE
+def make_tvt_splits_without_ids(imgs, labels, k=5, val_size=0.25, seed=42):
+    """
+    AS IMAGENS DA UFPE NAO POSSUEM NOMES COM ID, TIVE QUE RETIRAR
+    """
+    skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=seed)
+    
+    for outer_train_val, test in skf.split(imgs, labels):
+        sss = StratifiedShuffleSplit(n_splits=1, test_size=val_size, random_state=seed)
+        train, val = next(sss.split(imgs[outer_train_val], labels[outer_train_val]))
+        
+        yield outer_train_val[train], outer_train_val[val], test
 
 

@@ -579,6 +579,139 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                         f.write(f"Máximo de tentativas atingido. Abortando …")
                         raise
                 clear_memory()
+
+# ------------------------------- inicio ufpe
+
+# CARREGANDO IMAGENS DA UFPE       
+def load_jpg_images(base_dir):
+    """
+    Carrega imagens da estrutura específica:
+    base_dir/
+        Frontal/
+            healthy/
+                imagens.jpg
+            sick/
+                imagens.jpg
+    
+    Returns:
+        tuple: (images, labels) onde:
+            - images: Array numpy das imagens
+            - labels: Array numpy dos rótulos (0=healthy, 1=sick)
+    """
+    # Caminho completo para a pasta Frontal
+    frontal_path = os.path.join(base_dir, 'Frontal')
+    
+    # Verifica se a estrutura está correta
+    if not os.path.exists(frontal_path):
+        raise ValueError(f"Diretório 'Frontal' não encontrado em {base_dir}")
+    
+    images = []
+    labels = []
+    
+    # Processa cada classe
+    for class_name in ['healthy', 'sick']:
+        class_path = os.path.join(frontal_path, class_name)
+        
+        if not os.path.exists(class_path):
+            print(f"⚠️ Aviso: Pasta '{class_name}' não encontrada em {frontal_path}")
+            continue
+            
+        label = 0 if class_name == 'healthy' else 1
+        
+        # Processa cada imagem
+        for img_file in os.listdir(class_path):
+            if img_file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                img_path = os.path.join(class_path, img_file)
+                try:
+                    img = cv2.imread(img_path)
+                    if img is not None:
+                        img = cv2.resize(img, (224, 224))
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        images.append(img)
+                        labels.append(label)
+                    else:
+                        print(f"Falha ao carregar: {img_path}")
+                except Exception as e:
+                    print(f" Erro processando {img_path}: {str(e)}")
+    
+    if not images:
+        available = os.listdir(frontal_path)
+        raise ValueError(
+            f"Nenhuma imagem válida encontrada.\n"
+            f"Conteúdo de 'Frontal': {available}\n"
+            f"Certifique-se de que existam:\n"
+            f"Frontal/healthy/\n"
+            f"Frontal/sick/\n"
+            f"com imagens .jpg/.jpeg/.png dentro"
+        )
+    
+    return np.array(images), np.array(labels)
+
+
+"""
+FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS COM IMAGEM DA UFPE
+"""
+def train_model_cv_ufpe(model, raw_root, message, angle="Frontal", k=5, 
+                   resize=True, resize_method="GrayPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
+                   segmenter="none", seg_model_path="", channel_method="MapaCalor"):
+    """
+    Pipeline principal para treinamento usando imagens .jpg originais com data augmentation.
+    """
+    print(f"Treinando modelo: {model.__name__}")
+    
+    # Carregar imagens .jpg
+    X, y = load_jpg_images(raw_root)
+    
+    with open("modelos/random_seed.txt", "a") as f:
+        f.write(f"{message}\nSEMENTE: {seed}\n")
+
+    for fold, (tr_idx, va_idx, te_idx) in enumerate(
+             make_tvt_splits_without_ids(X, y, k=5, val_size=0.25, seed=42)):
+        
+        def run_fold():
+            # Divisão dos dados
+            X_tr, y_tr = X[tr_idx], y[tr_idx]
+            X_val, y_val = X[va_idx], y[va_idx]
+            X_test, y_test = X[te_idx], y[te_idx]
+
+            # Aplicar data augmentation no conjunto de treino
+            if n_aug > 0:
+                print(f"Aplicando data augmentation no fold {fold}...")
+                X_tr, y_tr = apply_augmentation_and_expand_jpg_ufpe(
+                    X_tr, y_tr, num_augmented_copies=n_aug, seed=seed, resize=resize, target_size=resize_to
+                )
+                print(f"Data augmentation concluída. Novo shape do conjunto de treino: {X_tr.shape}")
+
+            # Pré-processamento para modelos pré-treinados
+            if model.__name__ == "Vgg_16_pre_trained":
+                X_tr = vgg_preprocess_input(X_tr)
+                X_val = vgg_preprocess_input(X_val)
+                X_test = vgg_preprocess_input(X_test)
+
+            # Treinamento do modelo
+            model_f = model().model
+            ckpt = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
+            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
+
+            history = model_f.fit(
+                X_tr, y_tr,
+                epochs=500,
+                validation_data=(X_val, y_val),
+                batch_size=batch,
+                callbacks=[
+                    tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=50, restore_best_weights=True),
+                    tf.keras.callbacks.ModelCheckpoint(ckpt, monitor='val_loss', save_best_only=True)
+                ],
+                verbose=2, shuffle=True
+            )
+
+            # Avaliação
+            y_pred = (model_f.predict(X_test) > 0.5).astype(int).ravel()
+            acc = accuracy_score(y_test, y_pred)
+            print(f"Fold {fold}: Acurácia = {acc:.4f}")
+
+        run_fold()
+# ------------------------------------ fim ufpe                
                 
 def evaluate_segmentation(model_path, x_val, y_val):
     model = tf.keras.models.load_model(model_path)
@@ -1336,95 +1469,80 @@ def resize_imgs_masks_dataset(
 
 
 
-
 if __name__ == "__main__":
-
 
     
     SEMENTE = 13388
     
     tf.random.set_seed(SEMENTE)
-
-
-
-    # train_model_cv(Vgg_16_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_VGG16_yolo_AUG_JET_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                segmenter="yolo",
-    #                seg_model_path="runs/segment/train27/weights/best.pt")
     
-    # train_model_cv(Vgg_16_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_VGG16_yolo_AUG_3xChannels_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                segmenter="yolo",
-    #                seg_model_path="runs/segment/train27/weights/best.pt",
-    #                channel_method="3xchannel")
+    train_model_cv_ufpe(
+    model=Vgg_16_pre_trained,
+    raw_root="imgs-ufpe-frontal",
+    message="PreTrained_VGG16_AUG_UFPE",
+    angle="Frontal",
+    k=5,
+    resize=True,
+    resize_method="GrayPadding",
+    resize_to=224,
+    n_aug=2,  # Número de cópias aumentadas
+    batch=8,
+    seed=42
+)
 
 
-    # train_model_cv(Vgg_16_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_VGG16_AUG_3xchannel_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                channel_method="3xchannel")
+
+    # # train_model_cv(Vgg_16_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_VGG16_yolo_AUG_JET_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                segmenter="yolo",
+    # #                seg_model_path="runs/segment/train27/weights/best.pt")
     
+    # # train_model_cv(Vgg_16_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_VGG16_yolo_AUG_3xChannels_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                segmenter="yolo",
+    # #                seg_model_path="runs/segment/train27/weights/best.pt",
+    # #                channel_method="3xchannel")
+
+
     # train_model_cv(Vgg_16_pre_trained,
-    #                raw_root="filtered_raw_dataset",
+    #                raw_root="imgs-ufpe-frontal",
     #                angle="Frontal",
     #                k=5,                 
     #                resize_to=224,
     #                n_aug=2,             
-    #                batch=8, 
-    #                seed= SEMENTE,  
-    #                message="PreTrained_VGG16_AUG_JET_BlackPadding",
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_VGG16_AUG_UFPE",
     #                resize_method="BlackPadding")
     
-    train_model_cv(Vgg_16_pre_trained,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="PreTrained_VGG16_unet_AUG_3xChannels_BlackPadding",
-                   resize_method="BlackPadding",
-                   segmenter="unet",
-                   seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
-                   channel_method="3xchannel")
-    train_model_cv(Vgg_16_pre_trained,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="PreTrained_VGG16_unet_AUG_JET_BlackPadding",
-                   resize_method="BlackPadding",
-                   segmenter="unet",
-                   seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
+    # # train_model_cv(Vgg_16_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8, 
+    # #                seed= SEMENTE,  
+    # #                message="PreTrained_VGG16_AUG_JET_BlackPadding",
+    # #                resize_method="BlackPadding")
     
-    # train_model_cv(resnet50_pre_trained,
+    # train_model_cv(Vgg_16_pre_trained,
     #                raw_root="filtered_raw_dataset",
     #                angle="Frontal",
     #                k=5,                 
@@ -1432,64 +1550,12 @@ if __name__ == "__main__":
     #                n_aug=2,             
     #                batch=8,
     #                seed= SEMENTE,
-    #                message="PreTrained_resnet50_yolo_AUG_JET_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                segmenter="yolo",
-    #                seg_model_path="runs/segment/train27/weights/best.pt")
-    
-    # train_model_cv(resnet50_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_resnet50_yolo_AUG_3xChannels_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                segmenter="yolo",
-    #                seg_model_path="runs/segment/train27/weights/best.pt",
-    #                channel_method="3xchannel")
-
-
-    # train_model_cv(resnet50_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_resnet50_AUG_3xchannel_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                channel_method="3xchannel")
-    
-    # train_model_cv(resnet50_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8, 
-    #                seed= SEMENTE,  
-    #                message="PreTrained_resnet50_AUG_JET_BlackPadding",
-    #                resize_method="BlackPadding")
-    
-    # train_model_cv(resnet50_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_resnet50_unet_AUG_3xChannels_BlackPadding",
+    #                message="PreTrained_VGG16_unet_AUG_3xChannels_BlackPadding",
     #                resize_method="BlackPadding",
     #                segmenter="unet",
     #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
     #                channel_method="3xchannel")
-    
-    # train_model_cv(resnet50_pre_trained,
+    # train_model_cv(Vgg_16_pre_trained,
     #                raw_root="filtered_raw_dataset",
     #                angle="Frontal",
     #                k=5,                 
@@ -1497,10 +1563,88 @@ if __name__ == "__main__":
     #                n_aug=2,             
     #                batch=8,
     #                seed= SEMENTE,
-    #                message="PreTrained_resnet50_unet_AUG_JET_BlackPadding",
+    #                message="PreTrained_VGG16_unet_AUG_JET_BlackPadding",
     #                resize_method="BlackPadding",
     #                segmenter="unet",
     #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
+    
+    # # train_model_cv(resnet50_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_resnet50_yolo_AUG_JET_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                segmenter="yolo",
+    # #                seg_model_path="runs/segment/train27/weights/best.pt")
+    
+    # # train_model_cv(resnet50_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_resnet50_yolo_AUG_3xChannels_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                segmenter="yolo",
+    # #                seg_model_path="runs/segment/train27/weights/best.pt",
+    # #                channel_method="3xchannel")
+
+
+    # # train_model_cv(resnet50_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_resnet50_AUG_3xchannel_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                channel_method="3xchannel")
+    
+    # # train_model_cv(resnet50_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8, 
+    # #                seed= SEMENTE,  
+    # #                message="PreTrained_resnet50_AUG_JET_BlackPadding",
+    # #                resize_method="BlackPadding")
+    
+    # # train_model_cv(resnet50_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_resnet50_unet_AUG_3xChannels_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                segmenter="unet",
+    # #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
+    # #                channel_method="3xchannel")
+    
+    # # train_model_cv(resnet50_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_resnet50_unet_AUG_JET_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                segmenter="unet",
+    # #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
 
 
     
