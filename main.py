@@ -693,6 +693,7 @@ def train_model_cv_ufpe(model, raw_root, message, angle="Frontal", k=5,
             ckpt = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
             os.makedirs(os.path.dirname(ckpt), exist_ok=True)
 
+            log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
             history = model_f.fit(
                 X_tr, y_tr,
                 epochs=500,
@@ -705,10 +706,48 @@ def train_model_cv_ufpe(model, raw_root, message, angle="Frontal", k=5,
                 verbose=2, shuffle=True
             )
 
-            # Avaliação
+            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
+            os.makedirs(os.path.dirname(log_txt), exist_ok=True)
+
+
+            start_time = time.time()
+            
+            history = model_f.fit(X_tr, y_tr,
+                        epochs=500,
+                        validation_data=(X_val, y_val),
+                        batch_size=batch,
+                        callbacks=[
+                            tf.keras.callbacks.EarlyStopping(
+                                monitor='val_loss', patience=50,
+                                min_delta=0.01, restore_best_weights=True),
+                            tf.keras.callbacks.ModelCheckpoint(
+                                ckpt, monitor='val_loss',
+                                save_best_only=True)
+                        ],
+                        verbose=2, shuffle=True)
+            
+            end_time = time.time()
+
+            # ---------- avaliação ----------
             y_pred = (model_f.predict(X_test) > 0.5).astype(int).ravel()
+
             acc = accuracy_score(y_test, y_pred)
-            print(f"Fold {fold}: Acurácia = {acc:.4f}")
+            prec, rec, f1, _ = precision_recall_fscore_support(
+                                    y_test, y_pred, average="binary",
+                                    zero_division=0)
+
+            # salva métrica fold‐a‐fold
+            with open(log_txt, "a") as f:
+                f.write(f"Fold {fold:02d}  "
+                        f"Acc={acc:.4f}  "
+                        f"Prec={prec:.4f}  "
+                        f"Rec={rec:.4f}  "
+                        f"F1={f1:.4f}\n"
+                        f"Tempo de treinamento={end_time - start_time:.2f} s\n")
+                
+            plot_convergence(history, model.__name__, angle, fold, message)
+        
+
 
         run_fold()
 # ------------------------------------ fim ufpe                
@@ -1467,28 +1506,70 @@ def resize_imgs_masks_dataset(
 
     print(f"\nConcluído!  Novas pastas:\n  imagens → {out_img}\n  máscaras → {out_mask}")
 
-
+from utils.transform_to_therm import *
 
 if __name__ == "__main__":
 
+    input_folder = "imgs-ufpe-frontal/Frontal/sick" # Crie esta pasta e coloque suas 100 fotos aqui
+    output_folder = "fotos_termicas_processadas"
     
-    SEMENTE = 13388
+    if not os.path.exists(input_folder):
+        print(f"Erro: A pasta de entrada '{input_folder}' não existe.")
+        print("Por favor, crie-a e coloque suas imagens térmicas nela.")
+        exit()
+
+    os.makedirs(output_folder, exist_ok=True)
+
+    image_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
     
-    tf.random.set_seed(SEMENTE)
+    if not image_files:
+        print(f"Nenhuma imagem encontrada na pasta '{input_folder}'.")
+        exit()
+
+    print(f"Encontradas {len(image_files)} imagens para processar.")
+
+    for i, filename in enumerate(image_files):
+        print(f"Processando imagem {i+1}/{len(image_files)}: {filename}")
+        input_path = os.path.join(input_folder, filename)
+        output_path = os.path.join(output_folder, f"thermal_{filename}")
+
+        min_temp, max_temp, colormap, main_image_region = find_color_bar_and_temps(input_path)
+
+        if min_temp is not None and max_temp is not None and colormap is not None and main_image_region is not None:
+            # Converte a região principal para tons de cinza para aplicar o colormap
+            main_image_gray = cv2.cvtColor(main_image_region, cv2.COLOR_BGR2GRAY)
+            
+            simulated_thermal_image = apply_thermal_colormap(main_image_gray, min_temp, max_temp, colormap)
+            
+            if simulated_thermal_image is not None:
+                cv2.imwrite(output_path, simulated_thermal_image)
+                print(f"  -> Imagem processada e salva como: {output_path}")
+            else:
+                print(f"  -> Falha ao aplicar colormap para {filename}.")
+        else:
+            print(f"  -> Falha na detecção da barra ou temperaturas para {filename}. Ignorando.")
+
+    print("\nProcessamento concluído!")
     
-    train_model_cv_ufpe(
-    model=Vgg_16_pre_trained,
-    raw_root="imgs-ufpe-frontal",
-    message="PreTrained_VGG16_AUG_UFPE",
-    angle="Frontal",
-    k=5,
-    resize=True,
-    resize_method="GrayPadding",
-    resize_to=224,
-    n_aug=2,  # Número de cópias aumentadas
-    batch=8,
-    seed=42
-)
+    
+#     SEMENTE = 13388
+    
+#     tf.random.set_seed(SEMENTE)
+    
+    
+#     train_model_cv_ufpe(
+#     model=Vgg_16_pre_trained,
+#     raw_root="imgs-ufpe-frontal",
+#     message="PreTrained_VGG16_AUG_UFPE",
+#     angle="Frontal",
+#     k=5,
+#     resize=True,
+#     resize_method="GrayPadding",
+#     resize_to=224,
+#     n_aug=2,  # Número de cópias aumentadas
+#     batch=8,
+#     seed=42
+# )
 
 
 

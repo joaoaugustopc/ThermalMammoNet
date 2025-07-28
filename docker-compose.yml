@@ -1,6 +1,6 @@
 services:
   thermal-img-experiment:
-    image: mamonet
+    image: fix_ufpe_images
     build:
       context: .
       dockerfile: Dockerfile
