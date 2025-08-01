@@ -2,7 +2,7 @@
 import os, numpy as np, tensorflow as tf, cv2
 from PIL import Image
 
-def run_eigencam(imgs, masks = None, model_path = "", out_dir="cam_out", layer_name=None):
+def run_eigencam(imgs, labels, masks = None, model_path = "", out_dir="cam_out", layer_name=None):
     """
     imgs  : np.ndarray (N,H,W,1) normalizado 0-1
     masks : np.ndarray (N,H,W) binário OU None
@@ -73,7 +73,13 @@ def run_eigencam(imgs, masks = None, model_path = "", out_dir="cam_out", layer_n
 
         # ----- salvar -----
         #Image.fromarray(heat).save(f"{out_dir}/sample_{i}_heatmap.png")
-        Image.fromarray(ov_img).save(f"{out_dir}/sample_{i}_overlay.png")
+
+        diagnostic = 'Health' if labels[i] == 0 else 'Sick'
+
+        path = f"{out_dir}/{diagnostic}/sample_{i}_overlay.png"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        Image.fromarray(ov_img).save(path)
 
         # ----- métrica opcional -----
         if masks is not None:

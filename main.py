@@ -1378,31 +1378,99 @@ if __name__ == "__main__":
 
 
 
-    ##### Resultados dos modelos VGG-16 pré-treinados ######
+   ############################# O código abaixo foi usado para gerar os mapas de calor para cada classe e amostras de acerto e erro do modelo VGG-16 treinado do zero.
+
     # MODEL_DIRS = {
-    # "vgg":    "modelos/Vgg_16_pre_trained",     # pasta onde salvou os .h5 do VGG-16
+    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
     # }
     # CONF_BASE  = "Confusion_Matrix"     # pasta-raiz onde deseja guardar as figuras
     # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
     # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
     # ANGLE      = "Frontal"              # visão utilizada nos treinos
 
+    
+    # X, y , patient_ids = load_raw_images(
+    #     "filtered_raw_dataset/Frontal")
     # # --------------------------------------------------
     # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
     # # --------------------------------------------------
     # experiments = [
-    #     #"PreTrained_VGG16_yolo_AUG_JET_BlackPadding",
-    #      "PreTrained_VGG16_yolo_AUG_3xChannels_BlackPadding",
-    #     #"PreTrained_VGG16_AUG_3xchannel_BlackPadding",
-    #      #"PreTrained_VGG16_AUG_JET_BlackPadding",
-    #      #"PreTrained_VGG16_unet_AUG_3xChannels_BlackPadding",
-    #     #"PreTrained_VGG16_unet_AUG_JET_BlackPadding",
+    #     # ---------- VGG-16 -----------------------------
+    #     # BlackPadding
+    #     {
+    #         "resize_method": "BlackPadding",
+    #         "message": "Vgg_unet_AUG_CV_BlackPadding",
+    #         "segment": "unet",
+    #         "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
+    #     },
+
+    #     {
+    #         "resize_method": "BlackPadding",
+    #         "message": "Vgg_yolon_AUG_CV_BlackPadding",
+    #         "segment": "yolo",
+    #         "segmenter_path": "runs/segment/train27/weights/best.pt", 
+    #     },
+
+    #     {
+    #         "resize_method": "BlackPadding",
+    #         "message": "Vgg_AUG_CV_BlackPadding",
+    #         "segment": "none",
+    #         "segmenter_path": "",
+    #     },
+
+    #     # Distorcido
+
+    #     {
+    #         "resize_method": "Distorcido",
+    #         "message": "Vgg_unet_AUG_CV_Distorcido",
+    #         "segment": "unet",
+    #         "segmenter_path": "modelos/unet/Frontal_Unet_AUG_Distorcao.h5",
+    #     },
+    #     {
+    #         "resize_method": "Distorcido",
+    #         "message": "Vgg_yolon_AUG_CV_Distorcido",
+    #         "segment": "yolo",
+    #         "segmenter_path": "runs/segment/train28/weights/best.pt",
+    #     },
+
+    #     {
+    #         "resize_method": "Distorcido",
+    #         "message": "Vgg_AUG_CV_Distorcido",
+    #         "segment": "none",
+    #         "segmenter_path": "",
+    #     },
+
+    #     # GrayPadding
+    #     {
+    #         "resize_method": "GrayPadding",
+    #         "message": "Vgg_unet_AUG_CV_GrayPadding",
+    #         "segment": "unet",
+    #         "segmenter_path": "modelos/unet/Frontal_Unet_AUG_CV_GrayPadding.h5",
+    #     },
+    #     {
+    #         "resize_method": "GrayPadding",
+    #         "message": "Vgg_yolon_AUG_CV_GrayPadding",
+    #         "segment": "yolo",
+    #         "segmenter_path": "runs/segment/train29/weights/best.pt",
+    #     },
+    #     {
+    #         "resize_method": "GrayPadding",
+    #         "message": "Vgg_AUG_CV_GrayPadding",
+    #         "segment": "none",
+    #         "segmenter_path": "",
+    #     }
+
     # ]
 
     # # --------------------------------------------------
     # # --- LOOP PRINCIPAL -------------------------------
     # # --------------------------------------------------
-    # for msg in experiments:
+    # for exp in experiments:
+
+    #     rsz           = exp["resize_method"]
+    #     msg           = exp["message"]
+    #     segment       = exp["segment"]
+    #     segmenter_path= exp["segmenter_path"]
 
     #     # Identifica qual backbone para escolher a pasta correta
     #     backbone_key = "resnet" if msg.startswith("ResNet") else "vgg"
@@ -1422,7 +1490,7 @@ if __name__ == "__main__":
     #         cm_message = f"{msg}_F{i}"
 
     #         # ---- Avaliação -------------------------------
-    #         evaluate_model_cm(
+    #         y_pred = evaluate_model_cm(
     #             model_path   = model_path,
     #             output_path  = str(out_dir),
     #             split_json   = split_path,
@@ -1430,174 +1498,72 @@ if __name__ == "__main__":
     #             message      = cm_message,
     #             angle        = ANGLE,
     #             classes      = CLASSES,
-    #             rgb          = True,
-    #             resize_method= "BlackPadding",
+    #             rgb          = False,
+    #             resize_method= rsz,
     #             resize       = True,
     #             resize_to    = 224,
-    #             channel_method="3xChannels",
-    #             segmenter= "yolo",
-    #             seg_model_path = "runs/segment/train27/weights/best.pt"
+    #             segmenter= segment,
+    #             seg_model_path = segmenter_path
     #         )
 
-    #         print(f"[OK] {cm_message}  →  {out_dir}")
+    #         split_json = f"splits/{msg}_Frontal_F{i}.json"
 
+    #         X_test, y_test = ppeprocessEigenCam(
+    #             X, y,
+    #             split_json,
+    #             segment=segment,
+    #             segmenter_path=segmenter_path,
+    #             resize_method= rsz  # ou "BlackPadding", "GrayPadding"
+    #         )
 
+    #         hits = y_pred == y_test 
+    #         miss = y_pred != y_test
 
+    #         # ---------- EigenCAM ----------
+    #         model_path = f"modelos/Vgg_16/{msg}_Frontal_F{i}.h5"
+    #         out_dir    = f"Resultados/Vgg_16/{rsz}/CAM_results/Acertos/{msg}_F{i}"
+    #         Path(out_dir).mkdir(parents=True, exist_ok=True)
 
-    # train_model_cv(Vgg_16_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_VGG16_yolo_AUG_JET_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                segmenter="yolo",
-    #                seg_model_path="runs/segment/train27/weights/best.pt")
-    
-    # train_model_cv(Vgg_16_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_VGG16_yolo_AUG_3xChannels_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                segmenter="yolo",
-    #                seg_model_path="runs/segment/train27/weights/best.pt",
-    #                channel_method="3xchannel")
+    #         run_eigencam(
+    #             imgs       = X_test[hits],
+    #             labels     = y_test[hits],
+    #             model_path = model_path,
+    #             out_dir    = out_dir,
+    #         )
 
+    #         out_dir    = f"Resultados/Vgg_16/{rsz}/CAM_results/Erros/{msg}_F{i}"
+    #         Path(out_dir).mkdir(parents=True, exist_ok=True)
 
-    # train_model_cv(Vgg_16_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_VGG16_AUG_3xchannel_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                channel_method="3xchannel")
-    
-    # train_model_cv(Vgg_16_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8, 
-    #                seed= SEMENTE,  
-    #                message="PreTrained_VGG16_AUG_JET_BlackPadding",
-    #                resize_method="BlackPadding")
-    
-    # train_model_cv(Vgg_16_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_VGG16_unet_AUG_3xChannels_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                segmenter="unet",
-    #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
-    #                channel_method="3xchannel")
-    # train_model_cv(Vgg_16_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_VGG16_unet_AUG_JET_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                segmenter="unet",
-    #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
-    
-    # train_model_cv(resnet50_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_resnet50_yolo_AUG_JET_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                segmenter="yolo",
-    #                seg_model_path="runs/segment/train27/weights/best.pt")
-    
-    # train_model_cv(resnet50_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_resnet50_yolo_AUG_3xChannels_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                segmenter="yolo",
-    #                seg_model_path="runs/segment/train27/weights/best.pt",
-    #                channel_method="3xchannel")
+    #         run_eigencam(
+    #             imgs       = X_test[miss],
+    #             labels     = y_test[miss],
+    #             model_path = model_path,
+    #             out_dir    = out_dir,
+    #         )
 
+    #         print(f"[OK] {msg} | fold {i} → {out_dir}")
 
-    # train_model_cv(resnet50_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_resnet50_AUG_3xchannel_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                channel_method="3xchannel")
+        
+    files = ["Resultados/Vgg_16/BlackPadding/CAM_results/Acertos",
+             "Resultados/Vgg_16/BlackPadding/CAM_results/Erros"
+    ]
+
+    for file in files:
+        move_folder(file, "MapasCalor/Vgg_16/BlackPadding")
+
+    files = ["Resultados/Vgg_16/Distorcido/CAM_results/Acertos",
+             "Resultados/Vgg_16/Distorcido/CAM_results/Erros"
+    ]
+
+    for file in files:
+        move_folder(file, "MapasCalor/Vgg_16/Distorcido")
     
-    # train_model_cv(resnet50_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8, 
-    #                seed= SEMENTE,  
-    #                message="PreTrained_resnet50_AUG_JET_BlackPadding",
-    #                resize_method="BlackPadding")
-    
-    # train_model_cv(resnet50_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_resnet50_unet_AUG_3xChannels_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                segmenter="unet",
-    #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
-    #                channel_method="3xchannel")
-    
-    # train_model_cv(resnet50_pre_trained,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="PreTrained_resnet50_unet_AUG_JET_BlackPadding",
-    #                resize_method="BlackPadding",
-    #                segmenter="unet",
-    #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
+    files = ["Resultados/Vgg_16/GrayPadding/CAM_results/Acertos",
+             "Resultados/Vgg_16/GrayPadding/CAM_results/Erros"
+    ]
+
+    for file in files:
+        move_folder(file, "MapasCalor/Vgg_16/GrayPadding")
 
 
     
