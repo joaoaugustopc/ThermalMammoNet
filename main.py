@@ -340,11 +340,11 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                     X_val = tf.image.resize(X_val, (224,224), method = "bilinear")
                     X_test = tf.image.resize(X_test, (224,224), method = "bilinear")
 
-                X_tr = X_tr.numpy().squeeze(axis=-1)
-                X_val = X_val.numpy().squeeze(axis=-1)
-                X_test = X_test.numpy().squeeze(axis=-1)
-                
-                
+                X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
+                X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
+                X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
+
+
             # augmenta & concatena
             if n_aug > 0:
                 X_tr, y_tr = augment_train_fold(X_tr, y_tr,
@@ -1122,14 +1122,17 @@ def ppeprocessEigenCam(X, y, splits_path, resize_method = "GrayPadding", segment
         X_tr= tf_letterbox(X_tr, 224)
         X_val= tf_letterbox(X_val, 224)
         X_test= tf_letterbox(X_test, 224)
+        print("Resize com GrayPadding concluído.")
     elif resize_method == "BlackPadding":
         X_tr= tf_letterbox_black(X_tr, 224)
         X_val= tf_letterbox_black(X_val, 224)
         X_test= tf_letterbox_black(X_test, 224)
+        print("Resize com BlackPadding concluído.")
     elif resize_method == "Distorcido":
         X_tr = tf.image.resize(X_tr, (224,224), method = "bilinear")
         X_val = tf.image.resize(X_val, (224,224), method = "bilinear")
         X_test = tf.image.resize(X_test, (224,224), method = "bilinear")
+        print("Resize Distorcido concluído.")
 
     X_tr = tf.clip_by_value(X_tr, 0, 1).numpy().squeeze(axis=-1)
     X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
@@ -1142,18 +1145,20 @@ def ppeprocessEigenCam(X, y, splits_path, resize_method = "GrayPadding", segment
         elif segment == "yolo":
             X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, segmenter_path)
             print(f"Segmentação com YOLO concluída.")
+        elif segment == "none":
+            print("Nenhum segmentador foi aplicado.")
 
 
     X_test = np.expand_dims(X_test, axis=-1)
 
-    return X_test
+    return X_test, y_test
 
 
 
 
 def prep_test_data(raw_root, angle, split_json, 
                     resize = True, resize_method = "GrayPadding", resize_to = 224,
-                    segmenter = "none", seg_model_path=""):
+                    segmenter = "none", seg_model_path="", rgb=False, channel_method = "MapaCalor"):
     
     """
     Função para preparar as imagens de teste para gerar as matrizes de confusão.
@@ -1193,6 +1198,20 @@ def prep_test_data(raw_root, angle, split_json,
         _, _, X_test = segment_with_yolo(X_test, X_test, X_test, seg_model_path)
         print(f"Segmentação com YOLO concluída.")
 
+    if rgb:
+        X_test = (X_test * 255).astype(np.uint8)
+
+        if channel_method == "MapaCalor":
+            imgs_test = []
+            for img in X_test:
+                img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                imgs_test.append(img)
+            X_test = np.array(imgs_test, dtype=np.uint8)
+
+        else:
+            X_test = np.stack((X_test,) * 3, axis=-1)
+
     return X_test, y_test
 
 
@@ -1222,22 +1241,32 @@ def evaluate_model_cm(model_path,
                       angle="Frontal",
                       resize=True,
                       resize_to=224,
+                      resize_method="GrayPadding",
                       segmenter="none",
                       seg_model_path="",
-                      classes=("Healthy", "Sick")):
+                      classes=("Healthy", "Sick"), rgb=False, channel_method="MapaCalor"):
     """
     Avalia o modelo salvo no fold especificado e gera matriz de confusão.
     """
     os.makedirs(output_path, exist_ok=True)
 
     X_test, y_test = prep_test_data(raw_root, angle, split_json,
-                                     resize, resize_to,
-                                     segmenter, seg_model_path)
+                                     resize,resize_method, resize_to,
+                                     segmenter, seg_model_path,  rgb=rgb, channel_method=channel_method)
 
     
     
     with custom_object_scope({'ResidualUnit': ResidualUnit}):
         model = tf.keras.models.load_model(model_path, compile=False)
+
+
+
+    if model.__class__.__name__ == "Vgg_16_pre_trained":
+    
+        X_test = vgg_preprocess_input(X_test)
+    
+
+
     y_pred_prob = model.predict(X_test, verbose=0).ravel()
     y_pred = (y_pred_prob > 0.5).astype(int)
 
@@ -1256,6 +1285,8 @@ def evaluate_model_cm(model_path,
 
     
     K.clear_session(); gc.collect()
+
+    return y_pred
 
 
 
@@ -1347,6 +1378,72 @@ if __name__ == "__main__":
 
 
 
+    ##### Resultados dos modelos VGG-16 pré-treinados ######
+    # MODEL_DIRS = {
+    # "vgg":    "modelos/Vgg_16_pre_trained",     # pasta onde salvou os .h5 do VGG-16
+    # }
+    # CONF_BASE  = "Confusion_Matrix"     # pasta-raiz onde deseja guardar as figuras
+    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    # ANGLE      = "Frontal"              # visão utilizada nos treinos
+
+    # # --------------------------------------------------
+    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # # --------------------------------------------------
+    # experiments = [
+    #     #"PreTrained_VGG16_yolo_AUG_JET_BlackPadding",
+    #      "PreTrained_VGG16_yolo_AUG_3xChannels_BlackPadding",
+    #     #"PreTrained_VGG16_AUG_3xchannel_BlackPadding",
+    #      #"PreTrained_VGG16_AUG_JET_BlackPadding",
+    #      #"PreTrained_VGG16_unet_AUG_3xChannels_BlackPadding",
+    #     #"PreTrained_VGG16_unet_AUG_JET_BlackPadding",
+    # ]
+
+    # # --------------------------------------------------
+    # # --- LOOP PRINCIPAL -------------------------------
+    # # --------------------------------------------------
+    # for msg in experiments:
+
+    #     # Identifica qual backbone para escolher a pasta correta
+    #     backbone_key = "resnet" if msg.startswith("ResNet") else "vgg"
+    #     model_dir    = MODEL_DIRS[backbone_key]
+
+    #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+    #     variant = msg.split("_")[-1]
+    #     out_dir = Path(CONF_BASE) / variant
+    #     out_dir.mkdir(parents=True, exist_ok=True)
+
+    #     for i in range(5):                                   # k-fold = 5
+    #         # ---- Caminhos de entrada ---------------------
+    #         model_path = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    #         split_path = f"splits/{msg}_Frontal_F{i}.json"
+
+    #         # ---- Nome para salvar arquivos/figura --------
+    #         cm_message = f"{msg}_F{i}"
+
+    #         # ---- Avaliação -------------------------------
+    #         evaluate_model_cm(
+    #             model_path   = model_path,
+    #             output_path  = str(out_dir),
+    #             split_json   = split_path,
+    #             raw_root     = RAW_ROOT,
+    #             message      = cm_message,
+    #             angle        = ANGLE,
+    #             classes      = CLASSES,
+    #             rgb          = True,
+    #             resize_method= "BlackPadding",
+    #             resize       = True,
+    #             resize_to    = 224,
+    #             channel_method="3xChannels",
+    #             segmenter= "yolo",
+    #             seg_model_path = "runs/segment/train27/weights/best.pt"
+    #         )
+
+    #         print(f"[OK] {cm_message}  →  {out_dir}")
+
+
+
+
     # train_model_cv(Vgg_16_pre_trained,
     #                raw_root="filtered_raw_dataset",
     #                angle="Frontal",
@@ -1398,31 +1495,31 @@ if __name__ == "__main__":
     #                message="PreTrained_VGG16_AUG_JET_BlackPadding",
     #                resize_method="BlackPadding")
     
-    train_model_cv(Vgg_16_pre_trained,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="PreTrained_VGG16_unet_AUG_3xChannels_BlackPadding",
-                   resize_method="BlackPadding",
-                   segmenter="unet",
-                   seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
-                   channel_method="3xchannel")
-    train_model_cv(Vgg_16_pre_trained,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="PreTrained_VGG16_unet_AUG_JET_BlackPadding",
-                   resize_method="BlackPadding",
-                   segmenter="unet",
-                   seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
+    # train_model_cv(Vgg_16_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_VGG16_unet_AUG_3xChannels_BlackPadding",
+    #                resize_method="BlackPadding",
+    #                segmenter="unet",
+    #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
+    #                channel_method="3xchannel")
+    # train_model_cv(Vgg_16_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_VGG16_unet_AUG_JET_BlackPadding",
+    #                resize_method="BlackPadding",
+    #                segmenter="unet",
+    #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
     
     # train_model_cv(resnet50_pre_trained,
     #                raw_root="filtered_raw_dataset",
