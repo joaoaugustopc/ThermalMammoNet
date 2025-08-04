@@ -275,7 +275,7 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                   segmenter="none", seg_model_path="",channel_method ="MapaCalor"):
     
     # DEBUG: vendo o nome do modeloo
-    print(model.__name__)
+    #print(model.__name__)
     
     
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
@@ -364,58 +364,63 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                 else:
                     raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
                 
+            if isinstance(model, str):
+                if model == "yolo":
+                    print("Modelo YOLO selecionado.")
                 
-            if model.__name__ == "Vgg_16_pre_trained" or model.__name__ == "resnet50_pre_trained":
-                X_tr = (X_tr * 255).astype(np.uint8)
-                X_val = (X_val * 255).astype(np.uint8)
-                X_test = (X_test * 255).astype(np.uint8)
+            else:
                 
-                # A VGG16 precisa do pré-processamento do ImageNet
-
-                if channel_method == "MapaCalor":
-
-                    imgs_tr = []
-                    imgs_val = []
-                    imgs_test = []
+                if model.__name__ == "Vgg_16_pre_trained" or model.__name__ == "resnet50_pre_trained":
+                    X_tr = (X_tr * 255).astype(np.uint8)
+                    X_val = (X_val * 255).astype(np.uint8)
+                    X_test = (X_test * 255).astype(np.uint8)
                     
-                    for img in X_tr:
-                        img = img.astype(np.uint8)
-                        img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                        imgs_tr.append(img)
+                    # A VGG16 precisa do pré-processamento do ImageNet
 
-                    for img in X_val:
-                        img = img.astype(np.uint8)
-                        img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                        imgs_val.append(img)
+                    if channel_method == "MapaCalor":
 
-                    for img in X_test:
-                        img = img.astype(np.uint8)
-                        img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                        imgs_test.append(img)
+                        imgs_tr = []
+                        imgs_val = []
+                        imgs_test = []
+                        
+                        for img in X_tr:
+                            img = img.astype(np.uint8)
+                            img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                            imgs_tr.append(img)
 
-                    X_tr = np.array(imgs_tr)
-                    X_val = np.array(imgs_val)
-                    X_test = np.array(imgs_test)
+                        for img in X_val:
+                            img = img.astype(np.uint8)
+                            img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                            imgs_val.append(img)
 
-                else:
-                    print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
-                    X_tr = np.stack((X_tr,) * 3, axis=-1)
-                    X_val = np.stack((X_val,) * 3, axis=-1)
-                    X_test = np.stack((X_test,) * 3, axis=-1)
-                    print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
+                        for img in X_test:
+                            img = img.astype(np.uint8)
+                            img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                            imgs_test.append(img)
 
-                
-                if model.__name__ == "Vgg_16_pre_trained":
-                    X_tr = vgg_preprocess_input(X_tr)
-                    X_val = vgg_preprocess_input(X_val)
-                    X_test = vgg_preprocess_input(X_test)
-                elif model.__name__ == "resnet50_pre_trained":
-                    X_tr = resnet_preprocess_input(X_tr)
-                    X_val = resnet_preprocess_input(X_val)
-                    X_test = resnet_preprocess_input(X_test)
+                        X_tr = np.array(imgs_tr)
+                        X_val = np.array(imgs_val)
+                        X_test = np.array(imgs_test)
+
+                    else:
+                        print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
+                        X_tr = np.stack((X_tr,) * 3, axis=-1)
+                        X_val = np.stack((X_val,) * 3, axis=-1)
+                        X_test = np.stack((X_test,) * 3, axis=-1)
+                        print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
+
+                    
+                    if model.__name__ == "Vgg_16_pre_trained":
+                        X_tr = vgg_preprocess_input(X_tr)
+                        X_val = vgg_preprocess_input(X_val)
+                        X_test = vgg_preprocess_input(X_test)
+                    elif model.__name__ == "resnet50_pre_trained":
+                        X_tr = resnet_preprocess_input(X_tr)
+                        X_val = resnet_preprocess_input(X_val)
+                        X_test = resnet_preprocess_input(X_test)
 
             # # ----------- VERIFICAÇÃO DA FAIXA DE VALORES -----------
             # print("\n--- Faixas de Valores após o Pré-processamento ---")
@@ -1541,47 +1546,65 @@ from utils.transform_to_therm import *
 
 if __name__ == "__main__":
 
-    input_folder = "imgs-ufpe-frontal/Frontal/sick" # Crie esta pasta e coloque suas 100 fotos aqui
-    output_folder = "fotos_termicas_processadas"
+    SEMENTE = 13388
+
+    train_model_cv("yolo",
+                    raw_root="filtered_raw_dataset",
+                    angle="Frontal",
+                    k=5,                 
+                    resize_to=224,
+                    n_aug=2,             
+                    batch=8,
+                    seed= SEMENTE,
+                    segmenter="none",
+                    message="Yolos_Cls2",
+                    seg_model_path="runs/segment/train22/weights/best.pt")
     
-    if not os.path.exists(input_folder):
-        print(f"Erro: A pasta de entrada '{input_folder}' não existe.")
-        print("Por favor, crie-a e coloque suas imagens térmicas nela.")
-        exit()
-
-    os.makedirs(output_folder, exist_ok=True)
-
-    image_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
     
-    if not image_files:
-        print(f"Nenhuma imagem encontrada na pasta '{input_folder}'.")
-        exit()
 
-    print(f"Encontradas {len(image_files)} imagens para processar.")
 
-    for i, filename in enumerate(image_files):
-        print(f"Processando imagem {i+1}/{len(image_files)}: {filename}")
-        input_path = os.path.join(input_folder, filename)
-        output_path = os.path.join(output_folder, f"thermal_{filename}")
+    # input_folder = "imgs-ufpe-frontal/Frontal/sick" # Crie esta pasta e coloque suas 100 fotos aqui
+    # output_folder = "fotos_termicas_processadas"
+    
+    # if not os.path.exists(input_folder):
+    #     print(f"Erro: A pasta de entrada '{input_folder}' não existe.")
+    #     print("Por favor, crie-a e coloque suas imagens térmicas nela.")
+    #     exit()
 
-        min_temp, max_temp, colormap, main_image_region = find_color_bar_and_temps(input_path)
+    # os.makedirs(output_folder, exist_ok=True)
 
-        if min_temp is not None and max_temp is not None and colormap is not None and main_image_region is not None:
-            # Converte a região principal para tons de cinza para aplicar o colormap
-            main_image_gray = cv2.cvtColor(main_image_region, cv2.COLOR_BGR2GRAY)
+    # image_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
+    
+    # if not image_files:
+    #     print(f"Nenhuma imagem encontrada na pasta '{input_folder}'.")
+    #     exit()
+
+    # print(f"Encontradas {len(image_files)} imagens para processar.")
+
+    # for i, filename in enumerate(image_files):
+    #     print(f"Processando imagem {i+1}/{len(image_files)}: {filename}")
+    #     input_path = os.path.join(input_folder, filename)
+    #     output_path = os.path.join(output_folder, f"thermal_{filename}")
+
+    #     min_temp, max_temp, colormap, main_image_region = find_color_bar_and_temps(input_path)
+
+    #     if min_temp is not None and max_temp is not None and colormap is not None and main_image_region is not None:
+    #         # Converte a região principal para tons de cinza para aplicar o colormap
+    #         main_image_gray = cv2.cvtColor(main_image_region, cv2.COLOR_BGR2GRAY)
             
-            simulated_thermal_image = apply_thermal_colormap(main_image_gray, min_temp, max_temp, colormap)
+    #         simulated_thermal_image = apply_thermal_colormap(main_image_gray, min_temp, max_temp, colormap)
             
-            if simulated_thermal_image is not None:
-                cv2.imwrite(output_path, simulated_thermal_image)
-                print(f"  -> Imagem processada e salva como: {output_path}")
-            else:
-                print(f"  -> Falha ao aplicar colormap para {filename}.")
-        else:
-            print(f"  -> Falha na detecção da barra ou temperaturas para {filename}. Ignorando.")
+    #         if simulated_thermal_image is not None:
+    #             cv2.imwrite(output_path, simulated_thermal_image)
+    #             print(f"  -> Imagem processada e salva como: {output_path}")
+    #         else:
+    #             print(f"  -> Falha ao aplicar colormap para {filename}.")
+    #     else:
+    #         print(f"  -> Falha na detecção da barra ou temperaturas para {filename}. Ignorando.")
 
-    print("\nProcessamento concluído!")
+    # print("\nProcessamento concluído!")
     
+
     
 #     SEMENTE = 13388
     
