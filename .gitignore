@@ -120,3 +120,5 @@ logs/
 MapasCalor/
 imgs-ufpe-frontal/
 debug_output/
+ufpe_thermal/
+ufpe_temp/
