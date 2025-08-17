@@ -13,7 +13,7 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from tensorflow.keras.applications import VGG16
 import matplotlib.pyplot as plt
 import time
-import re
+# import da
 import shutil
 from tensorflow.keras.utils import custom_object_scope
 from PIL import Image
@@ -22,8 +22,7 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 import os
 import shutil
-
-from utils.data_prep import apply_augmentation_and_expand, load_data, create_aug_dataset, view_pred_mask, make_tvt_splits_without_ids, apply_augmentation_and_expand_jpg_ufpe
+from utils.data_prep import apply_augmentation_and_expand, load_data, create_aug_dataset, view_pred_mask, make_tvt_splits_without_ids, apply_augmentation_and_expand_jpg_ufpe, load_raw_images_ufpe
 from utils.files_manipulation import delete_folder, delete_file, move_files_to_folder, rename_file, rename_folder
 from utils.stats import plot_convergence, test_model, get_boxPlot, data_distribution, get_confusion_matrices, get_auc_roc
 from sklearn.metrics import confusion_matrix

@@ -269,7 +269,6 @@ def visualize_processed_images(images, labels, title, save_path=None):
 """
 FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
 """
-#TODO: PEGAR O CAMINNHO DO MODELO NA PASTA JOAO
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
                   resize=True, resize_method = "GrayPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
                   segmenter="none", seg_model_path="",channel_method ="MapaCalor"):
@@ -280,8 +279,12 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
     
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
     
-    X, y, patient_ids = load_raw_images(
-        os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
+    if "ufpe" in raw_root:
+        X, y, patient_ids = load_raw_images_ufpe(
+            os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
+    else:
+        X, y, patient_ids = load_raw_images(
+            os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
     
     with open("modelos/random_seed.txt", "a") as f:
         f.write(f"{message}\n"
@@ -1546,19 +1549,43 @@ from utils.transform_to_therm import *
 
 if __name__ == "__main__":
 
-    SEMENTE = 13388
+    create_folder("modelos/Vgg_16")
 
-    train_model_cv("yolo",
-                    raw_root="filtered_raw_dataset",
-                    angle="Frontal",
-                    k=5,                 
-                    resize_to=224,
-                    n_aug=2,             
-                    batch=8,
-                    seed= SEMENTE,
-                    segmenter="none",
-                    message="Yolos_Cls2",
-                    seg_model_path="runs/segment/train22/weights/best.pt")
+    SEMENTE = 13388
+    
+    train_model_cv(Vgg_16,
+                   raw_root="ufpe_temp",
+                   angle="Frontal",
+                   k=5,                 
+                   resize_to=224,
+                   n_aug=2,             
+                   batch=8,
+                   seed= SEMENTE,
+                   message="VGG16_AUG_UFPE",
+                   resize_method="BlackPadding")
+    
+    train_model_cv(Vgg_16_pre_trained,
+                   raw_root="ufpe_temp",
+                   angle="Frontal",
+                   k=5,                 
+                   resize_to=224,
+                   n_aug=2,             
+                   batch=8,
+                   seed= SEMENTE,
+                   message="pre_treined_VGG16_AUG_UFPE",
+                   resize_method="BlackPadding")
+
+    # train_model_cv("yolo",
+    #                 raw_root="filtered_raw_dataset",
+    #                 angle="Frontal",
+    #                 k=5,                 
+    #                 resize_to=224,
+    #                 n_aug=2,             
+    #                 batch=8,
+    #                 seed= SEMENTE,
+    #                 segmenter="none",
+    #                 message="Yolos_Cls2",
+    #                 seg_model_path="runs/segment/train22/weights/best.pt")
     
     
 
@@ -1690,6 +1717,7 @@ if __name__ == "__main__":
     #                segmenter="unet",
     #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
     #                channel_method="3xchannel")
+    
     # train_model_cv(Vgg_16_pre_trained,
     #                raw_root="filtered_raw_dataset",
     #                angle="Frontal",
