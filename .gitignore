@@ -122,3 +122,7 @@ imgs-ufpe-frontal/
 debug_output/
 ufpe_thermal/
 ufpe_temp/
+ufpe_temp/
+ufpe_thermal/
+spam/
+yolo_nano_model/

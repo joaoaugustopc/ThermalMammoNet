@@ -269,7 +269,6 @@ def visualize_processed_images(images, labels, title, save_path=None):
 """
 FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
 """
-#TODO: PEGAR O CAMINNHO DO MODELO NA PASTA JOAO
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
                   resize=True, resize_method = "GrayPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
                   segmenter="none", seg_model_path="",channel_method ="MapaCalor"):
@@ -1561,6 +1560,8 @@ from utils.transform_to_therm import *
 
 if __name__ == "__main__":
 
+    create_folder("modelos/Vgg_16")
+
     SEMENTE = 13388
 
 
@@ -1789,6 +1790,7 @@ if __name__ == "__main__":
     #                segmenter="unet",
     #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
     #                channel_method="3xchannel")
+    
     # train_model_cv(Vgg_16_pre_trained,
     #                raw_root="filtered_raw_dataset",
     #                angle="Frontal",
