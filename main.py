@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas
+from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas
 from utils.files_manipulation import move_files_within_folder, create_folder, move_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model, unet_model_retangular
@@ -280,8 +280,19 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
     
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
     
-    X, y, patient_ids = load_raw_images(
-        os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
+    if "ufpe" in raw_root:
+        X, y, patient_ids = load_raw_images_ufpe(
+            os.path.join(raw_root, angle), exclude=False)
+        print(f"Carregando imagens da UFPE: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+    else:
+        X, y, patient_ids = load_raw_images(
+            os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
+        print(f"Carregando imagens: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+
+    print(f"Saudavéis: {np.sum(y==0)}, Doentes: {np.sum(y==1)}")
+        
+    
+
     
     with open("modelos/random_seed.txt", "a") as f:
         f.write(f"{message}\n"
@@ -308,6 +319,10 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             X_val,    y_val = X[va_idx], y[va_idx]
 
             X_test,   y_test= X[te_idx], y[te_idx]
+
+            print(f"Shape de treinamento fold {fold} antes do aumento de dados: {X_tr.shape}")
+            print(f"Shape de validação fold {fold}: {X_val.shape}")
+            print(f"Shape de teste fold {fold}: {X_test.shape}")
 
             
 
@@ -1342,7 +1357,7 @@ def prep_test_data(raw_root, angle, split_json,
     Segue o mesmo procedimento de processamento do PipeLine de treinamento (train_models_cv)
     """
     
-    X, y, patient_ids = load_raw_images(os.path.join(raw_root, angle))
+    X, y, patient_ids = load_raw_images_ufpe(os.path.join(raw_root, angle))
     with open(split_json, "r") as f:
         split = json.load(f)
     tr_idx, te_idx = np.array(split["train_idx"]), np.array(split["test_idx"])
@@ -1548,17 +1563,101 @@ if __name__ == "__main__":
 
     SEMENTE = 13388
 
-    train_model_cv("yolo",
-                    raw_root="filtered_raw_dataset",
-                    angle="Frontal",
-                    k=5,                 
-                    resize_to=224,
-                    n_aug=2,             
-                    batch=8,
-                    seed= SEMENTE,
-                    segmenter="none",
-                    message="Yolos_Cls2",
-                    seg_model_path="runs/segment/train22/weights/best.pt")
+
+    # train_model_cv(Vgg_16,
+    #                raw_root="ufpe_temp",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="VGG16_AUG_UFPE_BlackPadding",
+    #                resize_method="BlackPadding")
+    # train_model_cv(Vgg_16,
+    #                raw_root="ufpe_temp",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="VGG16_AUG_UFPE_Distorcido",
+    #                resize_method="Distorcido")
+
+
+    #### Resultados dos modelos VGG-16 pré-treinados ######
+    MODEL_DIRS = {
+    "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    }
+    CONF_BASE  = "Confusion_Matrix"     # pasta-raiz onde deseja guardar as figuras
+    CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    RAW_ROOT   = "ufpe_temp" # pasta com os exames originais
+    ANGLE      = "Frontal"              # visão utilizada nos treinos
+
+    # --------------------------------------------------
+    # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # --------------------------------------------------
+    experiments = [
+        #"PreTrained_VGG16_yolo_AUG_JET_BlackPadding",
+         #"PreTrained_VGG16_yolo_AUG_3xChannels_BlackPadding",
+        "VGG16_AUG_UFPE_BlackPadding",
+        #"PreTrained_VGG16_AUG_3xchannel_BlackPadding",
+         #"PreTrained_VGG16_AUG_JET_BlackPadding",
+         #"PreTrained_VGG16_unet_AUG_3xChannels_BlackPadding",
+        #"PreTrained_VGG16_unet_AUG_JET_BlackPadding",
+    ]
+
+    # --------------------------------------------------
+    # --- LOOP PRINCIPAL -------------------------------
+    # --------------------------------------------------
+    for msg in experiments:
+
+        # Identifica qual backbone para escolher a pasta correta
+        backbone_key = "resnet" if msg.startswith("ResNet") else "vgg"
+        model_dir    = MODEL_DIRS[backbone_key]
+
+        # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+        variant = msg.split("_")[-1]
+        out_dir = Path(CONF_BASE) / variant
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        for i in range(5):                                   # k-fold = 5
+            # ---- Caminhos de entrada ---------------------
+            model_path = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+            split_path = f"splits/{msg}_Frontal_F{i}.json"
+
+            # ---- Nome para salvar arquivos/figura --------
+            cm_message = f"{msg}_F{i}"
+
+            # ---- Avaliação -------------------------------
+            evaluate_model_cm(
+                model_path   = model_path,
+                output_path  = str(out_dir),
+                split_json   = split_path,
+                raw_root     = RAW_ROOT,
+                message      = cm_message,
+                angle        = ANGLE,
+                classes      = CLASSES,
+                rgb          = False,
+                resize_method= "BlackPadding",
+                resize       = True,
+                resize_to    = 224
+            )
+
+            print(f"[OK] {cm_message}  →  {out_dir}")
+
+    # train_model_cv("yolo",
+    #                 raw_root="filtered_raw_dataset",
+    #                 angle="Frontal",
+    #                 k=5,                 
+    #                 resize_to=224,
+    #                 n_aug=2,             
+    #                 batch=8,
+    #                 seed= SEMENTE,
+    #                 segmenter="none",
+    #                 message="Yolos_Cls2",
+    #                 seg_model_path="runs/segment/train22/weights/best.pt")
     
     
 

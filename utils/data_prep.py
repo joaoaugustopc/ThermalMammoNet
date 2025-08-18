@@ -291,7 +291,6 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, seed =42,
 
     print("Aumentando o dataset com cópias aumentadas...")
     print("Shape original das imagens:", train.shape)
-    print("Shape original das máscaras:", labels.shape)
 
     #VALUE_SEED = int(time.time() * 1000) % 15000
     #VALUE_SEED = 12274
@@ -902,6 +901,44 @@ def load_raw_images(angle_dir, exclude=False, exclude_set=None):
                 continue
 
     return np.array(imgs), np.array(labels), np.array(ids, dtype= int)
+
+def load_raw_images_ufpe(angle_dir, exclude=False, exclude_set=None):
+    
+    imgs, labels, ids = [], [], []
+
+    for label_name, label_val in [('healthy', 0), ('sick', 1)]:
+        for file in os.listdir(os.path.join(angle_dir, label_name)):
+            if exclude and file in exclude_set:
+                print(f"Excluindo {file} do diretório {angle_dir}/{label_name}")
+                continue
+
+            fpath = os.path.join(angle_dir, label_name, file)
+
+            try:
+                with open(fpath, 'r') as f:
+                    delim = ';' if ';' in f.readline() else ' '
+                    f.seek(0)
+                arr = np.loadtxt(fpath, delimiter=delim, dtype=np.float32)
+
+                # Extrai o número do nome do arquivo e define o label
+                match = re.search(r'_T(\d+)_(\d+)', file) or re.search(r'_T(\d+) (\(\d+\))', file)
+                if match:
+                    file_id_aux = match.group(1)
+                    file_id = match.group(2).replace('(', '').replace(')', '')
+                    file_id = str(label_val+1) + file_id_aux + file_id
+                    file_id = int(file_id)
+                else:
+                    raise ValueError(f"Não foi possível extrair o ID do arquivo: {file}")
+
+                imgs.append(arr)
+                labels.append(label_val)
+                ids.append(file_id)
+
+            except Exception as e:
+                print(f"Erro ao processar {fpath}: {e}")
+                continue
+
+    return np.array(imgs), np.array(labels), np.array(ids, dtype=int)
 
 
 from sklearn.model_selection import StratifiedGroupKFold, GroupShuffleSplit
