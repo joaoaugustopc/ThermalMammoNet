@@ -1356,7 +1356,7 @@ def prep_test_data(raw_root, angle, split_json,
     Segue o mesmo procedimento de processamento do PipeLine de treinamento (train_models_cv)
     """
     
-    X, y, patient_ids = load_raw_images_ufpe(os.path.join(raw_root, angle))
+    X, y, patient_ids = load_raw_images(os.path.join(raw_root, angle))
     with open(split_json, "r") as f:
         split = json.load(f)
     tr_idx, te_idx = np.array(split["train_idx"]), np.array(split["test_idx"])
@@ -1560,9 +1560,10 @@ from utils.transform_to_therm import *
 
 if __name__ == "__main__":
 
-    create_folder("modelos/Vgg_16")
 
     SEMENTE = 13388
+
+    move_folder("MapasCalor/Vgg_16", "Resultados/Vgg_16/MapasCalor_Acerto_Erro")
 
 
     # train_model_cv(Vgg_16,
