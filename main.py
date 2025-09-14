@@ -1162,7 +1162,7 @@ def save_split_to_png(images, labels, split_name, root="dataset_fold"):
 
 
 
-def ppeprocessEigenCam(X, y, splits_path, resize_method = "BlackPadding", segment = None, segmenter_path ="" ):
+def ppeprocessEigenCam(X, y, ids, splits_path, resize_method = "BlackPadding", segment = None, segmenter_path ="" ):
     
     
     with open (splits_path, "r") as f:
@@ -1176,6 +1176,7 @@ def ppeprocessEigenCam(X, y, splits_path, resize_method = "BlackPadding", segmen
 
     X_test = X[test_idx]
     y_test = y[test_idx]
+    ids_test = ids[test_idx]
 
     X_train = X[train_idx]
     y_train = y[train_idx]
@@ -1235,7 +1236,7 @@ def ppeprocessEigenCam(X, y, splits_path, resize_method = "BlackPadding", segmen
 
     X_test = np.expand_dims(X_test, axis=-1)
 
-    return X_test, y_test
+    return X_test, y_test, ids_test
 
 
 
@@ -1249,7 +1250,10 @@ def prep_test_data(raw_root, angle, split_json,
     Segue o mesmo procedimento de processamento do PipeLine de treinamento (train_models_cv)
     """
 
-    X, y, patient_ids = load_raw_images(os.path.join(raw_root, angle))
+    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
+    
+    X, y, patient_ids = load_raw_images(
+            os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
     with open(split_json, "r") as f:
         split = json.load(f)
     tr_idx, te_idx = np.array(split["train_idx"]), np.array(split["test_idx"])
@@ -1366,6 +1370,23 @@ def evaluate_model_cm(model_path,
     _plot_and_save_cm(cm, classes,
                       f"Confusion Matrix – {message}",
                       out_png = out_png)
+    
+
+    y_pred = (model.predict(X_test) > 0.5).astype(int).ravel()
+
+    acc = accuracy_score(y_test, y_pred)
+    prec, rec, f1, _ = precision_recall_fscore_support(
+                            y_test, y_pred, average="binary",
+                            zero_division=0)
+    
+    out_txt = os.path.join(output_path, f"resultado_{message}_{angle}.txt")
+
+    # salva métrica fold‐a‐fold
+    with open(out_txt, "a") as f:
+        f.write(f"Acc={acc:.4f}  "
+                f"Prec={prec:.4f}  "
+                f"Rec={rec:.4f}  "
+                f"F1={f1:.4f}\n")
 
     
     K.clear_session(); gc.collect()
@@ -1453,46 +1474,11 @@ from utils.transform_to_therm import *
 
 if __name__ == "__main__":
 
-
-
-    ##### Treinamento dos modelos com as imagens sem o marcador:
-
     SEMENTE = 13388
 
     tf.random.set_seed(SEMENTE)
 
-    train_model_cv(Vgg_16,
-                   raw_root="recovered_data",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="VGG16_AUG_UFF_BlackPadding_NO_PAD",
-                   resize_method="BlackPadding")
     
-    train_model_cv(ResNet34,
-                   raw_root="recovered_data",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="Resnet_AUG_UFF_BlackPadding_NO_PAD",
-                   resize_method="BlackPadding")
-    
-    train_model_cv(Vgg_16_pre_trained,
-                   raw_root="recovered_data",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="VGG_pre_treinada_AUG_UFF_BlackPadding_NO_PAD",
-                   resize_method="BlackPadding")
 
 
 
