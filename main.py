@@ -1478,118 +1478,172 @@ if __name__ == "__main__":
 
     tf.random.set_seed(SEMENTE)
 
-    MODEL_DIRS = {
-    "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
-    "resnet": "modelos/ResNet34"
-    }
-    CONF_BASE  = "Resultados_UFF_NO_PAD"     # pasta-raiz onde deseja guardar as figuras
-    CLASSES    = ("Healthy", "Sick")    # rótulos das classes
-    RAW_ROOT   = "recovered_data" # pasta com os exames originais
-    ANGLE      = "Frontal"              # visão utilizada nos treinos
+    ################### TODO: Código abaixo utilizado para comparar resultados gerados agora com os resultados antigos.
+    ####### TODO: Inicio da parte que estava descomentada antes de retreinar os modelos.
+    # MODEL_DIRS = {
+    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    # }
+    # CONF_BASE  = "RecuperandoResultados_2"     # pasta-raiz onde deseja guardar as figuras
+    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    # ANGLE      = "Frontal"              # visão utilizada nos treinos
 
-    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
-    X, y , patient_ids = load_raw_images(
-        f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
-    # --------------------------------------------------
-    # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
-    # --------------------------------------------------
-    experiments = [
-        {
-            "resize_method": "BlackPadding",
-            "message": "VGG16_AUG_UFF_BlackPadding_NO_PAD",
-            "segment": "none",
-            "segmenter_path": "",
-        },
-        {
-            "resize_method": "BlackPadding",
-            "message": "Resnet_AUG_UFF_BlackPadding_NO_PAD",
-            "segment": "none",
-            "segmenter_path": "",
-        } 
+    
+    # X, y , patient_ids = load_raw_images(
+    #     "filtered_raw_dataset/Frontal")
+    # # --------------------------------------------------
+    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # # --------------------------------------------------
+    # experiments = [
+    #     # ---------- VGG-16 -----------------------------
+    #     # BlackPadding
+    #     {
+    #         "resize_method": "BlackPadding",
+    #         "message": "Vgg_unet_AUG_CV_BlackPadding",
+    #         "segment": "unet",
+    #         "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
+    #     },
 
-    ]
+    #     {
+    #         "resize_method": "BlackPadding",
+    #         "message": "Vgg_yolon_AUG_CV_BlackPadding",
+    #         "segment": "yolo",
+    #         "segmenter_path": "runs/segment/train27/weights/best.pt", 
+    #     },
 
-    # --------------------------------------------------
-    # --- LOOP PRINCIPAL -------------------------------
-    # --------------------------------------------------
-    for exp in experiments:
+    #     {
+    #         "resize_method": "BlackPadding",
+    #         "message": "Vgg_AUG_CV_BlackPadding",
+    #         "segment": "none",
+    #         "segmenter_path": "",
+    #     },
 
-        rsz           = exp["resize_method"]
-        msg           = exp["message"]
-        segment       = exp["segment"]
-        segmenter_path= exp["segmenter_path"]
+    #     # Distorcido
 
-        # Identifica qual backbone para escolher a pasta correta
-        backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
-        model_dir    = MODEL_DIRS[backbone_key]
+    #     {
+    #         "resize_method": "Distorcido",
+    #         "message": "Vgg_unet_AUG_CV_Distorcido",
+    #         "segment": "unet",
+    #         "segmenter_path": "modelos/unet/Frontal_Unet_AUG_Distorcao.h5",
+    #     },
+    #     {
+    #         "resize_method": "Distorcido",
+    #         "message": "Vgg_yolon_AUG_CV_Distorcido",
+    #         "segment": "yolo",
+    #         "segmenter_path": "runs/segment/train28/weights/best.pt",
+    #     },
 
-        # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
-        out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
-        out_dir_cm.mkdir(parents=True, exist_ok=True)
+    #     {
+    #         "resize_method": "Distorcido",
+    #         "message": "Vgg_AUG_CV_Distorcido",
+    #         "segment": "none",
+    #         "segmenter_path": "",
+    #     },
 
-        for i in range(5):                                   # k-fold = 5
-            # ---- Caminhos de entrada ---------------------
-            model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-            split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
+    #     # GrayPadding
+    #     {
+    #         "resize_method": "GrayPadding",
+    #         "message": "Vgg_unet_AUG_CV_GrayPadding",
+    #         "segment": "unet",
+    #         "segmenter_path": "modelos/unet/Frontal_Unet_AUG_CV_GrayPadding.h5",
+    #     },
+    #     {
+    #         "resize_method": "GrayPadding",
+    #         "message": "Vgg_yolon_AUG_CV_GrayPadding",
+    #         "segment": "yolo",
+    #         "segmenter_path": "runs/segment/train29/weights/best.pt",
+    #     },
+    #     {
+    #         "resize_method": "GrayPadding",
+    #         "message": "Vgg_AUG_CV_GrayPadding",
+    #         "segment": "none",
+    #         "segmenter_path": "",
+    #     }
 
-            # ---- Nome para salvar arquivos/figura --------
-            cm_message = f"{msg}_F{i}"
+    # ]
 
-            # ---- Avaliação -------------------------------
-            y_pred = evaluate_model_cm(
-                model_path   = model_path_cm,
-                output_path  = str(out_dir_cm),
-                split_json   = split_path_cm,
-                raw_root     = RAW_ROOT,
-                message      = cm_message,
-                angle        = ANGLE,
-                classes      = CLASSES,
-                rgb          = False,
-                resize_method= rsz,
-                resize       = True,
-                resize_to    = 224,
-                segmenter= segment,
-                seg_model_path = segmenter_path
-            )
+    # # --------------------------------------------------
+    # # --- LOOP PRINCIPAL -------------------------------
+    # # --------------------------------------------------
+    # for exp in experiments:
 
-            split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
+    #     rsz           = exp["resize_method"]
+    #     msg           = exp["message"]
+    #     segment       = exp["segment"]
+    #     segmenter_path= exp["segmenter_path"]
 
-            X_test, y_test, ids_test = ppeprocessEigenCam(
-                X, y, patient_ids,
-                split_json_hm,
-                segment=segment,
-                segmenter_path=segmenter_path,
-                resize_method= rsz  # ou "BlackPadding", "GrayPadding"
-            )
+    #     # Identifica qual backbone para escolher a pasta correta
+    #     backbone_key = "resnet" if msg.startswith("ResNet") else "vgg"
+    #     model_dir    = MODEL_DIRS[backbone_key]
 
-            hits = y_pred == y_test 
-            miss = y_pred != y_test
+    #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+    #     variant = msg.split("_")[-1]
+    #     out_dir = Path(CONF_BASE) / variant
+    #     out_dir.mkdir(parents=True, exist_ok=True)
 
-            # ---------- EigenCAM ----------
-            model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-            out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
-            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+    #     for i in range(5):                                   # k-fold = 5
+    #         # ---- Caminhos de entrada ---------------------
+    #         model_path = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    #         split_path = f"splits/{msg}_Frontal_F{i}.json"
 
-            run_eigencam(
-                imgs       = X_test[hits],
-                labels     = y_test[hits],
-                ids        = ids_test[hits],
-                model_path = model_path_hm,
-                out_dir    = out_dir_hm,
-            )
+    #         # ---- Nome para salvar arquivos/figura --------
+    #         cm_message = f"{msg}_F{i}"
 
-            out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
-            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+    #         # ---- Avaliação -------------------------------
+    #         y_pred = evaluate_model_cm(
+    #             model_path   = model_path,
+    #             output_path  = str(out_dir),
+    #             split_json   = split_path,
+    #             raw_root     = RAW_ROOT,
+    #             message      = cm_message,
+    #             angle        = ANGLE,
+    #             classes      = CLASSES,
+    #             rgb          = False,
+    #             resize_method= rsz,
+    #             resize       = True,
+    #             resize_to    = 224,
+    #             segmenter= segment,
+    #             seg_model_path = segmenter_path
+    #         )
 
-            run_eigencam(
-                imgs       = X_test[miss],
-                labels     = y_test[miss],
-                ids        = ids_test[miss],
-                model_path = model_path_hm,
-                out_dir    = out_dir_hm,
-            )
+        ###### TODO: FINAL DESSA PARTE DESCOMENTADA
 
-            print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
+            # split_json = f"splits/{msg}_Frontal_F{i}.json"
+
+            # X_test, y_test = ppeprocessEigenCam(
+            #     X, y,
+            #     split_json,
+            #     segment=segment,
+            #     segmenter_path=segmenter_path,
+            #     resize_method= rsz  # ou "BlackPadding", "GrayPadding"
+            # )
+
+            # hits = y_pred == y_test 
+            # miss = y_pred != y_test
+
+            # # ---------- EigenCAM ----------
+            # model_path = f"modelos/Vgg_16/{msg}_Frontal_F{i}.h5"
+            # out_dir    = f"Resultados/Vgg_16/{rsz}/CAM_results/Acertos/{msg}_F{i}"
+            # Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+            # run_eigencam(
+            #     imgs       = X_test[hits],
+            #     labels     = y_test[hits],
+            #     model_path = model_path,
+            #     out_dir    = out_dir,
+            # )
+
+            # out_dir    = f"Resultados/Vgg_16/{rsz}/CAM_results/Erros/{msg}_F{i}"
+            # Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+            # run_eigencam(
+            #     imgs       = X_test[miss],
+            #     labels     = y_test[miss],
+            #     model_path = model_path,
+            #     out_dir    = out_dir,
+            # )
+
+            # print(f"[OK] {msg} | fold {i} → {out_dir}")
 
     
 
