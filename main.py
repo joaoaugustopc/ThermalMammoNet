@@ -271,7 +271,7 @@ def visualize_processed_images(images, labels, title, save_path=None):
 FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
 """
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
-                  resize=True, resize_method = "GrayPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
+                  resize=True, resize_method = "BlackPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
                   segmenter="none", seg_model_path="",channel_method ="MapaCalor"):
     
     # DEBUG: vendo o nome do modeloo
@@ -290,8 +290,6 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
         print(f"Carregando imagens: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
 
     print(f"Saudavéis: {np.sum(y==0)}, Doentes: {np.sum(y==1)}")
-        
-    
 
     
     with open("modelos/random_seed.txt", "a") as f:
@@ -670,112 +668,7 @@ def load_jpg_images(base_dir):
         )
     
     return np.array(images), np.array(labels)
-
-
-"""
-FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS COM IMAGEM DA UFPE
-"""
-def train_model_cv_ufpe(model, raw_root, message, angle="Frontal", k=5, 
-                   resize=True, resize_method="GrayPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
-                   segmenter="none", seg_model_path="", channel_method="MapaCalor"):
-    """
-    Pipeline principal para treinamento usando imagens .jpg originais com data augmentation.
-    """
-    print(f"Treinando modelo: {model.__name__}")
-    
-    # Carregar imagens .jpg
-    X, y = load_jpg_images(raw_root)
-    
-    with open("modelos/random_seed.txt", "a") as f:
-        f.write(f"{message}\nSEMENTE: {seed}\n")
-
-    for fold, (tr_idx, va_idx, te_idx) in enumerate(
-             make_tvt_splits_without_ids(X, y, k=5, val_size=0.25, seed=42)):
-        
-        def run_fold():
-            # Divisão dos dados
-            X_tr, y_tr = X[tr_idx], y[tr_idx]
-            X_val, y_val = X[va_idx], y[va_idx]
-            X_test, y_test = X[te_idx], y[te_idx]
-
-            # Aplicar data augmentation no conjunto de treino
-            if n_aug > 0:
-                print(f"Aplicando data augmentation no fold {fold}...")
-                X_tr, y_tr = apply_augmentation_and_expand_jpg_ufpe(
-                    X_tr, y_tr, num_augmented_copies=n_aug, seed=seed, resize=resize, target_size=resize_to
-                )
-                print(f"Data augmentation concluída. Novo shape do conjunto de treino: {X_tr.shape}")
-
-            # Pré-processamento para modelos pré-treinados
-            if model.__name__ == "Vgg_16_pre_trained":
-                X_tr = vgg_preprocess_input(X_tr)
-                X_val = vgg_preprocess_input(X_val)
-                X_test = vgg_preprocess_input(X_test)
-
-            # Treinamento do modelo
-            model_f = model().model
-            ckpt = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
-            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
-
-            log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
-            history = model_f.fit(
-                X_tr, y_tr,
-                epochs=500,
-                validation_data=(X_val, y_val),
-                batch_size=batch,
-                callbacks=[
-                    tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=50, restore_best_weights=True),
-                    tf.keras.callbacks.ModelCheckpoint(ckpt, monitor='val_loss', save_best_only=True)
-                ],
-                verbose=2, shuffle=True
-            )
-
-            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
-            os.makedirs(os.path.dirname(log_txt), exist_ok=True)
-
-
-            start_time = time.time()
-            
-            history = model_f.fit(X_tr, y_tr,
-                        epochs=500,
-                        validation_data=(X_val, y_val),
-                        batch_size=batch,
-                        callbacks=[
-                            tf.keras.callbacks.EarlyStopping(
-                                monitor='val_loss', patience=50,
-                                min_delta=0.01, restore_best_weights=True),
-                            tf.keras.callbacks.ModelCheckpoint(
-                                ckpt, monitor='val_loss',
-                                save_best_only=True)
-                        ],
-                        verbose=2, shuffle=True)
-            
-            end_time = time.time()
-
-            # ---------- avaliação ----------
-            y_pred = (model_f.predict(X_test) > 0.5).astype(int).ravel()
-
-            acc = accuracy_score(y_test, y_pred)
-            prec, rec, f1, _ = precision_recall_fscore_support(
-                                    y_test, y_pred, average="binary",
-                                    zero_division=0)
-
-            # salva métrica fold‐a‐fold
-            with open(log_txt, "a") as f:
-                f.write(f"Fold {fold:02d}  "
-                        f"Acc={acc:.4f}  "
-                        f"Prec={prec:.4f}  "
-                        f"Rec={rec:.4f}  "
-                        f"F1={f1:.4f}\n"
-                        f"Tempo de treinamento={end_time - start_time:.2f} s\n")
-                
-            plot_convergence(history, model.__name__, angle, fold, message)
-        
-
-
-        run_fold()
-# ------------------------------------ fim ufpe                
-                
+             
 def evaluate_segmentation(model_path, x_val, y_val):
     model = tf.keras.models.load_model(model_path)
     pred    = (model.predict(x_val) > 0.5).astype(np.uint8)
@@ -1274,7 +1167,7 @@ def save_split_to_png(images, labels, split_name, root="dataset_fold"):
 
 
 
-def ppeprocessEigenCam(X, y, splits_path, resize_method = "GrayPadding", segment = None, segmenter_path ="" ):
+def ppeprocessEigenCam(X, y, ids, splits_path, resize_method = "BlackPadding", segment = None, segmenter_path ="" ):
     
     
     with open (splits_path, "r") as f:
@@ -1288,6 +1181,7 @@ def ppeprocessEigenCam(X, y, splits_path, resize_method = "GrayPadding", segment
 
     X_test = X[test_idx]
     y_test = y[test_idx]
+    ids_test = ids[test_idx]
 
     X_train = X[train_idx]
     y_train = y[train_idx]
@@ -1347,7 +1241,7 @@ def ppeprocessEigenCam(X, y, splits_path, resize_method = "GrayPadding", segment
 
     X_test = np.expand_dims(X_test, axis=-1)
 
-    return X_test, y_test
+    return X_test, y_test, ids_test
 
 
 
@@ -1360,8 +1254,11 @@ def prep_test_data(raw_root, angle, split_json,
     Função para preparar as imagens de teste para gerar as matrizes de confusão.
     Segue o mesmo procedimento de processamento do PipeLine de treinamento (train_models_cv)
     """
+
+    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
     
-    X, y, patient_ids = load_raw_images_ufpe(os.path.join(raw_root, angle))
+    X, y, patient_ids = load_raw_images(
+            os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
     with open(split_json, "r") as f:
         split = json.load(f)
     tr_idx, te_idx = np.array(split["train_idx"]), np.array(split["test_idx"])
@@ -1437,7 +1334,7 @@ def evaluate_model_cm(model_path,
                       angle="Frontal",
                       resize=True,
                       resize_to=224,
-                      resize_method="GrayPadding",
+                      resize_method="BlackPadding",
                       segmenter="none",
                       seg_model_path="",
                       classes=("Healthy", "Sick"), rgb=False, channel_method="MapaCalor"):
@@ -1478,6 +1375,23 @@ def evaluate_model_cm(model_path,
     _plot_and_save_cm(cm, classes,
                       f"Confusion Matrix – {message}",
                       out_png = out_png)
+    
+
+    y_pred = (model.predict(X_test) > 0.5).astype(int).ravel()
+
+    acc = accuracy_score(y_test, y_pred)
+    prec, rec, f1, _ = precision_recall_fscore_support(
+                            y_test, y_pred, average="binary",
+                            zero_division=0)
+    
+    out_txt = os.path.join(output_path, f"resultado_{message}_{angle}.txt")
+
+    # salva métrica fold‐a‐fold
+    with open(out_txt, "a") as f:
+        f.write(f"Acc={acc:.4f}  "
+                f"Prec={prec:.4f}  "
+                f"Rec={rec:.4f}  "
+                f"F1={f1:.4f}\n")
 
     
     K.clear_session(); gc.collect()
@@ -1496,7 +1410,7 @@ def resize_imgs_masks_dataset(
     mask_dir: str,
     output_base: str,
     target: int = 640,
-    resize_method = "GrayPadding"
+    resize_method = "BlackPadding"
 ):
     """
     Redimensiona imagens (.jpg) e máscaras (.png) com tf_letterbox.
@@ -2033,5 +1947,5 @@ if __name__ == "__main__":
 
     
 
-
+    
     

@@ -134,3 +134,12 @@ uff_no_pad_255/
 uff_no_pad_norm/
 uff_no_pad_png/
 compare.txt
+
+recovered_data/
+processed_images_no_pad/
+processed_images/
+output_HeatMaps_cm/
+uff_no_pad/
+
+RecuperandoResultados_2/
+RecuperandoResultados/
