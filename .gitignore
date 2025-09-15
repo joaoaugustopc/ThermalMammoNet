@@ -126,3 +126,12 @@ ufpe_temp/
 ufpe_thermal/
 spam/
 yolo_nano_model/
+
+recovered_data/
+processed_images_no_pad/
+processed_images/
+output_HeatMaps_cm/
+uff_no_pad/
+
+RecuperandoResultados_2/
+RecuperandoResultados/
