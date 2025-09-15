@@ -1583,9 +1583,95 @@ def recuperar_img(input_folder, output_folder):
 
             out_name = os.path.splitext(fname)[0] + ".txt"
             np.savetxt(os.path.join(output_folder, out_name), recuperada, fmt="%.6f")
+            
+
+def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_modelo, mensagem="mensagem_comparacao:", output_dir="Comparacao"):
+    """
+    Compara dois modelos específicos de experimentos diferentes.
+    Considera a estrutura exata:
+    CAM_results/
+        Acertos/<modelo>/Health
+        Acertos/<modelo>/Sick
+        Erros/<modelo>/Health
+        Erros/<modelo>/Sick
+    """
+
+    def coletar_ids(exp_base, modelo):
+        resultado = {"Acertos": {"Health": set(), "Sick": set()},
+                     "Erros": {"Health": set(), "Sick": set()}}
+        for tipo in ["Acertos", "Erros"]:
+            for classe in ["Health", "Sick"]:
+                class_path = os.path.join(exp_base, tipo, modelo, classe)
+                print(class_path)
+                if os.path.exists(class_path):
+                    arquivos = [f for f in os.listdir(class_path) if f.endswith("_overlay.png")]
+                    resultado[tipo][classe].update([f.split("_overlay.png")[0] for f in arquivos])
+        return resultado
 
 
+    exp1 = coletar_ids(exp1_base, exp1_modelo)
+    exp2 = coletar_ids(exp2_base, exp2_modelo)
+
+    #pasta de saída
+    os.makedirs(output_dir, exist_ok=True)
+    relatorio_path = os.path.join(output_dir, "relatorio_comparacao.txt")
     
+    # caso queira escrever uma mensagem no título diferente
+    if mensagem == "mensagem_comparacao":
+        with open(relatorio_path, "w") as f:
+            f.write(f"Comparando o modelo {exp1_modelo} com {exp2_modelo}\n")
+    else:
+        with open(relatorio_path, "w") as f:
+            f.write(mensagem)
+
+    with open(relatorio_path, "a") as report:
+        for classe in ["Health", "Sick"]:
+            exp1_ac = exp1["Acertos"][classe]
+            exp1_er = exp1["Erros"][classe]
+            exp2_ac = exp2["Acertos"][classe]
+            exp2_er = exp2["Erros"][classe]
+
+            # Categorias
+            melhorou = exp1_er & exp2_ac      # Erro -> Acerto
+            piorou = exp1_ac & exp2_er         # Acerto -> Erro
+            manteve_ac = exp1_ac & exp2_ac
+            manteve_er = exp1_er & exp2_er
+
+            categorias = {
+                "Imagens que errava e agora acerta:": melhorou,
+                "Imagens que acertava e agora erra": piorou,
+                "Manteve_Acerto": manteve_ac,
+                "Manteve_Erro": manteve_er
+            }
+
+            #relatório
+            report.write(f"\n==== {classe} ====\n")
+            for nome, ids_set in categorias.items():
+                report.write(f"{nome}: {len(ids_set)} imagens\n")
+            report.write("\n")
+            for nome, ids_set in categorias.items():
+                report.write(f"--- {nome} ---\n" + "\n".join(sorted(ids_set)) + "\n\n")
+
+            #guarda as imagens
+            for nome, ids_set in categorias.items():
+                destino = os.path.join(output_dir, nome, classe)
+                os.makedirs(destino, exist_ok=True)
+                for img_id in ids_set:
+                    candidatos = [
+                        os.path.join(exp1_base, "Acertos", exp1_modelo, classe, img_id + "_overlay.png"),
+                        os.path.join(exp1_base, "Erros", exp1_modelo, classe, img_id + "_overlay.png"),
+                        os.path.join(exp2_base, "Acertos", exp2_modelo, classe, img_id + "_overlay.png"),
+                        os.path.join(exp2_base, "Erros", exp2_modelo, classe, img_id + "_overlay.png"),
+                    ]
+                    for src in candidatos:
+                        if os.path.exists(src):
+                            shutil.copy(src, os.path.join(destino, os.path.basename(src)))
+                            break
+
+    print(f"Comparação concluída!")
+    print(f"Relatório: {relatorio_path}")
+    print(f"Imagens copiadas para: {output_dir}")
+
 
 from utils.transform_to_therm import *
 import numpy as np
@@ -1602,6 +1688,16 @@ if __name__ == "__main__":
     # create_folder("modelos/Vgg_16")
 
     SEMENTE = 13388
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_UFF_NO_PAD/CAM_results",
+    #     exp1_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F0",
+    #     exp2_base="Resultados_Retreinamento/CAM_results",
+    #     exp2_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F0",
+    #     output_dir="Comparacao",
+    #     mensagem="Comparando fold 1 sem pad com pad"
+    # )
+
     
 
 
