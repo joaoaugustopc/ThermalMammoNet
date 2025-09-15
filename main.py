@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas
+from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe
 from utils.files_manipulation import move_files_within_folder, create_folder, move_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model, unet_model_retangular
@@ -266,6 +266,7 @@ def visualize_processed_images(images, labels, title, save_path=None):
     else:
         plt.show()
 
+
 """
 FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
 """
@@ -333,6 +334,19 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
 
                 
 
+            # augmenta & concatena
+            if n_aug > 0:
+                if raw_root == "ufpe_temp":
+                    X_tr, y_tr = augment_train_fold(X_tr, y_tr,         
+                                                    n_aug=n_aug, seed=seed,dataset='ufpe')
+                else:
+                    X_tr, y_tr = augment_train_fold(X_tr, y_tr,         
+                                                    n_aug=n_aug, seed=seed, dataset='uff')
+                    
+                with open("modelos/random_seed.txt", "a") as f:
+                    f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}\n")
+            
+
             if resize:
                 
                 X_tr = np.expand_dims(X_tr, axis=-1)
@@ -356,15 +370,6 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                 X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
                 X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
 
-
-            # augmenta & concatena
-            if n_aug > 0:
-                X_tr, y_tr = augment_train_fold(X_tr, y_tr,
-                                                    n_aug=n_aug, seed=seed)
-                
-                with open("modelos/random_seed.txt", "a") as f:
-                    f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}\n")
-            
 
             if segmenter != "none":
                 if segmenter == "unet":
@@ -1469,21 +1474,478 @@ def resize_imgs_masks_dataset(
         )
 
     print(f"\nConcluído!  Novas pastas:\n  imagens → {out_img}\n  máscaras → {out_mask}")
+    
+
+import numpy as np
+from PIL import Image
+
+
+def carregar_e_salvar_imagens(pasta_origem, pasta_destino):    
+    # Criar pasta de destino se não existir
+    os.makedirs(pasta_destino, exist_ok=True)
+    
+    # Listar todos os arquivos PNG
+    arquivos = [f for f in os.listdir(pasta_origem) if f.endswith('.png')]
+    
+    print(f"Encontrados {len(arquivos)} arquivos PNG")
+    
+    for i, arquivo in enumerate(arquivos):
+        caminho_origem = os.path.join(pasta_origem, arquivo)
+        nome_base = os.path.splitext(arquivo)[0]
+        caminho_destino = os.path.join(pasta_destino, f"{nome_base}.txt")
+        
+        # Carregar imagem
+        img = plt.imread(caminho_origem)
+        
+        # Converter para escala de cinza se necessário
+        img = img[:, :, 0]  # Pega apenas o primeiro canal
+        
+        # Salvar como arquivo de texto
+        np.savetxt(caminho_destino, img, fmt="%.2f", delimiter=" ")
+        
+    
+    print("Processamento concluído!")
+
+def normalizar_imagens_texto(pasta_origem, pasta_destino):
+    
+    # Criar pasta de destino
+    os.makedirs(pasta_destino, exist_ok=True)
+    
+    # Listar arquivos de texto
+    arquivos = [f for f in os.listdir(pasta_origem) if f.endswith('.txt')]
+    print(f"Processando {len(arquivos)} arquivos de texto...")
+    
+    for arquivo in arquivos:
+        # Carregar dados do arquivo texto
+        caminho_origem = os.path.join(pasta_origem, arquivo)
+        dados_imagem = np.loadtxt(caminho_origem)
+        
+        # Normalizar para [0, 1]
+        min_val = np.min(dados_imagem)
+        max_val = np.max(dados_imagem)
+        
+        if max_val > min_val:  # Evitar divisão por zero
+            dados_normalizados = (dados_imagem - min_val) / (max_val - min_val)
+        else:
+            dados_normalizados = dados_imagem  # Se todos valores forem iguais
+        
+        # Salvar arquivo normalizado
+        caminho_destino = os.path.join(pasta_destino, arquivo)
+        np.savetxt(caminho_destino, dados_normalizados, fmt='%.2f', delimiter=' ')
+    
+    print("Normalização concluída!")
+
+import os
+import json
+import numpy as np
+import cv2
+
+def transform_temp_img(input_folder, output_folder):
+    os.makedirs(output_folder, exist_ok=True)
+    limites = {}
+
+    for fname in os.listdir(input_folder):
+        if fname.endswith(".txt"):
+            path = os.path.join(input_folder, fname)
+            temperatura = np.loadtxt(path)
+
+            temp_min, temp_max = float(temperatura.min()), float(temperatura.max())
+            limites[fname] = {"min": temp_min, "max": temp_max}
+
+            norm = ((temperatura - temp_min) / (temp_max - temp_min) * 65535).astype(np.uint16)
+
+            out_name = os.path.splitext(fname)[0] + ".png"
+            cv2.imwrite(os.path.join(output_folder, out_name), norm)
+
+    # salvar os limites em JSON
+    with open(os.path.join(output_folder, "limites.json"), "w") as f:
+        json.dump(limites, f, indent=4)
+
+
+def recuperar_img(input_folder, output_folder):
+
+    os.makedirs(output_folder, exist_ok=True)
+
+    # carregar limites
+    with open(os.path.join(input_folder, "limites.json"), "r") as f:
+        limites = json.load(f)
+
+    for fname in os.listdir(input_folder):
+        if fname.endswith(".png") and fname != "limites.json":
+            path = os.path.join(input_folder, fname)
+            editada = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+
+            # nome do arquivo txt original
+            original_txt = os.path.splitext(fname)[0] + ".txt"
+            temp_min, temp_max = limites[original_txt]["min"], limites[original_txt]["max"]
+
+            recuperada = editada.astype(np.float32) / 65535.0 * (temp_max - temp_min) + temp_min
+
+            out_name = os.path.splitext(fname)[0] + ".txt"
+            np.savetxt(os.path.join(output_folder, out_name), recuperada, fmt="%.6f")
+
+
+    
 
 from utils.transform_to_therm import *
+import numpy as np
+import cv2
 
 if __name__ == "__main__":
+    # carregar_e_salvar_imagens("(SEM PAD) PreTrained_VGG16_AUG_JET_BlackPadding_Frontal_F0/sick", "uff_no_pad_255")
+    
+    # normalizar_imagens_texto("uff_no_pad/sick", "uff_no_pad_norm/sick")
+    
+    # imagem_cam = np.loadtxt("uff_no_pad_norm/sick/138_img_Static-Frontal_2013-09-06.txt")
+    # plt.imsave( "img_norm.png",imagem_cam, cmap = "gray")
+            
+    # create_folder("modelos/Vgg_16")
 
     SEMENTE = 13388
+    
 
-    tf.random.set_seed(SEMENTE)
 
+    # train_model_cv(Vgg_16,
+    #                raw_root="uff_no_pad",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="VGG16_UFF_NO_PAD",
+    #                resize_method="BlackPadding")
+    
+    # train_model_cv(ResNet34,
+    #                raw_root="uff_no_pad",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="Resnet_UFF_NO_PAD",
+    #                resize_method="BlackPadding")
+    
+    # train_model_cv(Vgg_16_pre_trained,
+    #                raw_root="uff_no_pad",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="VGG_pre_treinada_uff_no_pad",
+    #                resize_method="BlackPadding")
+
+
+    #### Resultados dos modelos VGG-16 pré-treinados ######
+    # MODEL_DIRS = {
+    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    # }
+    # CONF_BASE  = "Confusion_Matrix"     # pasta-raiz onde deseja guardar as figuras
+    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    # RAW_ROOT   = "ufpe_temp" # pasta com os exames originais
+    # ANGLE      = "Frontal"              # visão utilizada nos treinos
+
+    # # --------------------------------------------------
+    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # # --------------------------------------------------
+    # experiments = [
+    #     #"PreTrained_VGG16_yolo_AUG_JET_BlackPadding",
+    #      #"PreTrained_VGG16_yolo_AUG_3xChannels_BlackPadding",
+    #     "VGG16_AUG_UFPE_BlackPadding",
+    #     #"PreTrained_VGG16_AUG_3xchannel_BlackPadding",
+    #      #"PreTrained_VGG16_AUG_JET_BlackPadding",
+    #      #"PreTrained_VGG16_unet_AUG_3xChannels_BlackPadding",
+    #     #"PreTrained_VGG16_unet_AUG_JET_BlackPadding",
+    # ]
+
+    # # --------------------------------------------------
+    # # --- LOOP PRINCIPAL -------------------------------
+    # # --------------------------------------------------
+    # for msg in experiments:
+
+    #     # Identifica qual backbone para escolher a pasta correta
+    #     backbone_key = "resnet" if msg.startswith("ResNet") else "vgg"
+    #     model_dir    = MODEL_DIRS[backbone_key]
+
+    #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+    #     variant = msg.split("_")[-1]
+    #     out_dir = Path(CONF_BASE) / variant
+    #     out_dir.mkdir(parents=True, exist_ok=True)
+
+    #     for i in range(5):                                   # k-fold = 5
+    #         # ---- Caminhos de entrada ---------------------
+    #         model_path = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    #         split_path = f"splits/{msg}_Frontal_F{i}.json"
+
+    #         # ---- Nome para salvar arquivos/figura --------
+    #         cm_message = f"{msg}_F{i}"
+
+    #         # ---- Avaliação -------------------------------
+    #         evaluate_model_cm(
+    #             model_path   = model_path,
+    #             output_path  = str(out_dir),
+    #             split_json   = split_path,
+    #             raw_root     = RAW_ROOT,
+    #             message      = cm_message,
+    #             angle        = ANGLE,
+    #             classes      = CLASSES,
+    #             rgb          = False,
+    #             resize_method= "BlackPadding",
+    #             resize       = True,
+    #             resize_to    = 224
+    #         )
+
+    #         print(f"[OK] {cm_message}  →  {out_dir}")
+
+    # # train_model_cv("yolo",
+    # #                 raw_root="filtered_raw_dataset",
+    # #                 angle="Frontal",
+    # #                 k=5,                 
+    # #                 resize_to=224,
+    # #                 n_aug=2,             
+    # #                 batch=8,
+    # #                 seed= SEMENTE,
+    # #                 segmenter="none",
+    # #                 message="Yolos_Cls2",
+    # #                 seg_model_path="runs/segment/train22/weights/best.pt")
+    
+    
+
+
+    # input_folder = "imgs-ufpe-frontal/Frontal/sick" # Crie esta pasta e coloque suas 100 fotos aqui
+    # output_folder = "fotos_termicas_processadas"
+    
+    # if not os.path.exists(input_folder):
+    #     print(f"Erro: A pasta de entrada '{input_folder}' não existe.")
+    #     print("Por favor, crie-a e coloque suas imagens térmicas nela.")
+    #     exit()
+
+    # os.makedirs(output_folder, exist_ok=True)
+
+    # image_files = [f for f in os.listdir(input_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
+    
+    # if not image_files:
+    #     print(f"Nenhuma imagem encontrada na pasta '{input_folder}'.")
+    #     exit()
+
+    # print(f"Encontradas {len(image_files)} imagens para processar.")
+
+    # for i, filename in enumerate(image_files):
+    #     print(f"Processando imagem {i+1}/{len(image_files)}: {filename}")
+    #     input_path = os.path.join(input_folder, filename)
+    #     output_path = os.path.join(output_folder, f"thermal_{filename}")
+
+    #     min_temp, max_temp, colormap, main_image_region = find_color_bar_and_temps(input_path)
+
+    #     if min_temp is not None and max_temp is not None and colormap is not None and main_image_region is not None:
+    #         # Converte a região principal para tons de cinza para aplicar o colormap
+    #         main_image_gray = cv2.cvtColor(main_image_region, cv2.COLOR_BGR2GRAY)
+            
+    #         simulated_thermal_image = apply_thermal_colormap(main_image_gray, min_temp, max_temp, colormap)
+            
+    #         if simulated_thermal_image is not None:
+    #             cv2.imwrite(output_path, simulated_thermal_image)
+    #             print(f"  -> Imagem processada e salva como: {output_path}")
+    #         else:
+    #             print(f"  -> Falha ao aplicar colormap para {filename}.")
+    #     else:
+    #         print(f"  -> Falha na detecção da barra ou temperaturas para {filename}. Ignorando.")
+
+    # print("\nProcessamento concluído!")
+    
+
+    
+#     SEMENTE = 13388
+    
+#     tf.random.set_seed(SEMENTE)
+    
+    
+#     train_model_cv_ufpe(
+#     model=Vgg_16_pre_trained,
+#     raw_root="imgs-ufpe-frontal",
+#     message="PreTrained_VGG16_AUG_UFPE",
+#     angle="Frontal",
+#     k=5,
+#     resize=True,
+#     resize_method="GrayPadding",
+#     resize_to=224,
+#     n_aug=2,  # Número de cópias aumentadas
+#     batch=8,
+#     seed=42
+# )
+
+
+
+    # # train_model_cv(Vgg_16_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_VGG16_yolo_AUG_JET_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                segmenter="yolo",
+    # #                seg_model_path="runs/segment/train27/weights/best.pt")
+    
+    # # train_model_cv(Vgg_16_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_VGG16_yolo_AUG_3xChannels_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                segmenter="yolo",
+    # #                seg_model_path="runs/segment/train27/weights/best.pt",
+    # #                channel_method="3xchannel")
+
+
+    # train_model_cv(Vgg_16_pre_trained,
+    #                raw_root="imgs-ufpe-frontal",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_VGG16_AUG_UFPE",
+    #                resize_method="BlackPadding")
+    
+    # # train_model_cv(Vgg_16_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8, 
+    # #                seed= SEMENTE,  
+    # #                message="PreTrained_VGG16_AUG_JET_BlackPadding",
+    # #                resize_method="BlackPadding")
+    
+    # train_model_cv(Vgg_16_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_VGG16_unet_AUG_3xChannels_BlackPadding",
+    #                resize_method="BlackPadding",
+    #                segmenter="unet",
+    #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
+    #                channel_method="3xchannel")
+    
+    # train_model_cv(Vgg_16_pre_trained,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="PreTrained_VGG16_unet_AUG_JET_BlackPadding",
+    #                resize_method="BlackPadding",
+    #                segmenter="unet",
+    #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
+    
+    # # train_model_cv(resnet50_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_resnet50_yolo_AUG_JET_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                segmenter="yolo",
+    # #                seg_model_path="runs/segment/train27/weights/best.pt")
+    
+    # # train_model_cv(resnet50_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_resnet50_yolo_AUG_3xChannels_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                segmenter="yolo",
+    # #                seg_model_path="runs/segment/train27/weights/best.pt",
+    # #                channel_method="3xchannel")
+
+
+    # # train_model_cv(resnet50_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_resnet50_AUG_3xchannel_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                channel_method="3xchannel")
+    
+    # # train_model_cv(resnet50_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8, 
+    # #                seed= SEMENTE,  
+    # #                message="PreTrained_resnet50_AUG_JET_BlackPadding",
+    # #                resize_method="BlackPadding")
+    
+    # # train_model_cv(resnet50_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_resnet50_unet_AUG_3xChannels_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                segmenter="unet",
+    # #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5",
+    # #                channel_method="3xchannel")
+    
+    # # train_model_cv(resnet50_pre_trained,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="PreTrained_resnet50_unet_AUG_JET_BlackPadding",
+    # #                resize_method="BlackPadding",
+    # #                segmenter="unet",
+    # #                seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding.h5")
+
+
+    
 
 
 
     
 
 
+
+    
+
+    
 
     
     

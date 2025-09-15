@@ -126,6 +126,13 @@ ufpe_temp/
 ufpe_thermal/
 spam/
 yolo_nano_model/
+uff_no_pad/
+(SEM PAD) PreTrained_VGG16_AUG_JET_BlackPadding_Frontal_F0/
+imagens_transformadas_healthy_txt/
+imagens_transformadas_healthy/
+uff_no_pad_255/
+uff_no_pad_norm/
+uff_no_pad_png/
 
 recovered_data/
 processed_images_no_pad/

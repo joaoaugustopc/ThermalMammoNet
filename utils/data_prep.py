@@ -7,7 +7,7 @@ from sklearn.model_selection import train_test_split
 #Semente utilizada para criação dos datasets < USAR APENAS QUANDO FOR CRIAR UM NOVO DATASET
 #-> EXISTE UMA DEFINIÇÃO DE SEMENTE NO ARQUIVO MAIN.PY >
 """
-SEED = 36
+SEED = 36f
 np.random.seed(SEED)
 tf.random.set_seed(SEED)
 random.seed(SEED)
@@ -372,7 +372,69 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, seed =42,
     print("Shape das imagens aumentadas:", all_images.shape)
     
     
-    return all_images, all_labels    
+    return all_images, all_labels  
+
+#ajustada para aumentar o sick da ufpe
+def apply_augmentation_and_expand_ufpe(train, labels, num_augmented_copies, seed=42, resize=False, target_size=0):
+
+    print("Aumentando o dataset com cópias aumentadas...")
+    print("Shape original das imagens:", train.shape)
+    print("Shape original das máscaras:", labels.shape)
+
+    random.seed(seed)
+    train = np.expand_dims(train, axis=-1)
+    
+    all_images = []
+    all_labels = []
+    
+    # Adiciona as imagens e labels originais
+    for image, label in zip(train, labels):
+        all_images.append(image)
+        all_labels.append(label)
+    
+    transformations = [random_rotation, random_zoom, random_brightness]
+
+    # Aplica cada transformação separadamente
+    for _ in range(num_augmented_copies):
+        for image, label in zip(train, labels):
+            for transformation in transformations:
+                aug_seed = random.randint(0, 10000)
+                random.seed(aug_seed)
+                augmented_image = apply_transformation(image, transformation)
+                
+                # 50% de chance de flip
+                if random.random() > 0.5:
+                    random.seed(aug_seed)
+                    augmented_image = apply_transformation(augmented_image, random_flip)
+                
+                all_images.append(augmented_image)
+                all_labels.append(label)
+                
+                # Se for sick, faz o aumento mais uma vez
+                if label == 1:
+                    extra_seed = random.randint(0, 10000)
+                    random.seed(extra_seed)
+                    extra_augmented = apply_transformation(image, transformation)
+                    if random.random() > 0.5:
+                        random.seed(extra_seed)
+                        extra_augmented = apply_transformation(extra_augmented, random_flip)
+                    all_images.append(extra_augmented)
+                    all_labels.append(label)
+    
+    all_images = np.array([img for img in all_images])
+    all_labels = np.array(all_labels)
+    
+    if resize:
+        all_images = tf.image.resize_with_pad(all_images, target_size, target_size, method="bilinear")
+    
+    all_images = np.squeeze(all_images, axis=-1)
+        
+    print(all_images.shape)
+    print(all_labels[all_labels == 1].shape)
+    print(all_labels[all_labels == 0].shape)
+    print("Shape das imagens aumentadas:", all_images.shape)
+    
+    return all_images, all_labels
 
 """
 Params:
@@ -964,12 +1026,17 @@ def make_tvt_splits(imgs, labels, ids, k=5, val_size=0.25, seed=42):
 
 
 
-def augment_train_fold(x_train, y_train, n_aug=1, seed=42):
+def augment_train_fold(x_train, y_train, n_aug=1, seed=42, dataset="uff"):
     """
     Recebe dados de treino de UM fold e concatena n_aug versões aumentadas.
     """
-    aug_imgs, aug_labels = apply_augmentation_and_expand(
-                               x_train, y_train, n_aug,seed, resize=False)
+    
+    if dataset == "ufpe":
+        aug_imgs, aug_labels = apply_augmentation_and_expand_ufpe(    
+                                x_train, y_train, n_aug,seed, resize=False)
+    else:
+        aug_imgs, aug_labels = apply_augmentation_and_expand(    
+                                x_train, y_train, n_aug,seed, resize=False)
 
     return aug_imgs, aug_labels
 
