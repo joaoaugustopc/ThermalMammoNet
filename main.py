@@ -1478,130 +1478,119 @@ if __name__ == "__main__":
 
     tf.random.set_seed(SEMENTE)
 
+    MODEL_DIRS = {
+    "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    "resnet": "modelos/ResNet34"
+    }
+    CONF_BASE  = "Resultados_Retreinamento"     # pasta-raiz onde deseja guardar as figuras
+    CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    ANGLE      = "Frontal"              # visão utilizada nos treinos
 
-# 1. Treinar Yolo + Unet com BlackPadding 
+    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
+    X, y , patient_ids = load_raw_images(
+        f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
+    # --------------------------------------------------
+    # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # --------------------------------------------------
+    experiments = [
+        {
+            "resize_method": "BlackPadding",
+            "message": "Vgg_AUG_CV_BlackPadding_13_09_25",
+            "segment": "none",
+            "segmenter_path": "",
+        },
+        {
+            "resize_method": "BlackPadding",
+            "message": "ResNet34_AUG_CV_BlackPadding_13_09_25",
+            "segment": "none",
+            "segmenter_path": "",
+        } 
 
-    #Unet
-    # imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks_Black_Padding("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks", True, True, 224)
+    ]
 
-    # model = unet_model()
+    # --------------------------------------------------
+    # --- LOOP PRINCIPAL -------------------------------
+    # --------------------------------------------------
+    for exp in experiments:
 
-    # model.summary()
+        rsz           = exp["resize_method"]
+        msg           = exp["message"]
+        segment       = exp["segment"]
+        segmenter_path= exp["segmenter_path"]
 
-    # earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
+        # Identifica qual backbone para escolher a pasta correta
+        backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
+        model_dir    = MODEL_DIRS[backbone_key]
 
-    # checkpoint = tf.keras.callbacks.ModelCheckpoint("modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5", monitor='val_loss', verbose=1, save_best_only=True, 
-    #                                                         save_weights_only=False, mode='auto')
+        # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+        out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
+        out_dir_cm.mkdir(parents=True, exist_ok=True)
 
-    # history = model.fit(imgs_train, masks_train, epochs = 500, validation_data= (imgs_valid, masks_valid), callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
+        for i in range(5):                                   # k-fold = 5
+            # ---- Caminhos de entrada ---------------------
+            model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+            split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
 
-    # # Gráfico de perda de treinamento
-    # plt.figure(figsize=(10, 6))
-    # plt.plot(history.history['loss'], label='Training Loss')
-    # plt.title(f'Training Loss Convergence for unet - Frontal')
-    # plt.xlabel('Epochs')
-    # plt.ylabel('Loss')
-    # plt.legend()
-    # plt.grid(True)
-    # plt.savefig(f"unet_loss_convergence_Frontal_Unet_AUG_BlackPadding_13_09_25.png")
-    # plt.close()
+            # ---- Nome para salvar arquivos/figura --------
+            cm_message = f"{msg}_F{i}"
 
-    # plt.figure(figsize=(10, 6))
-    # plt.plot(history.history['val_loss'], label='Validation Loss')
-    # plt.title(f'Validation Loss Convergence for unet - Frontal')
-    # plt.xlabel('Epochs')
-    # plt.ylabel('Loss')
-    # plt.legend()
-    # plt.grid(True)
-    # plt.savefig(f"unet_val_loss_convergence_Frontal_Unet_AUG_BlackPadding_13_09_25.png")
-    # plt.close()
+            # ---- Avaliação -------------------------------
+            y_pred = evaluate_model_cm(
+                model_path   = model_path_cm,
+                output_path  = str(out_dir_cm),
+                split_json   = split_path_cm,
+                raw_root     = RAW_ROOT,
+                message      = cm_message,
+                angle        = ANGLE,
+                classes      = CLASSES,
+                rgb          = False,
+                resize_method= rsz,
+                resize       = True,
+                resize_to    = 224,
+                segmenter= segment,
+                seg_model_path = segmenter_path
+            )
 
-    # yolo
+            split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
 
-    # resize_imgs_masks_dataset(
-    #     img_dir="Termografias_Dataset_Segmentação/images",
-    #     mask_dir="Termografias_Dataset_Segmentação/masks",
-    #     output_base="Termografias_Dataset_Segmentação_224_BlackPadding",
-    #     target=224,          # mesmo tamanho definido no YAML da YOLO,
-    #     resize_method="BlackPadding"
-    # )
+            X_test, y_test, ids_test = ppeprocessEigenCam(
+                X, y, patient_ids,
+                split_json_hm,
+                segment=segment,
+                segmenter_path=segmenter_path,
+                resize_method= rsz  # ou "BlackPadding", "GrayPadding"
+            )
 
-    # yolo_data("Frontal", "Termografias_Dataset_Segmentação_224_BlackPadding/images", "Termografias_Dataset_Segmentação_224_BlackPadding/masks", "Yolo_dataset_BlackPadding", True)
+            hits = y_pred == y_test 
+            miss = y_pred != y_test
 
-    # ##Ultimo train30 Então: esse modelo vai ser salvo em train31
-    # train_yolo_seg("n", 500, "dataset_black.yaml", seed=SEMENTE)
+            # ---------- EigenCAM ----------
+            model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+            out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
+            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
 
+            run_eigencam(
+                imgs       = X_test[hits],
+                labels     = y_test[hits],
+                ids        = ids_test[hits],
+                model_path = model_path_hm,
+                out_dir    = out_dir_hm,
+            )
 
-    # train_model_cv(Vgg_16,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                segmenter="unet",
-    #                message="Vgg_unet_AUG_CV_BlackPadding_13_09_25", seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-    #                resize_method="BlackPadding")
-    
-    # train_model_cv(Vgg_16,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                segmenter= "yolo",
-    #                message="Vgg_yolon_AUG_CV_BlackPadding_13_09_25", seg_model_path="runs/segment/train31/weights/best.pt",
-    #                resize_method="BlackPadding")
+            out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
+            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
 
-    train_model_cv(Vgg_16,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="Vgg_AUG_CV_BlackPadding_13_09_25",
-                   resize_method="BlackPadding")
-    
+            run_eigencam(
+                imgs       = X_test[miss],
+                labels     = y_test[miss],
+                ids        = ids_test[miss],
+                model_path = model_path_hm,
+                out_dir    = out_dir_hm,
+            )
 
-    train_model_cv(ResNet34,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   segmenter="unet",
-                   message="ResNet34_unet_AUG_CV_BlackPadding_13_09_25", seg_model_path="modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-                   resize_method="BlackPadding")
-    
-    train_model_cv(ResNet34,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   segmenter= "yolo",
-                   message="ResNet34_yolon_AUG_CV_BlackPadding_13_09_25", seg_model_path="runs/segment/train31/weights/best.pt",
-                   resize_method="BlackPadding")
+            print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
 
-    train_model_cv(ResNet34,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="ResNet34_AUG_CV_BlackPadding_13_09_25",
-                   resize_method="BlackPadding")
 
 
 
