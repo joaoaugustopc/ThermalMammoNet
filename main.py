@@ -1617,20 +1617,31 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
     relatorio_path = os.path.join(output_dir, "relatorio_comparacao.txt")
     
     # caso queira escrever uma mensagem no título diferente
-    if mensagem == "mensagem_comparacao":
+    if mensagem == "mensagem_comparacao:":
         with open(relatorio_path, "w") as f:
             f.write(f"Comparando o modelo {exp1_modelo} com {exp2_modelo}\n")
     else:
         with open(relatorio_path, "w") as f:
             f.write(mensagem)
 
-    with open(relatorio_path, "a") as report:
+    with open(relatorio_path, "a") as report:            
         for classe in ["Health", "Sick"]:
+            
+            report.write(f"\n============================================= {classe} =============================================\n")
+
             exp1_ac = exp1["Acertos"][classe]
             exp1_er = exp1["Erros"][classe]
             exp2_ac = exp2["Acertos"][classe]
             exp2_er = exp2["Erros"][classe]
-
+            
+            report.write(f"\n---------------------------- Quantitativo total ----------------------------\n")
+            report.write(f"Total de imagens saudáveis/acertos (modelo 1): {len(exp1_ac)}\n" if classe=="Health" else f"Total de imagens doentes/acertos (modelo 1): {len(exp1_ac)}\n")
+            report.write(f"Total de imagens saudáveis/erros (modelo 1): {len(exp1_er)}\n" if classe=="Health" else f"Total de imagens doentes/erros (modelo 1): {len(exp1_er)}\n")
+            report.write(f"Total de imagens saudáveis/acertos (modelo 2): {len(exp2_ac)}\n" if classe=="Health" else f"Total de imagens doentes/acertos (modelo 2): {len(exp2_ac)}\n")
+            report.write(f"Total de imagens saudáveis/erros (modelo 2): {len(exp2_er)}\n" if classe=="Health" else f"Total de imagens doentes/erros (modelo 2): {len(exp2_er)}\n")
+            report.write(f"\n------------------------------------------------------------------------------\n")
+            
+            
             # Categorias
             melhorou = exp1_er & exp2_ac      # Erro -> Acerto
             piorou = exp1_ac & exp2_er         # Acerto -> Erro
@@ -1638,14 +1649,14 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
             manteve_er = exp1_er & exp2_er
 
             categorias = {
-                "Imagens que errava e agora acerta:": melhorou,
-                "Imagens que acertava e agora erra": piorou,
+                "Imagens que o modelo 1 errava e agora o modelo 2 acerta:": melhorou,
+                "Imagens que o modelo 1 acertava e agora o modelo 2 erra": piorou,
                 "Manteve_Acerto": manteve_ac,
                 "Manteve_Erro": manteve_er
             }
 
             #relatório
-            report.write(f"\n==== {classe} ====\n")
+            report.write(f"\n---------------------------- Análise ----------------------------\n")
             for nome, ids_set in categorias.items():
                 report.write(f"{nome}: {len(ids_set)} imagens\n")
             report.write("\n")
@@ -1688,15 +1699,92 @@ if __name__ == "__main__":
     # create_folder("modelos/Vgg_16")
 
     SEMENTE = 13388
+    # --==============================----==============================----==============================----==============================--
+    #                                                       COMPARANDO RESULTADOS
+    # --==============================----==============================----==============================----==============================--
     
-    # comparar_resultados_modelo_completo(
-    #     exp1_base="Resultados_UFF_NO_PAD/CAM_results",
-    #     exp1_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F0",
-    #     exp2_base="Resultados_Retreinamento/CAM_results",
-    #     exp2_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F0",
-    #     output_dir="Comparacao",
-    #     mensagem="Comparando fold 1 sem pad com pad"
-    # )
+    
+    
+    comparar_resultados_modelo_completo(
+        exp1_base="Resultados_Retreinamento/CAM_results",
+        exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F0",
+        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+        exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F0",
+        output_dir="ComparacaoResnetF0",
+    )
+
+    comparar_resultados_modelo_completo(
+        exp1_base="Resultados_Retreinamento/CAM_results",
+        exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F1",
+        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+        exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F1",
+        output_dir="ComparacaoResnetF1",
+    )
+    
+    comparar_resultados_modelo_completo(
+        exp1_base="Resultados_Retreinamento/CAM_results",
+        exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F2",
+        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+        exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F2",
+        output_dir="ComparacaoResnetF2",
+    )
+    
+    comparar_resultados_modelo_completo(
+        exp1_base="Resultados_Retreinamento/CAM_results",
+        exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F3",
+        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+        exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F3",
+        output_dir="ComparacaoResnetF3",
+    )
+    
+    comparar_resultados_modelo_completo(
+        exp1_base="Resultados_Retreinamento/CAM_results",
+        exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F4",
+        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+        exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F4",
+        output_dir="ComparacaoResnetF4",
+    )
+    
+    comparar_resultados_modelo_completo(
+        exp1_base="Resultados_Retreinamento/CAM_results",
+        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F0",
+        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+        exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F0",
+        output_dir="ComparacaoVggF0",
+    )
+    
+    comparar_resultados_modelo_completo(
+        exp1_base="Resultados_Retreinamento/CAM_results",
+        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F1",
+        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+        exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F1",
+        output_dir="ComparacaoVggF1",
+    )
+
+    comparar_resultados_modelo_completo(
+        exp1_base="Resultados_Retreinamento/CAM_results",
+        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F2",
+        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+        exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F2",
+        output_dir="ComparacaoVggF2",
+    )
+
+    comparar_resultados_modelo_completo(
+        exp1_base="Resultados_Retreinamento/CAM_results",
+        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F3",
+        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+        exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F3",
+        output_dir="ComparacaoVggF3",
+    )
+    
+    comparar_resultados_modelo_completo(
+        exp1_base="Resultados_Retreinamento/CAM_results",
+        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F4",
+        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+        exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F4",
+        output_dir="ComparacaoVggF4",
+    )
+
 
     
 
