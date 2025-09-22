@@ -1687,6 +1687,7 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
 from utils.transform_to_therm import *
 import numpy as np
 import cv2
+import sys
 
 if __name__ == "__main__":
     
@@ -1727,10 +1728,78 @@ if __name__ == "__main__":
                 print(f"[WARN] Não foi possível arredondar {src}: {e}", file=sys.stderr)
         return count
     
-    
-    
-    n = round_dataset(Path("recovered_data"), "recovered_data_rounded", glob_pattern="**/*.txt", decimals=2)
-    print(f"Arquivos arredondados/salvos: {n}")
+    def compute_image_diffs(raw_file: Path, rec_file: Path):
+        raw = load_matrix_txt(raw_file)
+        rec = load_matrix_txt(rec_file)
+        if raw.shape != rec.shape:
+            raise ValueError(f"Shapes diferentes: {raw_file} {raw.shape} vs {rec_file} {rec.shape}")
+        diff = rec - raw
+        mean_abs = float(np.mean(np.abs(diff)))
+        mean_signed = float(np.mean(diff))
+        rows, cols = raw.shape
+        return mean_abs, mean_signed, rows, cols
+
+    def compare_datasets(raw_root: Path, recovered_rounded_root: Path, glob_pattern: str = "**/*.txt", report_csv: Path | None = None):
+        raw_files = list(raw_root.glob(glob_pattern))
+        matched = 0
+        skipped = 0
+        rows = []
+        total_abs = 0.0
+        total_signed = 0.0
+
+        for raw_file in raw_files:
+            rel = raw_file.relative_to(raw_root)
+            rec_file = recovered_rounded_root / rel
+            if not rec_file.exists():
+                print(f"[WARN] Sem par em recovered para {rel}, pulando.", file=sys.stderr)
+                skipped += 1
+                continue
+            try:
+                mean_abs, mean_signed, r, c = compute_image_diffs(raw_file, rec_file)
+                rows.append({
+                    "rel_path": str(rel).replace('\\','/'),
+                    "rows": r,
+                    "cols": c,
+                    "mean_abs_diff": f"{mean_abs:.6f}",
+                    "mean_signed_diff": f"{mean_signed:.6f}",
+                })
+                total_abs += mean_abs
+                total_signed += mean_signed
+                matched += 1
+            except Exception as e:
+                print(f"[WARN] Erro comparando {rel}: {e}", file=sys.stderr)
+                skipped += 1
+
+        overall_abs = (total_abs / matched) if matched > 0 else float("nan")
+        overall_signed = (total_signed / matched) if matched > 0 else float("nan")
+
+        # Escreve CSV se pedido
+        if report_csv is not None:
+            report_csv.parent.mkdir(parents=True, exist_ok=True)
+            with open(report_csv, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=["rel_path", "rows", "cols", "mean_abs_diff", "mean_signed_diff"])
+                writer.writeheader()
+                writer.writerows(rows)
+                # linha de resumo
+                writer.writerow({
+                    "rel_path": "__OVERALL__",
+                    "rows": "",
+                    "cols": "",
+                    "mean_abs_diff": f"{overall_abs:.6f}",
+                    "mean_signed_diff": f"{overall_signed:.6f}",
+                })
+
+        # Também imprime um pequeno resumo
+        print(f"\nImagens comparadas: {matched} (ignoradas: {skipped})")
+        print(f"Média global |diff|: {overall_abs:.6f}")
+        print(f"Média global diff (assinado): {overall_signed:.6f}")
+        
+        
+        
+    compare_datasets(Path("filtered_raw_dataset"), Path("recovered_data_rounded"), glob_pattern="**/*.txt", report_csv=Path("diferencas_datasets.csv"))
+
+        # n = round_dataset(Path("recovered_data"), "recovered_data_rounded", glob_pattern="**/*.txt", decimals=2)
+        # print(f"Arquivos arredondados/salvos: {n}")
 
     
 
