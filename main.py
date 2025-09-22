@@ -1693,113 +1693,133 @@ if __name__ == "__main__":
     
     SEMENTE = 13388
 
-    def load_matrix_txt(txt_path: Path) -> np.ndarray:
-        try:
-            with open(txt_path, 'r') as f:
-                    delim = ';' if ';' in f.readline() else ' '
-                    f.seek(0)
-            return np.loadtxt(txt_path, delimiter=delim ,dtype=float)
-        except Exception as e:
-            raise RuntimeError(f"Falha ao ler {txt_path}: {e}")
+    tf.random.set_seed(SEMENTE)
 
-    def save_matrix_txt(txt_path: Path, mat: np.ndarray, decimals: int = 2):
-        # Gera um formato como "%.2f" automaticamente
-        fmt = f"%.{decimals}f"
-        # Garante diretório
-        txt_path.parent.mkdir(parents=True, exist_ok=True)
-        # newline='\n' para consistência
-        np.savetxt(txt_path, mat, fmt=fmt, newline="\n")
+    MODEL_DIRS = {
+    "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    "resnet": "modelos/ResNet34"
+    }
+    CONF_BASE  = "Resultados_Retreinamento_seg"     # pasta-raiz onde deseja guardar as figuras
+    CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    ANGLE      = "Frontal"              # visão utilizada nos treinos
 
-    def round_values_in_file(src: Path, dst: Path, decimals: int = 2):
-        mat = load_matrix_txt(src)
-        rounded = np.around(mat, decimals=decimals)
-        save_matrix_txt(dst, rounded, decimals=decimals)
+    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
+    X, y , patient_ids = load_raw_images(
+        f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
+    # --------------------------------------------------
+    # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # --------------------------------------------------
+    experiments = [
+        {
+            "resize_method": "BlackPadding",
+            "message": "Vgg_unet_AUG_CV_BlackPadding_13_09_25",
+            "segment": "unet",
+            "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
+        },
+        {
+            "resize_method": "BlackPadding",
+            "message": "Vgg_yolon_AUG_CV_BlackPadding_13_09_25",
+            "segment": "yolo",
+            "segmenter_path": "runs/segment/train31/weights/best.pt",
+        },
+        {
+            "resize_method": "BlackPadding",
+            "message": "ResNet34_unet_AUG_CV_BlackPadding_13_09_25",
+            "segment": "unet",
+            "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
+        },
+        {
+            "resize_method": "BlackPadding",
+            "message": "ResNet34_yolon_AUG_CV_BlackPadding_13_09_25",
+            "segment": "yolo",
+            "segmenter_path": "runs/segment/train31/weights/best.pt",
+        },
 
-    def round_dataset(recovered_root: Path, out_root: Path, glob_pattern: str = "**/*.txt", decimals: int = 2) -> int:
-        files = list(recovered_root.glob(glob_pattern))
-        count = 0
-        for src in files:
-            rel = src.relative_to(recovered_root)
-            dst = out_root / rel
-            try:
-                round_values_in_file(src, dst, decimals=decimals)
-                count += 1
-            except Exception as e:
-                print(f"[WARN] Não foi possível arredondar {src}: {e}", file=sys.stderr)
-        return count
-    
-    def compute_image_diffs(raw_file: Path, rec_file: Path):
-        raw = load_matrix_txt(raw_file)
-        rec = load_matrix_txt(rec_file)
-        if raw.shape != rec.shape:
-            raise ValueError(f"Shapes diferentes: {raw_file} {raw.shape} vs {rec_file} {rec.shape}")
-        diff = rec - raw
-        mean_abs = float(np.mean(np.abs(diff)))
-        mean_signed = float(np.mean(diff))
-        rows, cols = raw.shape
-        return mean_abs, mean_signed, rows, cols
 
-    def compare_datasets(raw_root: Path, recovered_rounded_root: Path, glob_pattern: str = "**/*.txt", report_csv: Path | None = None):
-        raw_files = list(raw_root.glob(glob_pattern))
-        matched = 0
-        skipped = 0
-        rows = []
-        total_abs = 0.0
-        total_signed = 0.0
+    ]
 
-        for raw_file in raw_files:
-            rel = raw_file.relative_to(raw_root)
-            rec_file = recovered_rounded_root / rel
-            if not rec_file.exists():
-                print(f"[WARN] Sem par em recovered para {rel}, pulando.", file=sys.stderr)
-                skipped += 1
-                continue
-            try:
-                mean_abs, mean_signed, r, c = compute_image_diffs(raw_file, rec_file)
-                rows.append({
-                    "rel_path": str(rel).replace('\\','/'),
-                    "rows": r,
-                    "cols": c,
-                    "mean_abs_diff": f"{mean_abs:.6f}",
-                    "mean_signed_diff": f"{mean_signed:.6f}",
-                })
-                total_abs += mean_abs
-                total_signed += mean_signed
-                matched += 1
-            except Exception as e:
-                print(f"[WARN] Erro comparando {rel}: {e}", file=sys.stderr)
-                skipped += 1
+    # --------------------------------------------------
+    # --- LOOP PRINCIPAL -------------------------------
+    # --------------------------------------------------
+    for exp in experiments:
 
-        overall_abs = (total_abs / matched) if matched > 0 else float("nan")
-        overall_signed = (total_signed / matched) if matched > 0 else float("nan")
+        rsz           = exp["resize_method"]
+        msg           = exp["message"]
+        segment       = exp["segment"]
+        segmenter_path= exp["segmenter_path"]
 
-        # Escreve CSV se pedido
-        if report_csv is not None:
-            report_csv.parent.mkdir(parents=True, exist_ok=True)
-            with open(report_csv, "w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=["rel_path", "rows", "cols", "mean_abs_diff", "mean_signed_diff"])
-                writer.writeheader()
-                writer.writerows(rows)
-                # linha de resumo
-                writer.writerow({
-                    "rel_path": "__OVERALL__",
-                    "rows": "",
-                    "cols": "",
-                    "mean_abs_diff": f"{overall_abs:.6f}",
-                    "mean_signed_diff": f"{overall_signed:.6f}",
-                })
+        # Identifica qual backbone para escolher a pasta correta
+        backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
+        model_dir    = MODEL_DIRS[backbone_key]
 
-        # Também imprime um pequeno resumo
-        print(f"\nImagens comparadas: {matched} (ignoradas: {skipped})")
-        print(f"Média global |diff|: {overall_abs:.6f}")
-        print(f"Média global diff (assinado): {overall_signed:.6f}")
-        
-        
-        
-    compare_datasets(Path("filtered_raw_dataset"), Path("recovered_data_rounded"), glob_pattern="**/*.txt", report_csv=Path("diferencas_datasets.csv"))
+        # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+        out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
+        out_dir_cm.mkdir(parents=True, exist_ok=True)
 
-        # n = round_dataset(Path("recovered_data"), "recovered_data_rounded", glob_pattern="**/*.txt", decimals=2)
-        # print(f"Arquivos arredondados/salvos: {n}")
+        for i in range(5):                                   # k-fold = 5
+            # ---- Caminhos de entrada ---------------------
+            model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+            split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
+
+            # ---- Nome para salvar arquivos/figura --------
+            cm_message = f"{msg}_F{i}"
+
+            # ---- Avaliação -------------------------------
+            y_pred = evaluate_model_cm(
+                model_path   = model_path_cm,
+                output_path  = str(out_dir_cm),
+                split_json   = split_path_cm,
+                raw_root     = RAW_ROOT,
+                message      = cm_message,
+                angle        = ANGLE,
+                classes      = CLASSES,
+                rgb          = False,
+                resize_method= rsz,
+                resize       = True,
+                resize_to    = 224,
+                segmenter= segment,
+                seg_model_path = segmenter_path
+            )
+
+            split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
+
+            X_test, y_test, ids_test = ppeprocessEigenCam(
+                X, y, patient_ids,
+                split_json_hm,
+                segment=segment,
+                segmenter_path=segmenter_path,
+                resize_method= rsz  # ou "BlackPadding", "GrayPadding"
+            )
+
+            hits = y_pred == y_test 
+            miss = y_pred != y_test
+
+            # ---------- EigenCAM ----------
+            model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+            out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
+            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+
+            run_eigencam(
+                imgs       = X_test[hits],
+                labels     = y_test[hits],
+                ids        = ids_test[hits],
+                model_path = model_path_hm,
+                out_dir    = out_dir_hm,
+            )
+
+            out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
+            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+
+            run_eigencam(
+                imgs       = X_test[miss],
+                labels     = y_test[miss],
+                ids        = ids_test[miss],
+                model_path = model_path_hm,
+                out_dir    = out_dir_hm,
+            )
+
+            print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
 
     
 
