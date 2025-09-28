@@ -1547,7 +1547,11 @@ def transform_temp_img(input_folder, output_folder):
     for fname in os.listdir(input_folder):
         if fname.endswith(".txt"):
             path = os.path.join(input_folder, fname)
-            temperatura = np.loadtxt(path)
+
+            with open(path, 'r') as f:
+                delim = ';' if ';' in f.readline() else ' '
+                f.seek(0)
+            temperatura = np.loadtxt(path, delimiter= delim)
 
             temp_min, temp_max = float(temperatura.min()), float(temperatura.max())
             limites[fname] = {"min": temp_min, "max": temp_max}
@@ -1690,136 +1694,102 @@ import cv2
 import sys
 
 if __name__ == "__main__":
-    
+
     SEMENTE = 13388
 
-    tf.random.set_seed(SEMENTE)
+    
+    # --==============================----==============================----==============================----==============================--
+    #                                                       COMPARANDO RESULTADOS
+    # --==============================----==============================----==============================----==============================--
+    
+    
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F0",
+    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
+    #     exp2_modelo="ResNet34_yolon_AUG_CV_BlackPadding_13_09_25_F0",
+    #     output_dir="ComparacaoResnet_full_yolon_F0",
+    # )
 
-    MODEL_DIRS = {
-    "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
-    "resnet": "modelos/ResNet34"
-    }
-    CONF_BASE  = "Resultados_Retreinamento_seg"     # pasta-raiz onde deseja guardar as figuras
-    CLASSES    = ("Healthy", "Sick")    # rótulos das classes
-    RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
-    ANGLE      = "Frontal"              # visão utilizada nos treinos
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F1",
+    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
+    #     exp2_modelo="ResNet34_yolon_AUG_CV_BlackPadding_13_09_25_F1",
+    #     output_dir="ComparacaoResnet_full_yolon_F1",
+    # )
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F2",
+    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
+    #     exp2_modelo="ResNet34_yolon_AUG_CV_BlackPadding_13_09_25_F2",
+    #     output_dir="ComparacaoResnet_full_yolon_F2",
+    # )
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F3",
+    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
+    #     exp2_modelo="ResNet34_yolon_AUG_CV_BlackPadding_13_09_25_F3",
+    #     output_dir="ComparacaoResnet_full_yolon_F3",
+    # )
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F4",
+    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
+    #     exp2_modelo="ResNet34_yolon_AUG_CV_BlackPadding_13_09_25_F4",
+    #     output_dir="ComparacaoResnet_full_yolon_F4",
+    # )
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F0",
+    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F0",
+    #     output_dir="ComparacaoVgg_full_yolon_F0",
+    # )
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F1",
+    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F1",
+    #     output_dir="ComparacaoVgg_full_yolon_F1",
+    # )
 
-    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
-    X, y , patient_ids = load_raw_images(
-        f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
-    # --------------------------------------------------
-    # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
-    # --------------------------------------------------
-    experiments = [
-        {
-            "resize_method": "BlackPadding",
-            "message": "Vgg_unet_AUG_CV_BlackPadding_13_09_25",
-            "segment": "unet",
-            "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-        },
-        {
-            "resize_method": "BlackPadding",
-            "message": "Vgg_yolon_AUG_CV_BlackPadding_13_09_25",
-            "segment": "yolo",
-            "segmenter_path": "runs/segment/train31/weights/best.pt",
-        },
-        {
-            "resize_method": "BlackPadding",
-            "message": "ResNet34_unet_AUG_CV_BlackPadding_13_09_25",
-            "segment": "unet",
-            "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-        },
-        {
-            "resize_method": "BlackPadding",
-            "message": "ResNet34_yolon_AUG_CV_BlackPadding_13_09_25",
-            "segment": "yolo",
-            "segmenter_path": "runs/segment/train31/weights/best.pt",
-        },
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F2",
+    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F2",
+    #     output_dir="ComparacaoVgg_full_yolon_F2",
+    # )
+
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F3",
+    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F3",
+    #     output_dir="ComparacaoVgg_full_yolon_F3",
+    # )
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F4",
+    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F4",
+    #     output_dir="ComparacaoVgg_full_yolon_F4",
+    # )
 
 
-    ]
 
-    # --------------------------------------------------
-    # --- LOOP PRINCIPAL -------------------------------
-    # --------------------------------------------------
-    for exp in experiments:
 
-        rsz           = exp["resize_method"]
-        msg           = exp["message"]
-        segment       = exp["segment"]
-        segmenter_path= exp["segmenter_path"]
-
-        # Identifica qual backbone para escolher a pasta correta
-        backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
-        model_dir    = MODEL_DIRS[backbone_key]
-
-        # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
-        out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
-        out_dir_cm.mkdir(parents=True, exist_ok=True)
-
-        for i in range(5):                                   # k-fold = 5
-            # ---- Caminhos de entrada ---------------------
-            model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-            split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
-
-            # ---- Nome para salvar arquivos/figura --------
-            cm_message = f"{msg}_F{i}"
-
-            # ---- Avaliação -------------------------------
-            y_pred = evaluate_model_cm(
-                model_path   = model_path_cm,
-                output_path  = str(out_dir_cm),
-                split_json   = split_path_cm,
-                raw_root     = RAW_ROOT,
-                message      = cm_message,
-                angle        = ANGLE,
-                classes      = CLASSES,
-                rgb          = False,
-                resize_method= rsz,
-                resize       = True,
-                resize_to    = 224,
-                segmenter= segment,
-                seg_model_path = segmenter_path
-            )
-
-            split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
-
-            X_test, y_test, ids_test = ppeprocessEigenCam(
-                X, y, patient_ids,
-                split_json_hm,
-                segment=segment,
-                segmenter_path=segmenter_path,
-                resize_method= rsz  # ou "BlackPadding", "GrayPadding"
-            )
-
-            hits = y_pred == y_test 
-            miss = y_pred != y_test
-
-            # ---------- EigenCAM ----------
-            model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-            out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
-            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-            run_eigencam(
-                imgs       = X_test[hits],
-                labels     = y_test[hits],
-                ids        = ids_test[hits],
-                model_path = model_path_hm,
-                out_dir    = out_dir_hm,
-            )
-
-            out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
-            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-            run_eigencam(
-                imgs       = X_test[miss],
-                labels     = y_test[miss],
-                ids        = ids_test[miss],
-                model_path = model_path_hm,
-                out_dir    = out_dir_hm,
-            )
-
-            print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
+    
+    
+    
 
     
 
