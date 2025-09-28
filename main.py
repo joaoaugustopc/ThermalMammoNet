@@ -1540,6 +1540,11 @@ import json
 import numpy as np
 import cv2
 
+import numpy as np
+import cv2
+import os
+import json
+
 def transform_temp_img(input_folder, output_folder):
     os.makedirs(output_folder, exist_ok=True)
     limites = {}
@@ -1547,7 +1552,22 @@ def transform_temp_img(input_folder, output_folder):
     for fname in os.listdir(input_folder):
         if fname.endswith(".txt"):
             path = os.path.join(input_folder, fname)
-            temperatura = np.loadtxt(path)
+            
+            # Identificar o delimitador lendo a primeira linha
+            with open(path, 'r') as f:
+                first_line = f.readline()
+                
+            delimiter = None
+            if ';' in first_line:
+                delimiter = ';'
+            elif ',' in first_line:
+                delimiter = ','
+            
+            # Carregar o arquivo com o delimitador identificado
+            if delimiter:
+                temperatura = np.loadtxt(path, delimiter=delimiter)
+            else:
+                temperatura = np.loadtxt(path)
 
             temp_min, temp_max = float(temperatura.min()), float(temperatura.max())
             limites[fname] = {"min": temp_min, "max": temp_max}
@@ -1562,28 +1582,101 @@ def transform_temp_img(input_folder, output_folder):
         json.dump(limites, f, indent=4)
 
 
-def recuperar_img(input_folder, output_folder):
+import os
+import json
+import cv2
+import numpy as np
 
+def recuperar_img(input_folder, output_folder):
+    """
+    Converte imagens PNG 16-bit de volta para matrizes de temperatura,
+    usando os limites salvos em limites.json.
+    O JSON deve ter as chaves no formato 'nome.txt'.
+    """
     os.makedirs(output_folder, exist_ok=True)
 
-    # carregar limites
-    with open(os.path.join(input_folder, "limites.json"), "r") as f:
+    json_path = os.path.join(input_folder, "limites.json")
+    if not os.path.isfile(json_path):
+        raise FileNotFoundError(f"JSON de limites não encontrado em: {json_path}")
+
+    with open(json_path, "r") as f:
         limites = json.load(f)
 
     for fname in os.listdir(input_folder):
-        if fname.endswith(".png") and fname != "limites.json":
+        if not fname.lower().endswith(".png"):
+            continue
+
+        path = os.path.join(input_folder, fname)
+        editada = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+
+        if editada is None:
+            print(f"Aviso: não foi possível ler {fname}. Pulando.")
+            continue
+
+        if editada.ndim == 3:
+            editada = editada[:, :, 0]
+
+        # gerar a chave do JSON adicionando '.txt' ao nome base
+        original_txt = os.path.splitext(fname)[0] + ".txt"
+
+        if original_txt not in limites:
+            print(f"AVISO: chave {original_txt} não encontrada. Chaves do JSON: {list(limites.keys())[:10]}")
+            continue
+
+
+        temp_min = limites[original_txt]["min"]
+        temp_max = limites[original_txt]["max"]
+
+        # converter de volta para escala de temperatura
+        recuperada = editada.astype(np.float32) / 65535.0 * (temp_max - temp_min) + temp_min
+
+        out_name = os.path.splitext(fname)[0] + ".txt"
+        np.savetxt(os.path.join(output_folder, out_name), recuperada, fmt="%.6f")
+        print(f"Arquivo recuperado: {out_name}")
+
+import os
+import json
+import numpy as np
+
+def gerar_limites_originais_txt(input_folder, output_json):
+    """
+    Gera limites (min e max) de cada arquivo TXT com matriz de temperatura
+    e salva em JSON. Cada chave do JSON será 'nome.txt'.
+    """
+    limites = {}
+
+    for fname in os.listdir(input_folder):
+        if fname.lower().endswith(".txt"):
             path = os.path.join(input_folder, fname)
-            editada = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-
-            # nome do arquivo txt original
-            original_txt = os.path.splitext(fname)[0] + ".txt"
-            temp_min, temp_max = limites[original_txt]["min"], limites[original_txt]["max"]
-
-            recuperada = editada.astype(np.float32) / 65535.0 * (temp_max - temp_min) + temp_min
-
-            out_name = os.path.splitext(fname)[0] + ".txt"
-            np.savetxt(os.path.join(output_folder, out_name), recuperada, fmt="%.6f")
             
+            # Tentar detectar delimitador
+            with open(path, 'r') as f:
+                first_line = f.readline()
+            delimiter = None
+            if ';' in first_line:
+                delimiter = ';'
+            elif ',' in first_line:
+                delimiter = ','
+
+            # Carregar o TXT
+            if delimiter:
+                temperatura = np.loadtxt(path, delimiter=delimiter)
+            else:
+                temperatura = np.loadtxt(path)
+
+            temp_min, temp_max = float(temperatura.min()), float(temperatura.max())
+            limites[fname] = {"min": temp_min, "max": temp_max}
+            print(f"Adicionado: {fname} -> min: {temp_min}, max: {temp_max}")
+
+    if not limites:
+        print("AVISO: Nenhum arquivo TXT foi processado! Verifique o diretório.")
+
+    os.makedirs(os.path.dirname(output_json), exist_ok=True)
+    with open(output_json, "w") as f:
+        json.dump(limites, f, indent=4)
+
+    print(f"Arquivo de limites salvo em: {output_json}")
+
 
 def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_modelo, mensagem="mensagem_comparacao:", output_dir="Comparacao"):
     """
@@ -1703,102 +1796,109 @@ if __name__ == "__main__":
     #                                                       COMPARANDO RESULTADOS
     # --==============================----==============================----==============================----==============================--
     
-    
-    
-    comparar_resultados_modelo_completo(
-        exp1_base="Resultados_Retreinamento/CAM_results",
-        exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F0",
-        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
-        exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F0",
-        output_dir="ComparacaoResnetF0",
-    )
+    # transform_temp_img("filtered_raw_dataset/Frontal/healthy", "healthy_seg_marcador")
+    # transform_temp_img("filtered_raw_dataset/Frontal/sick", "sick_seg_marcador")
 
-    comparar_resultados_modelo_completo(
-        exp1_base="Resultados_Retreinamento/CAM_results",
-        exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F1",
-        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
-        exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F1",
-        output_dir="ComparacaoResnetF1",
-    )
+    # gerar_limites_originais_txt("filtered_raw_dataset/Frontal/sick", "sick_seg_marcador/limites.json")
+    # gerar_limites_originais_txt("filtered_raw_dataset/Frontal/healthy", "healthy_seg_marcador/limites.json")
     
-    comparar_resultados_modelo_completo(
-        exp1_base="Resultados_Retreinamento/CAM_results",
-        exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F2",
-        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
-        exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F2",
-        output_dir="ComparacaoResnetF2",
-    )
+    # recuperar_img("sick_seg_marcador", "cortadas/Frontal/sick")
+    # recuperar_img("healthy_seg_marcador", "cortadas/Frontal/healthy")
     
-    comparar_resultados_modelo_completo(
-        exp1_base="Resultados_Retreinamento/CAM_results",
-        exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F3",
-        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
-        exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F3",
-        output_dir="ComparacaoResnetF3",
-    )
-    
-    comparar_resultados_modelo_completo(
-        exp1_base="Resultados_Retreinamento/CAM_results",
-        exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F4",
-        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
-        exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F4",
-        output_dir="ComparacaoResnetF4",
-    )
-    
-    comparar_resultados_modelo_completo(
-        exp1_base="Resultados_Retreinamento/CAM_results",
-        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F0",
-        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
-        exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F0",
-        output_dir="ComparacaoVggF0",
-    )
-    
-    comparar_resultados_modelo_completo(
-        exp1_base="Resultados_Retreinamento/CAM_results",
-        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F1",
-        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
-        exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F1",
-        output_dir="ComparacaoVggF1",
-    )
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F0",
+    #     exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+    #     exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F0",
+    #     output_dir="ComparacaoResnetF0",
+    # )
 
-    comparar_resultados_modelo_completo(
-        exp1_base="Resultados_Retreinamento/CAM_results",
-        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F2",
-        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
-        exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F2",
-        output_dir="ComparacaoVggF2",
-    )
-
-    comparar_resultados_modelo_completo(
-        exp1_base="Resultados_Retreinamento/CAM_results",
-        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F3",
-        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
-        exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F3",
-        output_dir="ComparacaoVggF3",
-    )
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F1",
+    #     exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+    #     exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F1",
+    #     output_dir="ComparacaoResnetF1",
+    # )
     
-    comparar_resultados_modelo_completo(
-        exp1_base="Resultados_Retreinamento/CAM_results",
-        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F4",
-        exp2_base="Resultados_UFF_NO_PAD/CAM_results",
-        exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F4",
-        output_dir="ComparacaoVggF4",
-    )
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F2",
+    #     exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+    #     exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F2",
+    #     output_dir="ComparacaoResnetF2",
+    # )
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F3",
+    #     exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+    #     exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F3",
+    #     output_dir="ComparacaoResnetF3",
+    # )
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F4",
+    #     exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+    #     exp2_modelo="Resnet_AUG_UFF_BlackPadding_NO_PAD_F4",
+    #     output_dir="ComparacaoResnetF4",
+    # )
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F0",
+    #     exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+    #     exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F0",
+    #     output_dir="ComparacaoVggF0",
+    # )
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F1",
+    #     exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+    #     exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F1",
+    #     output_dir="ComparacaoVggF1",
+    # )
+
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F2",
+    #     exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+    #     exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F2",
+    #     output_dir="ComparacaoVggF2",
+    # )
+
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F3",
+    #     exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+    #     exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F3",
+    #     output_dir="ComparacaoVggF3",
+    # )
+    
+    # comparar_resultados_modelo_completo(
+    #     exp1_base="Resultados_Retreinamento/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F4",
+    #     exp2_base="Resultados_UFF_NO_PAD/CAM_results",
+    #     exp2_modelo="VGG16_AUG_UFF_BlackPadding_NO_PAD_F4",
+    #     output_dir="ComparacaoVggF4",
+    # )
 
 
     
 
 
-    # train_model_cv(Vgg_16,
-    #                raw_root="uff_no_pad",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                message="VGG16_UFF_NO_PAD",
-    #                resize_method="BlackPadding")
+    train_model_cv(Vgg_16,
+                   raw_root="cortadas",
+                   angle="Frontal",
+                   k=5,                 
+                   resize_to=224,
+                   n_aug=2,             
+                   batch=8,
+                   seed= SEMENTE,
+                   message="VGG_CORTADAS_MARCADOR",
+                   resize_method="BlackPadding")
     
     # train_model_cv(ResNet34,
     #                raw_root="uff_no_pad",

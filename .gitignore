@@ -155,3 +155,10 @@ ComparacaoVggF1/
 ComparacaoVggF2/
 ComparacaoVggF3/
 ComparacaoVggF4/
+
+comparacoes/
+images_cortadas/
+sick_seg_marcador/
+healthy_seg_marcador/
+cortadas/
+imagens_cortadas/
