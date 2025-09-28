@@ -162,3 +162,12 @@ sick_seg_marcador/
 healthy_seg_marcador/
 cortadas/
 imagens_cortadas/
+
+Resultados_UFF_NO_PAD/
+Resultados_Retreinamento/
+recovered_data_rounded/
+
+Comparacao*
+dataset_png/
+marcadores_segmentados/
+Termografias_Dataset_Segmentação_Marcadores/
