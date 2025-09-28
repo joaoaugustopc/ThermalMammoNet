@@ -1697,92 +1697,91 @@ if __name__ == "__main__":
 
     SEMENTE = 13388
 
+    ### transformando filtered_raw_dataset para criar as mascaras para os marcadores
     
-    # --==============================----==============================----==============================----==============================--
-    #                                                       COMPARANDO RESULTADOS
-    # --==============================----==============================----==============================----==============================--
+    # transform_temp_img("filtered_raw_dataset/Frontal/healthy", "dataset_png/Frontal/healthy")
+    # transform_temp_img("filtered_raw_dataset/Frontal/sick", "dataset_png/Frontal/sick")
+
+
+
+    ## Teste das mascaras dos marcadores
+
+    files = os.listdir("Termografias_Dataset_Segmentação_Marcadores/images")
     
-    
-    
-    # comparar_resultados_modelo_completo(
-    #     exp1_base="Resultados_Retreinamento/CAM_results",
-    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F0",
-    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
-    #     exp2_modelo="ResNet34_yolon_AUG_CV_BlackPadding_13_09_25_F0",
-    #     output_dir="ComparacaoResnet_full_yolon_F0",
+
+    for file in files:
+
+        path1 = os.path.join("Termografias_Dataset_Segmentação_Marcadores/images", file)
+        path2 = os.path.join("Termografias_Dataset_Segmentação_Marcadores/masks", file)
+        img = cv2.imread(path1, cv2.IMREAD_UNCHANGED)
+        mask = cv2.imread(path2, cv2.IMREAD_UNCHANGED)
+
+
+        mask = (mask > 0).astype(np.uint8)
+
+        img_seg = img * mask
+
+        os.makedirs("marcadores_segmentados", exist_ok= True)
+
+        cv2.imwrite(f"marcadores_segmentados/{file}", img_seg)
+
+
+
+
+
+
+    ########## O código abaixo é apenas para referencia de como treinar os modelos de segmentação dos marcadores e oque precisa ajustar
+    ##### Para isso
+
+    #Unet
+    # imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks_Black_Padding("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks", True, True, 224)
+
+    # model = unet_model()
+
+    # model.summary()
+
+    # earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
+
+    # checkpoint = tf.keras.callbacks.ModelCheckpoint("modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5", monitor='val_loss', verbose=1, save_best_only=True, 
+    #                                                         save_weights_only=False, mode='auto')
+
+    # history = model.fit(imgs_train, masks_train, epochs = 500, validation_data= (imgs_valid, masks_valid), callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
+
+    # # Gráfico de perda de treinamento
+    # plt.figure(figsize=(10, 6))
+    # plt.plot(history.history['loss'], label='Training Loss')
+    # plt.title(f'Training Loss Convergence for unet - Frontal')
+    # plt.xlabel('Epochs')
+    # plt.ylabel('Loss')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.savefig(f"unet_loss_convergence_Frontal_Unet_AUG_BlackPadding_13_09_25.png")
+    # plt.close()
+
+    # plt.figure(figsize=(10, 6))
+    # plt.plot(history.history['val_loss'], label='Validation Loss')
+    # plt.title(f'Validation Loss Convergence for unet - Frontal')
+    # plt.xlabel('Epochs')
+    # plt.ylabel('Loss')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.savefig(f"unet_val_loss_convergence_Frontal_Unet_AUG_BlackPadding_13_09_25.png")
+    # plt.close()
+
+    # yolo
+
+    # resize_imgs_masks_dataset(
+    #     img_dir="Termografias_Dataset_Segmentação/images",
+    #     mask_dir="Termografias_Dataset_Segmentação/masks",
+    #     output_base="Termografias_Dataset_Segmentação_224_BlackPadding",
+    #     target=224,          # mesmo tamanho definido no YAML da YOLO,
+    #     resize_method="BlackPadding"
     # )
 
-    # comparar_resultados_modelo_completo(
-    #     exp1_base="Resultados_Retreinamento/CAM_results",
-    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F1",
-    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
-    #     exp2_modelo="ResNet34_yolon_AUG_CV_BlackPadding_13_09_25_F1",
-    #     output_dir="ComparacaoResnet_full_yolon_F1",
-    # )
-    
-    # comparar_resultados_modelo_completo(
-    #     exp1_base="Resultados_Retreinamento/CAM_results",
-    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F2",
-    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
-    #     exp2_modelo="ResNet34_yolon_AUG_CV_BlackPadding_13_09_25_F2",
-    #     output_dir="ComparacaoResnet_full_yolon_F2",
-    # )
-    
-    # comparar_resultados_modelo_completo(
-    #     exp1_base="Resultados_Retreinamento/CAM_results",
-    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F3",
-    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
-    #     exp2_modelo="ResNet34_yolon_AUG_CV_BlackPadding_13_09_25_F3",
-    #     output_dir="ComparacaoResnet_full_yolon_F3",
-    # )
-    
-    # comparar_resultados_modelo_completo(
-    #     exp1_base="Resultados_Retreinamento/CAM_results",
-    #     exp1_modelo="ResNet34_AUG_CV_BlackPadding_13_09_25_F4",
-    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
-    #     exp2_modelo="ResNet34_yolon_AUG_CV_BlackPadding_13_09_25_F4",
-    #     output_dir="ComparacaoResnet_full_yolon_F4",
-    # )
-    
-    # comparar_resultados_modelo_completo(
-    #     exp1_base="Resultados_Retreinamento/CAM_results",
-    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F0",
-    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F0",
-    #     output_dir="ComparacaoVgg_full_yolon_F0",
-    # )
-    
-    # comparar_resultados_modelo_completo(
-    #     exp1_base="Resultados_Retreinamento/CAM_results",
-    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F1",
-    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F1",
-    #     output_dir="ComparacaoVgg_full_yolon_F1",
-    # )
+    # yolo_data("Frontal", "Termografias_Dataset_Segmentação_224_BlackPadding/images", "Termografias_Dataset_Segmentação_224_BlackPadding/masks", "Yolo_dataset_BlackPadding", True)
 
-    # comparar_resultados_modelo_completo(
-    #     exp1_base="Resultados_Retreinamento/CAM_results",
-    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F2",
-    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F2",
-    #     output_dir="ComparacaoVgg_full_yolon_F2",
-    # )
-
-    # comparar_resultados_modelo_completo(
-    #     exp1_base="Resultados_Retreinamento/CAM_results",
-    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F3",
-    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F3",
-    #     output_dir="ComparacaoVgg_full_yolon_F3",
-    # )
-    
-    # comparar_resultados_modelo_completo(
-    #     exp1_base="Resultados_Retreinamento/CAM_results",
-    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F4",
-    #     exp2_base="Resultados_Retreinamento_seg/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F4",
-    #     output_dir="ComparacaoVgg_full_yolon_F4",
-    # )
+    # ##Ultimo train30 Então: esse modelo vai ser salvo em train31
+    # train_yolo_seg("n", 500, "dataset_black.yaml", seed=SEMENTE)
 
 
 
