@@ -1474,8 +1474,8 @@ def resize_imgs_masks_dataset(
         )
 
     print(f"\nConcluído!  Novas pastas:\n  imagens → {out_img}\n  máscaras → {out_mask}")
-    
 
+    
 import numpy as np
 from PIL import Image
 
@@ -1535,10 +1535,7 @@ def normalizar_imagens_texto(pasta_origem, pasta_destino):
     
     print("Normalização concluída!")
 
-import os
-import json
-import numpy as np
-import cv2
+
 
 import numpy as np
 import cv2
@@ -1765,6 +1762,53 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
     print(f"Relatório: {relatorio_path}")
     print(f"Imagens copiadas para: {output_dir}")
 
+import os
+import cv2
+
+def unir_mascaras(pasta_breast, pasta_marker, pasta_saida):
+    """
+    Une máscaras de duas pastas diferentes (mesmo nome de arquivo)
+    e salva a união em uma pasta final.
+
+    Args:
+        pasta_breast (str): Caminho da pasta com as máscaras dos seios.
+        pasta_marker (str): Caminho da pasta com as máscaras dos marcadores.
+        pasta_saida (str): Caminho da pasta onde serão salvas as máscaras unidas.
+    """
+    os.makedirs(pasta_saida, exist_ok=True)
+
+    # Listar arquivos da pasta de seios
+    for fname in os.listdir(pasta_breast):
+        if not fname.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")):
+            continue  # pular arquivos que não são imagens
+
+        caminho_breast = os.path.join(pasta_breast, fname)
+        caminho_marker = os.path.join(pasta_marker, fname)
+
+        if not os.path.exists(caminho_marker):
+            print(f"Aviso: não encontrei {fname} em {pasta_marker}, pulando...")
+            continue
+
+        # Carregar em escala de cinza
+        mask_breast = cv2.imread(caminho_breast, 0)
+        mask_marker = cv2.imread(caminho_marker, 0)
+
+        if mask_breast is None or mask_marker is None:
+            print(f"Aviso: não consegui carregar {fname}, pulando...")
+            continue
+
+        # Combinar (união)
+        combined = cv2.bitwise_or(mask_breast, mask_marker)
+
+        # Binarizar para garantir 0/255
+        _, combined = cv2.threshold(combined, 127, 255, cv2.THRESH_BINARY)
+
+        # Salvar na pasta de saída
+        cv2.imwrite(os.path.join(pasta_saida, fname), combined)
+
+    print(f"Máscaras unidas foram salvas em: {pasta_saida}")
+
+
 
 from utils.transform_to_therm import *
 import numpy as np
@@ -1784,24 +1828,24 @@ if __name__ == "__main__":
 
     ## Teste das mascaras dos marcadores
 
-    files = os.listdir("Termografias_Dataset_Segmentação_Marcadores/images")
+    # files = os.listdir("Termografias_Dataset_Segmentação_Marcadores/images")
     
 
-    for file in files:
+    # for file in files:
 
-        path1 = os.path.join("Termografias_Dataset_Segmentação_Marcadores/images", file)
-        path2 = os.path.join("Termografias_Dataset_Segmentação_Marcadores/masks", file)
-        img = cv2.imread(path1, cv2.IMREAD_UNCHANGED)
-        mask = cv2.imread(path2, cv2.IMREAD_UNCHANGED)
+    #     path1 = os.path.join("Termografias_Dataset_Segmentação_Marcadores/images", file)
+    #     path2 = os.path.join("Termografias_Dataset_Segmentação_Marcadores/masks", file)
+    #     img = cv2.imread(path1, cv2.IMREAD_UNCHANGED)
+    #     mask = cv2.imread(path2, cv2.IMREAD_UNCHANGED)
 
 
-        mask = (mask > 0).astype(np.uint8)
+    #     mask = (mask > 0).astype(np.uint8)
 
-        img_seg = img * mask
+    #     img_seg = img * mask
 
-        os.makedirs("marcadores_segmentados", exist_ok= True)
+    #     os.makedirs("marcadores_segmentados", exist_ok= True)
 
-        cv2.imwrite(f"marcadores_segmentados/{file}", img_seg)
+    #     cv2.imwrite(f"marcadores_segmentados/{file}", img_seg)
 
 
 
@@ -1856,10 +1900,38 @@ if __name__ == "__main__":
     #     resize_method="BlackPadding"
     # )
 
-    # yolo_data("Frontal", "Termografias_Dataset_Segmentação_224_BlackPadding/images", "Termografias_Dataset_Segmentação_224_BlackPadding/masks", "Yolo_dataset_BlackPadding", True)
+    # yolo_data("Frontal", "Termografias_Dataset_Segmentação_Marcadores/images", "Termografias_Dataset_Segmentação_Marcadores/masks", "Yolo_dataset_marcadores", True)
 
     # ##Ultimo train30 Então: esse modelo vai ser salvo em train31
     # train_yolo_seg("n", 500, "dataset_black.yaml", seed=SEMENTE)
+    
+    
+    #------------------ yolo --------------
+    
+    # juntando as mascaras
+    unir_mascaras(
+        "Termografias_Dataset_Segmentação/masks",
+        "Termografias_Dataset_Segmentação_Marcadores/masks",
+        "Termografias_Dataset_Segmentação_Unidas/masks"
+    )
+
+    delete_folder("Yolo_dataset_marcadores")
+
+    resize_imgs_masks_dataset_png(
+        img_dir="Termografias_Dataset_Segmentação_Marcadores/images",
+        mask_dir="Termografias_Dataset_Segmentação_Unidas/masks",
+        output_base="Yolo_dataset_marcadores",
+        target=224,          # mesmo tamanho definido no YAML da YOLO,
+        resize_method="BlackPadding"
+    )
+
+
+    yolo_data("Frontal", "Termografias_Dataset_Segmentação_Marcadores/images", "Termografias_Dataset_Segmentação_Unidas/masks", "Yolo_dataset_marcadores", True)
+
+    # # ##Ultimo train30 Então: esse modelo vai ser salvo em train31
+    # train_yolo_seg("n", 500, "dataset_black.yaml", seed=SEMENTE)
+    
+
 
 
 
