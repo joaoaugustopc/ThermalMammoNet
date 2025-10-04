@@ -605,6 +605,29 @@ def criar_pastas_yolo(Directory = ""):
         os.makedirs(pasta, exist_ok=True)
 
 
+def criar_pastas_yolo_2_classes(Directory = ""):
+    """
+    Cria a estrutura de diretórios para armazenar as imagens e máscaras do YOLO.
+    """
+    pastas = [
+        f"{Directory}",
+        f"{Directory}/images",
+        f"{Directory}/images/train",
+        f"{Directory}/images/val",
+        f"{Directory}/masks_breast",
+        f"{Directory}/masks_breast/train",
+        f"{Directory}/masks_breast/val",
+        f"{Directory}/masks_marker",
+        f"{Directory}/masks_marker/train",
+        f"{Directory}/masks_marker/val",
+        f"{Directory}/labels/train",
+        f"{Directory}/labels/val"
+    ]
+    
+    for pasta in pastas:
+        os.makedirs(pasta, exist_ok=True)
+
+
 def mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid, Directory = ""):
     """
     Move imagens e máscaras para os diretórios adequados dentro de Yolo_dataset.
@@ -619,6 +642,30 @@ def mover_arquivos_yolo(imgs_train, imgs_valid, masks_train, masks_valid, Direct
         shutil.copy(mask, f"{Directory}/masks/train")
     for mask in masks_valid:
         shutil.copy(mask, f"{Directory}/masks/val")
+
+def mover_arquivos_yolo_2_classes(imgs_train, imgs_val,
+                        mb_train,  mb_val,     # breast masks
+                        mm_train,  mm_val,     # marker masks
+                        directory=""):
+    """
+    Move imagens e máscaras para os diretórios adequados dentro de Yolo_dataset.
+    """
+    criar_pastas_yolo_2_classes(directory)
+
+    for img in imgs_train:
+        shutil.copy(img, f"{directory}/images/train")
+    for img in imgs_val:
+        shutil.copy(img, f"{directory}/images/val")
+
+    for mask in mb_train:
+        shutil.copy(mask, f"{directory}/masks_breast/train")
+    for mask in mb_val:
+        shutil.copy(mask, f"{directory}/masks_breast/val")
+
+    for mask in mm_train:
+        shutil.copy(mask, f"{directory}/masks_marker/train")
+    for mask in mm_val:
+        shutil.copy(mask, f"{directory}/masks_marker/val")
 
 
 def yolo_data(angulo, img_path, mask_path, outputDir="", augment=False):
@@ -649,7 +696,43 @@ def yolo_data(angulo, img_path, mask_path, outputDir="", augment=False):
         output_dir=f"{outputDir}/labels/val"
     )
 
+def yolo_data_2_classes(angulo, img_path, mask_breast_path, mask_marker_path, outputDir="", augment=False):
+    """
+    Prepara os dados de imagens e máscaras e move para a estrutura YOLO.
+    """
+    data_imgs, data_breast_masks = filtrar_imgs_masks(angulo, img_path, mask_breast_path)
+    _, data_marker_masks = filtrar_imgs_masks(angulo, img_path, mask_marker_path)
 
+
+    idx_train, idx_val = train_test_split(
+    range(len(data_imgs)), test_size=0.2, random_state=42, shuffle=True)
+
+    imgs_train = [data_imgs[i]            for i in idx_train]
+    imgs_val   = [data_imgs[i]            for i in idx_val]
+    mb_train   = [data_breast_masks[i]    for i in idx_train]
+    mb_val     = [data_breast_masks[i]    for i in idx_val]
+    mm_train   = [data_marker_masks[i]    for i in idx_train]
+    mm_val     = [data_marker_masks[i]    for i in idx_val]
+
+    mover_arquivos_yolo_2_classes(imgs_train, imgs_val, mb_train, mb_val, mm_train, mm_val, outputDir)
+
+    if augment:
+
+        augment_and_save_2_classes(
+            imgs_train, mb_train, mm_train, outputDir, num_augmented_copies=2 )
+
+
+    for split in ("train", "val"):
+        masks_pair_to_polygons(
+            breast_dir = f"{outputDir}/masks_breast/{split}",
+            marker_dir = f"{outputDir}/masks_marker/{split}",
+            output_dir = f"{outputDir}/labels/{split}",
+            cls_breast=0,
+            cls_marker=1
+        )
+    
+
+    
 
 
 
@@ -712,6 +795,69 @@ def masks_to_polygons(input_dir, output_dir):
                         f.write('{} '.format(p))
 
             f.close()
+
+import os, cv2, numpy as np
+
+def masks_pair_to_polygons(breast_dir, marker_dir, output_dir,
+                           cls_breast=0, cls_marker=1,
+                           min_area=200, approx_eps=0.002):
+    """
+    Para cada arquivo presente em `breast_dir` e `marker_dir`
+    (mesmo nome base), gera *um* .txt em `output_dir` contendo:
+
+        cls_breast  x1 y1 x2 y2 ...   (polígono do seio)
+        cls_marker  x1 y1 x2 y2 ...   (polígono do marcador)
+
+    Coordenadas normalizadas 0-1 conforme YOLOv8-seg.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    file_names = [n for n in os.listdir(breast_dir)
+                  if n.lower().endswith((".png", ".jpg", ".jpeg", ".tif", ".tiff"))]
+
+    for f in file_names:
+        # caminhos das duas máscaras
+        mask_breast = os.path.join(breast_dir,  f)
+        mask_marker = os.path.join(marker_dir, f)
+
+        if not os.path.exists(mask_marker):
+            continue   # pula se faltar marcador (ajuste se quiser logar)
+
+        # Carrega uma das máscaras só para obter H,W (poderia ser a imagem também)
+        m0 = cv2.imread(mask_breast, cv2.IMREAD_GRAYSCALE)
+        H, W = m0.shape
+
+        def _contours(mask_path):
+            m = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+            _, m = cv2.threshold(m, 1, 255, cv2.THRESH_BINARY)
+            cnts, _ = cv2.findContours(m, cv2.RETR_EXTERNAL,
+                                       cv2.CHAIN_APPROX_SIMPLE)
+            polys = []
+            for c in cnts:
+                if cv2.contourArea(c) < min_area:
+                    continue
+                peri = cv2.arcLength(c, True)
+                approx = cv2.approxPolyDP(c, approx_eps * peri, True)
+                pts = approx.reshape(-1, 2).astype(np.float32)
+                # normaliza
+                pts[:, 0] /= W
+                pts[:, 1] /= H
+                polys.append(pts)
+            return polys
+
+        polys_breast  = _contours(mask_breast)
+        polys_marker  = _contours(mask_marker)
+
+        
+        # escreve .txt
+        label_path = '{}.txt'.format(os.path.join(output_dir, f)[:-4])
+        with open(label_path, 'w') as txt:
+            for poly in polys_breast:
+                coords = " ".join([f"{x:.6f} {y:.6f}" for x, y in poly])
+                txt.write(f"{cls_breast} {coords}\n")
+            for poly in polys_marker:
+                coords = " ".join([f"{x:.6f} {y:.6f}" for x, y in poly])
+                txt.write(f"{cls_marker} {coords}\n")
 
 
 #Listar os nomes das imagens que não quero usar para treinar o modelo de classificação
@@ -895,6 +1041,58 @@ def augment_and_save(img_paths, mask_paths, outputDir, num_augmented_copies):
 
                 Image.fromarray(img_out).save(os.path.join(outputDir, 'images/train', fname))
                 Image.fromarray(mask_out).save(os.path.join(outputDir, 'masks/train', fname))
+
+def augment_and_save_2_classes(img_paths,
+                     mb_paths,               # máscaras Breast
+                     mm_paths,               # máscaras Marker
+                     outputDir,
+                     num_augmented_copies=2):
+
+    VALUE_SEED = 12274
+    random.seed(VALUE_SEED)
+    print(f"***SEMENTE USADA****: {VALUE_SEED}")
+
+    # Transformações correspondentes (imagem ↔ máscara)
+    spatial_transformations_img  = [random_rotation, random_zoom, random_flip]
+    spatial_transformations_mask = [random_rotation_mask,
+                                    random_zoom_mask,
+                                    random_flip]          # mesma ordem!
+
+    for img_path, mb_path, mm_path in zip(img_paths, mb_paths, mm_paths):
+        base_name = os.path.basename(img_path)
+
+        # ---------- Carrega ----------
+        img = np.expand_dims(np.array(Image.open(img_path).convert('L'))/255.0, axis=-1)
+        mb  = np.expand_dims(np.array(Image.open(mb_path).convert('L')) /255.0, axis=-1)
+        mm  = np.expand_dims(np.array(Image.open(mm_path).convert('L')) /255.0, axis=-1)
+
+        # ---------- Para cada cópia de augmentation ----------
+        for j in range(num_augmented_copies):
+            for k, (t_img, t_mask) in enumerate(zip(spatial_transformations_img,
+                                                    spatial_transformations_mask), start=1):
+                seed = random.randint(0, 10_000)
+                random.seed(seed)
+                aug_img = apply_transformation(img, t_img)
+
+                random.seed(seed)
+                aug_mb  = apply_transformation(mb, t_mask)
+
+                random.seed(seed)
+                aug_mm  = apply_transformation(mm, t_mask)
+
+                fname = f"aug_{j}.{k}_{base_name}"
+
+                # ---------- Salva ----------
+                Image.fromarray((aug_img.squeeze()*255).astype(np.uint8))\
+                     .save(os.path.join(outputDir, "images/train", fname))
+
+                Image.fromarray((aug_mb.squeeze()*255).astype(np.uint8))\
+                     .save(os.path.join(outputDir, "masks_breast/train", fname))
+
+                Image.fromarray((aug_mm.squeeze()*255).astype(np.uint8))\
+                     .save(os.path.join(outputDir, "masks_marker/train", fname))
+
+
 
 import os, random
 import numpy as np

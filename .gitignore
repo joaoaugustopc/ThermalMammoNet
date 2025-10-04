@@ -171,3 +171,8 @@ Comparacao*
 dataset_png/
 marcadores_segmentados/
 Termografias_Dataset_Segmentação_Marcadores/
+
+Yolo_dataset_marcadores/
+Yolo_dataset_marcadores_two_classes/
+dataset_two_classes_yolo/
+dataset_yolo_pads/

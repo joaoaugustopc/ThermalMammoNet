@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe
+from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes
 from utils.files_manipulation import move_files_within_folder, create_folder, move_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model, unet_model_retangular
@@ -94,39 +94,56 @@ def segment_with_yolo( X_train, X_valid, X_test, model_path):
         elif img.ndim == 3 and img.shape[2] == 1:
             img = np.repeat(img, 3, axis=-1)
         return img
+    
+    PEITO_ID = 0       
+    MARCADOR_ID = 1    
 
     def segment_batch(images, model):
         segmented = []
         for img in images:
-            img_prepared = prepare_image(img)
+            img_prepared = prepare_image(img)  # sua função
+            H, W = img_prepared.shape[:2]
 
+            # Predição
             results = model.predict(img_prepared, verbose=False)
-
             res = results[0]
 
+            # Verifica se há máscaras
             has_masks = (
-            res.masks is not None and
-            res.masks.data is not None and
-            len(res.masks.data) > 0)
+                res.masks is not None and
+                res.masks.data is not None and
+                len(res.masks.data) > 0
+            )
 
             if has_masks:
-                mask_tensor = results[0].masks.data[0]
-                mask = mask_tensor.cpu().numpy()
+                # (N_inst, h_m, w_m)
+                masks_np = res.masks.data.cpu().numpy()
+                # classes (N_inst,)
+                classes = res.boxes.cls.cpu().numpy().astype(int)
 
-                if mask.shape[:2] != (224, 224):
-                    mask = cv2.resize(mask, (224, 224))
+                # Máscara final = união (OR) das instâncias de PEITO e MARCADOR
+                union_mask = np.zeros((H, W), dtype=np.uint8)
 
+                for m, c in zip(masks_np, classes):
+                    if c in (PEITO_ID, MARCADOR_ID):
+                        m_bin = (m > 0.5).astype(np.uint8)
+                        # sempre redimensione máscaras com NEAREST
+                        m_resized = cv2.resize(m_bin, (W, H), interpolation=cv2.INTER_NEAREST)
+                        union_mask |= m_resized
 
-                binary_mask = (mask > 0.5).astype(np.uint8)
-                if binary_mask.ndim == 2:
-                    binary_mask = np.expand_dims(binary_mask, axis=-1)
-
-                segmented_img = img_prepared * binary_mask
+                if union_mask.max() > 0:
+                    # garante shape (H,W,1)
+                    union_mask = union_mask[..., None]
+                    segmented_img = img_prepared * union_mask  # aplica máscara (peito ∪ marcador)
+                else:
+                    print("Não encontrou instâncias das classes esperadas")
+                    segmented_img = img_prepared
             else:
                 print("Não encontrou mask")
                 segmented_img = img_prepared
 
             segmented.append(segmented_img)
+
         return np.array(segmented)
 
     # Carrega modelo YOLO
@@ -1548,6 +1565,112 @@ def resize_imgs_masks_dataset_png(
     print(f"\nConcluído!  Novas pastas:\n  imagens → {out_img}\n  máscaras → {out_mask}")
 
 
+
+    from pathlib import Path
+from tqdm import tqdm
+import tensorflow as tf
+
+def resize_imgs_two_masks_dataset(
+    img_dir: str,
+    mask_breast_dir: str,
+    mask_marker_dir: str,
+    output_base: str,
+    target: int = 640,
+    resize_method: str = "BlackPadding",
+    min_val_mask: float = 0.5
+):
+    """
+    Redimensiona imagens (.jpg) e DUAS máscaras (.png) preservando o alinhamento
+    e grava em:
+
+        output_base/
+            images/
+            masks_breast/
+            masks_marker/
+
+    Parâmetros
+    ----------
+    img_dir          Pasta com .jpg originais
+    mask_breast_dir  Pasta com máscaras da classe Breast (mesmo nome da imagem)
+    mask_marker_dir  Pasta com máscaras da classe Marker (mesmo nome da imagem)
+    output_base      Raiz de saída
+    target           Lado do quadrado (ex. 640)
+    resize_method    ["BlackPadding", "GrayPadding", "Distorcido"]
+    min_val_mask     limiar (float 0–1) p/ binarizar máscara
+    """
+
+    img_dir        = Path(img_dir)
+    mask_breast_dir = Path(mask_breast_dir)
+    mask_marker_dir = Path(mask_marker_dir)
+
+    out_img   = Path(output_base) / "images"
+    out_mb    = Path(output_base) / "masks_breast"
+    out_mm    = Path(output_base) / "masks_marker"
+    for p in (out_img, out_mb, out_mm):
+        p.mkdir(parents=True, exist_ok=True)
+
+    # ── loop principal ───────────────────────────────────────────────────────────
+    for img_path in tqdm(sorted(img_dir.glob("*.jpg")), desc="Redimensionando"):
+        stem = img_path.stem
+        mb_path = mask_breast_dir / f"{stem}.png"
+        mm_path = mask_marker_dir / f"{stem}.png"
+
+        # Verifica a existência das duas máscaras
+        if not (mb_path.exists() and mm_path.exists()):
+            print(f"[aviso] Máscara faltando para {stem} — pulando.")
+            continue
+
+        # ── Leitura ──────────────────────────────────────────────────────────────
+        img  = tf.image.decode_jpeg(tf.io.read_file(str(img_path)), channels=3)
+        mb   = tf.image.decode_png (tf.io.read_file(str(mb_path)), channels=1)
+        mm   = tf.image.decode_png (tf.io.read_file(str(mm_path)), channels=1)
+
+        img = tf.image.convert_image_dtype(img, tf.float32)   # 0–1
+        mb  = tf.image.convert_image_dtype(mb,  tf.float32)
+        mm  = tf.image.convert_image_dtype(mm,  tf.float32)
+
+        # ── Letter-box / resize ─────────────────────────────────────────────────
+        if resize_method == "BlackPadding":
+            img_lb  = tf_letterbox_black(tf.expand_dims(img, 0), target, mode='bilinear')
+            mb_lb   = tf_letterbox_black(tf.expand_dims(mb,  0), target, mode='nearest')
+            mm_lb   = tf_letterbox_black(tf.expand_dims(mm,  0), target, mode='nearest')
+
+        elif resize_method == "GrayPadding":
+            img_lb  = tf_letterbox(tf.expand_dims(img, 0), target, mode='bilinear')
+            mb_lb   = tf_letterbox_black(tf.expand_dims(mb,  0), target, mode='nearest')
+            mm_lb   = tf_letterbox_black(tf.expand_dims(mm,  0), target, mode='nearest')
+
+        elif resize_method == "Distorcido":          # “stretch” p/ quadrado
+            img_lb = tf.image.resize(tf.expand_dims(img, 0), (target, target),
+                                     method='bilinear')
+            mb_lb  = tf.image.resize(tf.expand_dims(mb,  0), (target, target),
+                                     method='nearest')
+            mm_lb  = tf.image.resize(tf.expand_dims(mm,  0), (target, target),
+                                     method='nearest')
+        else:
+            raise ValueError(f"resize_method desconhecido: {resize_method}")
+
+        img_lb = tf.squeeze(img_lb, 0)
+        mb_lb  = tf.squeeze(mb_lb,  0)
+        mm_lb  = tf.squeeze(mm_lb,  0)
+
+        # ── Pós-processamento ───────────────────────────────────────────────────
+        img_uint8 = tf.image.convert_image_dtype(img_lb, tf.uint8, saturate=True)
+        mb_bin    = tf.cast(mb_lb > min_val_mask, tf.uint8) * 255
+        mm_bin    = tf.cast(mm_lb > min_val_mask, tf.uint8) * 255
+
+        # ── Grava ───────────────────────────────────────────────────────────────
+        tf.io.write_file(str(out_img / f"{stem}.jpg"),
+                         tf.io.encode_jpeg(img_uint8, quality=95))
+        tf.io.write_file(str(out_mb  / f"{stem}.png"),
+                         tf.io.encode_png(mb_bin))
+        tf.io.write_file(str(out_mm  / f"{stem}.png"),
+                         tf.io.encode_png(mm_bin))
+
+    print(f"\nConcluído!\n  Imagens  → {out_img}\n  Breast   → {out_mb}\n  Marker   → {out_mm}")
+
+
+    
 import numpy as np
 from PIL import Image
 
@@ -1891,33 +2014,195 @@ if __name__ == "__main__":
 
     SEMENTE = 13388
 
+    # Foi adicionado algumas funções para lidar com as imagens .png em uint16 no processo de criação do dataset no formato esperado pela yolo.
 
 
     #------------------ Primeira abordagem testada para incluir os marcadores na segmentação --------------
     
     # juntando as mascaras
-    unir_mascaras(
-        "Termografias_Dataset_Segmentação/masks",
-        "Termografias_Dataset_Segmentação_Marcadores/masks",
-        "Termografias_Dataset_Segmentação_Unidas/masks"
-    )
+    # unir_mascaras(
+    #     "Termografias_Dataset_Segmentação/masks",
+    #     "Termografias_Dataset_Segmentação_Marcadores/masks",
+    #     "Termografias_Dataset_Segmentação_Unidas/masks"
+    # )
 
 
 
-    resize_imgs_masks_dataset(
+    # resize_imgs_masks_dataset(
+    #     img_dir="Termografias_Dataset_Segmentação/images",
+    #     mask_dir="Termografias_Dataset_Segmentação_Unidas/masks",
+    #     output_base="Yolo_dataset_marcadores",
+    #     target=224,          # mesmo tamanho definido no YAML da YOLO,
+    #     resize_method="BlackPadding"
+    # )
+
+
+    # yolo_data("Frontal", "Yolo_dataset_marcadores/images", "Yolo_dataset_marcadores/masks", "dataset_yolo_pads", True)
+
+    # # # ##Ultimo train34 Então: esse modelo vai ser salvo em train35
+    # train_yolo_seg("n", 500, "dataset_yolo_pads.yaml", seed=SEMENTE)
+    
+
+    # train_model_cv(Vgg_16,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                segmenter= "yolo",
+    #                message="Vgg_yolon_AUG_CV_BlackPadding_28_09_25", seg_model_path="runs/segment/train35/weights/best.pt",
+    #                resize_method="BlackPadding")
+
+
+
+    
+    
+    # MODEL_DIRS = {
+    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    # "resnet": "modelos/ResNet34"
+    # }
+    # CONF_BASE  = "Resultados_Retreinamento_seg_pad"     # pasta-raiz onde deseja guardar as figuras
+    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    # ANGLE      = "Frontal"              # visão utilizada nos treinos
+
+    # exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
+    # X, y , patient_ids = load_raw_images(
+    #     f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
+    # # --------------------------------------------------
+    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # # --------------------------------------------------
+    # experiments = [
+    #     # {
+    #     #     "resize_method": "BlackPadding",
+    #     #     "message": "Vgg_unet_AUG_CV_BlackPadding_13_09_25",
+    #     #     "segment": "unet",
+    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
+    #     # },
+    #     {
+    #         "resize_method": "BlackPadding",
+    #         "message": "Vgg_yolon_AUG_CV_BlackPadding_28_09_25",
+    #         "segment": "yolo",
+    #         "segmenter_path": "runs/segment/train35/weights/best.pt",
+    #     },
+    #     # {
+    #     #     "resize_method": "BlackPadding",
+    #     #     "message": "ResNet34_unet_AUG_CV_BlackPadding_13_09_25",
+    #     #     "segment": "unet",
+    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
+    #     # },
+    #     # {
+    #     #     "resize_method": "BlackPadding",
+    #     #     "message": "ResNet34_yolon_AUG_CV_BlackPadding_13_09_25",
+    #     #     "segment": "yolo",
+    #     #     "segmenter_path": "runs/segment/train31/weights/best.pt",
+    #     # },
+
+
+    # ]
+
+    # # --------------------------------------------------
+    # # --- LOOP PRINCIPAL -------------------------------
+    # # --------------------------------------------------
+    # for exp in experiments:
+
+    #     rsz           = exp["resize_method"]
+    #     msg           = exp["message"]
+    #     segment       = exp["segment"]
+    #     segmenter_path= exp["segmenter_path"]
+
+    #     # Identifica qual backbone para escolher a pasta correta
+    #     backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
+    #     model_dir    = MODEL_DIRS[backbone_key]
+
+    #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+    #     out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
+    #     out_dir_cm.mkdir(parents=True, exist_ok=True)
+
+    #     for i in range(5):                                   # k-fold = 5
+    #         # ---- Caminhos de entrada ---------------------
+    #         model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    #         split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
+
+    #         # ---- Nome para salvar arquivos/figura --------
+    #         cm_message = f"{msg}_F{i}"
+
+    #         # ---- Avaliação -------------------------------
+    #         y_pred = evaluate_model_cm(
+    #             model_path   = model_path_cm,
+    #             output_path  = str(out_dir_cm),
+    #             split_json   = split_path_cm,
+    #             raw_root     = RAW_ROOT,
+    #             message      = cm_message,
+    #             angle        = ANGLE,
+    #             classes      = CLASSES,
+    #             rgb          = False,
+    #             resize_method= rsz,
+    #             resize       = True,
+    #             resize_to    = 224,
+    #             segmenter= segment,
+    #             seg_model_path = segmenter_path
+    #         )
+
+    #         split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
+
+    #         X_test, y_test, ids_test = ppeprocessEigenCam(
+    #             X, y, patient_ids,
+    #             split_json_hm,
+    #             segment=segment,
+    #             segmenter_path=segmenter_path,
+    #             resize_method= rsz  # ou "BlackPadding", "GrayPadding"
+    #         )
+
+    #         hits = y_pred == y_test 
+    #         miss = y_pred != y_test
+
+    #         # ---------- EigenCAM ----------
+    #         model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
+    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+
+    #         run_eigencam(
+    #             imgs       = X_test[hits],
+    #             labels     = y_test[hits],
+    #             ids        = ids_test[hits],
+    #             model_path = model_path_hm,
+    #             out_dir    = out_dir_hm,
+    #         )
+
+    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
+    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+
+    #         run_eigencam(
+    #             imgs       = X_test[miss],
+    #             labels     = y_test[miss],
+    #             ids        = ids_test[miss],
+    #             model_path = model_path_hm,
+    #             out_dir    = out_dir_hm,
+    #         )
+
+    #         print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
+
+
+
+    # ------------------ Primeira abordagem testada para incluir os marcadores na segmentação --------------
+
+    resize_imgs_two_masks_dataset(
         img_dir="Termografias_Dataset_Segmentação/images",
-        mask_dir="Termografias_Dataset_Segmentação_Unidas/masks",
-        output_base="Yolo_dataset_marcadores",
+        mask_breast_dir="Termografias_Dataset_Segmentação/masks",
+        mask_marker_dir = "Termografias_Dataset_Segmentação_Marcadores/masks",
+        output_base="Yolo_dataset_marcadores_two_classes",
         target=224,          # mesmo tamanho definido no YAML da YOLO,
         resize_method="BlackPadding"
     )
 
 
-    yolo_data("Frontal", "Yolo_dataset_marcadores/images", "Yolo_dataset_marcadores/masks", "dataset_yolo_pads", True)
+    yolo_data_2_classes("Frontal", "Yolo_dataset_marcadores_two_classes/images", "Yolo_dataset_marcadores_two_classes/masks_breast", "Yolo_dataset_marcadores_two_classes/masks_marker", "dataset_two_classes_yolo", True)
+    # train36
+    train_yolo_seg("n", 500, "dataset_yolo_two_classes.yaml", seed=SEMENTE)
 
-    # # ##Ultimo train34 Então: esse modelo vai ser salvo em train35
-    train_yolo_seg("n", 500, "dataset_yolo_pads.yaml", seed=SEMENTE)
-    
 
     train_model_cv(Vgg_16,
                    raw_root="filtered_raw_dataset",
@@ -1928,7 +2213,7 @@ if __name__ == "__main__":
                    batch=8,
                    seed= SEMENTE,
                    segmenter= "yolo",
-                   message="Vgg_yolon_AUG_CV_BlackPadding_28_09_25", seg_model_path="runs/segment/train35/weights/best.pt",
+                   message="Vgg_yolon_AUG_CV_BlackPadding_04_10_25", seg_model_path="runs/segment/train36/weights/best.pt",
                    resize_method="BlackPadding")
 
 
@@ -1939,7 +2224,8 @@ if __name__ == "__main__":
     "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
     "resnet": "modelos/ResNet34"
     }
-    CONF_BASE  = "Resultados_Retreinamento_seg_pad"     # pasta-raiz onde deseja guardar as figuras
+
+    CONF_BASE  = "Resultados_Retreinamento_seg_pad_two_classes"     # pasta-raiz onde deseja guardar as figuras
     CLASSES    = ("Healthy", "Sick")    # rótulos das classes
     RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
     ANGLE      = "Frontal"              # visão utilizada nos treinos
@@ -1959,9 +2245,9 @@ if __name__ == "__main__":
         # },
         {
             "resize_method": "BlackPadding",
-            "message": "Vgg_yolon_AUG_CV_BlackPadding_28_09_25",
+            "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
             "segment": "yolo",
-            "segmenter_path": "runs/segment/train35/weights/best.pt",
+            "segmenter_path": "runs/segment/train36/weights/best.pt",
         },
         # {
         #     "resize_method": "BlackPadding",
@@ -2063,6 +2349,7 @@ if __name__ == "__main__":
 
 
 
+    
 
     
 
