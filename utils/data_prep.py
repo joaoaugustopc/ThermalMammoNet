@@ -635,7 +635,7 @@ def yolo_data(angulo, img_path, mask_path, outputDir="", augment=False):
 
     if augment:
 
-        augment_and_save(
+        augment_and_save_uint16(
             imgs_train, masks_train, outputDir, num_augmented_copies=2
         )
 
@@ -648,9 +648,9 @@ def yolo_data(angulo, img_path, mask_path, outputDir="", augment=False):
         input_dir=f"{outputDir}/masks/val",
         output_dir=f"{outputDir}/labels/val"
     )
-    
 
-    
+
+
 
 
 
@@ -896,6 +896,88 @@ def augment_and_save(img_paths, mask_paths, outputDir, num_augmented_copies):
 
                 Image.fromarray(img_out).save(os.path.join(outputDir, 'images/train', fname))
                 Image.fromarray(mask_out).save(os.path.join(outputDir, 'masks/train', fname))
+
+import os, random
+import numpy as np
+from PIL import Image
+from pathlib import Path
+
+def _load_png_gray01(path):
+    """Carrega PNG 1-canal preservando bit depth e normaliza para [0,1] em float32, shape (H,W,1)."""
+    arr = np.array(Image.open(path))  # mantém uint8 ou uint16
+    if arr.ndim == 3:  # se vier RGB por engano, pega 1 canal (luminosidade simples)
+        arr = arr[..., 0]
+    if arr.dtype == np.uint16:
+        x = arr.astype(np.float32) / 65535.0
+    else:  # uint8 (ou já binária 0/255)
+        x = arr.astype(np.float32) / 255.0
+    return x[..., None]  # (H,W,1)
+
+def _save_png_gray_u16_from01(img01, path):
+    """Salva imagem térmica em PNG 16-bit a partir de float [0,1]."""
+    x = np.clip(img01, 0.0, 1.0)
+    x16 = (x * 65535.0 + 0.5).astype(np.uint16)
+    im = Image.fromarray(x16.squeeze(-1))   # PIL infere 'I;16'
+    im.save(path)
+
+def _save_png_mask_u8(mask01, path):
+    """Salva máscara binária em PNG 8-bit 0/255 a partir de float [0,1] (ou 0/1)."""
+    m = (mask01 > 0.5).astype(np.uint8) * 255
+    im = Image.fromarray(m.squeeze(-1))
+    im.save(path)
+
+def augment_and_save_uint16(img_paths, mask_paths, outputDir, num_augmented_copies):
+    """
+    Gera augmentations para cada par imagem/máscara e salva em:
+      outputDir/images/train  e  outputDir/masks/train
+    Mantém imagens como PNG 16-bit (1 canal) e máscaras como PNG 8-bit (0/255).
+    """
+    VALUE_SEED = 12274
+    random.seed(VALUE_SEED)
+    print(f"***SEMENTE USADA****: {VALUE_SEED}")
+
+    # listas de transformações (suas funções)
+    spatial_transformations_img  = [random_rotation, random_zoom, random_flip]
+    spatial_transformations_mask = [random_rotation_mask, random_zoom_mask, random_flip]
+
+    Path(outputDir, 'images/train').mkdir(parents=True, exist_ok=True)
+    Path(outputDir, 'masks/train').mkdir(parents=True, exist_ok=True)
+
+    for img_path, mask_path in zip(img_paths, mask_paths):
+        base_name = os.path.basename(img_path)
+
+        # 1) Leitura preservando bit depth → float32 [0,1]
+        img  = _load_png_gray01(img_path)    # (H,W,1) float [0,1]
+        mask = _load_png_gray01(mask_path)   # (H,W,1) float [0,1] (0/1 ou 0/255→normalizado)
+
+        # 2) Transformações (sincronizadas)
+        for j in range(num_augmented_copies):
+            # aplica cada transformação da sua lista, sincronizando por semente
+            for k, (trans_img, trans_mask) in enumerate(zip(spatial_transformations_img, spatial_transformations_mask), start=1):
+                seed = random.randint(0, 10_000)
+                random.seed(seed)
+                aug_img  = apply_transformation(img,  trans_img)
+                random.seed(seed)
+                aug_mask = apply_transformation(mask, trans_mask)
+
+                # 3) Pós-processamento seguro
+                aug_img  = np.clip(aug_img,  0.0, 1.0)          # evita >1 virar branco ao salvar
+                aug_mask = (aug_mask > 0.5).astype(np.float32)  # garante binária 0/1
+
+                # 4) Nomes e salvamento
+                fname = f"aug_{j}.{k}_{base_name}"
+                _save_png_gray_u16_from01(aug_img,  os.path.join(outputDir, 'images/train', fname))
+                _save_png_mask_u8(aug_mask,          os.path.join(outputDir, 'masks/train',  fname))
+
+
+
+
+
+
+
+
+
+
 
 
 def filter_dataset_by_id(src_dir: str, dst_dir: str, ids_to_remove):

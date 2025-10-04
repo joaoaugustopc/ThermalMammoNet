@@ -380,6 +380,7 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                     print(f"Segmentação com YOLO concluída.")
                 else:
                     raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
+
                 
             if isinstance(model, str):
                 if model == "yolo":
@@ -1475,6 +1476,78 @@ def resize_imgs_masks_dataset(
 
     print(f"\nConcluído!  Novas pastas:\n  imagens → {out_img}\n  máscaras → {out_mask}")
 
+
+def resize_imgs_masks_dataset_png(
+    img_dir: str,
+    mask_dir: str,
+    output_base: str,
+    target: int = 640,
+    resize_method = "BlackPadding"
+):
+    """
+    Redimensiona imagens (.jpg) e máscaras (.png) com tf_letterbox.
+
+    Parâmetros
+    ----------
+    img_dir      Pasta com as .jpg originais
+    mask_dir     Pasta com as .png originais (mesmo nome da imagem)
+    output_base  Nova raiz que conterá:  output_base/images  e  output_base/masks
+    target       Lado do quadrado de saída (ex. 640)
+    """
+    img_dir = Path(img_dir)
+    mask_dir = Path(mask_dir)
+    out_img = Path(output_base) / "images"
+    out_mask = Path(output_base) / "masks"
+    out_img.mkdir(parents=True, exist_ok=True)
+    out_mask.mkdir(parents=True, exist_ok=True)
+
+    for img_path in tqdm(sorted(img_dir.glob("*.png")), desc="Redimensionando"):
+        stem = img_path.stem
+        mask_path = mask_dir / f"{stem}.png"
+        if not mask_path.exists():
+            print(f"[aviso] Máscara ausente para {stem} — pulando.")
+            continue
+
+        # ─── Leitura ----------------------------------------------------------------
+        img  = tf.image.decode_png(tf.io.read_file(str(img_path)), channels=1, dtype= tf.uint16)
+        mask = tf.image.decode_png(tf.io.read_file(str(mask_path)), channels=1)
+
+        img  = tf.image.convert_image_dtype(img,  tf.float32)  # 0-1
+        mask = tf.image.convert_image_dtype(mask, tf.float32)  # 0-1
+
+        # ─── Letter-box (batch=1) ----------------------------------------------------
+        if resize_method == "BlackPadding":
+            img_lb  = tf_letterbox_black(tf.expand_dims(img,  0), target=target, mode='bilinear')
+            mask_lb = tf_letterbox_black(tf.expand_dims(mask, 0), target=target, mode='nearest')
+        elif resize_method == "Distorcido":
+            img_lb  = tf.expand_dims(img,  0)
+            img_lb = tf.image.resize(img_lb, (target, target), method='bilinear')
+            mask_lb = tf.expand_dims(mask, 0)
+            mask_lb = tf.image.resize(mask_lb, (target, target), method='nearest')
+        elif resize_method == "GrayPadding":
+            img_lb  = tf_letterbox(tf.expand_dims(img,  0), target=target, mode='bilinear')
+            mask_lb = tf_letterbox_black(tf.expand_dims(mask, 0), target=target, mode='nearest')
+
+        img_lb  = tf.squeeze(img_lb,  0)          # (H,W,3)
+        mask_lb = tf.squeeze(mask_lb, 0)          # (H,W,1)
+
+        # ─── Pós-processamento -------------------------------------------------------
+        img_uint16  = tf.image.convert_image_dtype(img_lb, tf.uint16, saturate=True)
+        mask_bin   = tf.cast(mask_lb > 0.5, tf.uint8) * 255  # 0 ou 255
+
+        # ─── Grava ------------------------------------------------------------------
+        tf.io.write_file(
+            str(out_img / f"{stem}.png"),
+            tf.io.encode_png(img_uint16)
+        )
+        tf.io.write_file(
+            str(out_mask / f"{stem}.png"),
+            tf.io.encode_png(mask_bin)
+        )
+
+    print(f"\nConcluído!  Novas pastas:\n  imagens → {out_img}\n  máscaras → {out_mask}")
+
+
     
 import numpy as np
 from PIL import Image
@@ -1819,94 +1892,8 @@ if __name__ == "__main__":
 
     SEMENTE = 13388
 
-    ### transformando filtered_raw_dataset para criar as mascaras para os marcadores
-    
-    # transform_temp_img("filtered_raw_dataset/Frontal/healthy", "dataset_png/Frontal/healthy")
-    # transform_temp_img("filtered_raw_dataset/Frontal/sick", "dataset_png/Frontal/sick")
 
-
-
-    ## Teste das mascaras dos marcadores
-
-    # files = os.listdir("Termografias_Dataset_Segmentação_Marcadores/images")
-    
-
-    # for file in files:
-
-    #     path1 = os.path.join("Termografias_Dataset_Segmentação_Marcadores/images", file)
-    #     path2 = os.path.join("Termografias_Dataset_Segmentação_Marcadores/masks", file)
-    #     img = cv2.imread(path1, cv2.IMREAD_UNCHANGED)
-    #     mask = cv2.imread(path2, cv2.IMREAD_UNCHANGED)
-
-
-    #     mask = (mask > 0).astype(np.uint8)
-
-    #     img_seg = img * mask
-
-    #     os.makedirs("marcadores_segmentados", exist_ok= True)
-
-    #     cv2.imwrite(f"marcadores_segmentados/{file}", img_seg)
-
-
-
-
-
-
-    ########## O código abaixo é apenas para referencia de como treinar os modelos de segmentação dos marcadores e oque precisa ajustar
-    ##### Para isso
-
-    #Unet
-    # imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks_Black_Padding("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks", True, True, 224)
-
-    # model = unet_model()
-
-    # model.summary()
-
-    # earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
-
-    # checkpoint = tf.keras.callbacks.ModelCheckpoint("modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5", monitor='val_loss', verbose=1, save_best_only=True, 
-    #                                                         save_weights_only=False, mode='auto')
-
-    # history = model.fit(imgs_train, masks_train, epochs = 500, validation_data= (imgs_valid, masks_valid), callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
-
-    # # Gráfico de perda de treinamento
-    # plt.figure(figsize=(10, 6))
-    # plt.plot(history.history['loss'], label='Training Loss')
-    # plt.title(f'Training Loss Convergence for unet - Frontal')
-    # plt.xlabel('Epochs')
-    # plt.ylabel('Loss')
-    # plt.legend()
-    # plt.grid(True)
-    # plt.savefig(f"unet_loss_convergence_Frontal_Unet_AUG_BlackPadding_13_09_25.png")
-    # plt.close()
-
-    # plt.figure(figsize=(10, 6))
-    # plt.plot(history.history['val_loss'], label='Validation Loss')
-    # plt.title(f'Validation Loss Convergence for unet - Frontal')
-    # plt.xlabel('Epochs')
-    # plt.ylabel('Loss')
-    # plt.legend()
-    # plt.grid(True)
-    # plt.savefig(f"unet_val_loss_convergence_Frontal_Unet_AUG_BlackPadding_13_09_25.png")
-    # plt.close()
-
-    # yolo
-
-    # resize_imgs_masks_dataset(
-    #     img_dir="Termografias_Dataset_Segmentação/images",
-    #     mask_dir="Termografias_Dataset_Segmentação/masks",
-    #     output_base="Termografias_Dataset_Segmentação_224_BlackPadding",
-    #     target=224,          # mesmo tamanho definido no YAML da YOLO,
-    #     resize_method="BlackPadding"
-    # )
-
-    # yolo_data("Frontal", "Termografias_Dataset_Segmentação_Marcadores/images", "Termografias_Dataset_Segmentação_Marcadores/masks", "Yolo_dataset_marcadores", True)
-
-    # ##Ultimo train30 Então: esse modelo vai ser salvo em train31
-    # train_yolo_seg("n", 500, "dataset_black.yaml", seed=SEMENTE)
-    
-    
-    #------------------ yolo --------------
+    #------------------ Primeira abordagem testada para incluir os marcadores na segmentação --------------
     
     # juntando as mascaras
     unir_mascaras(
@@ -1915,10 +1902,10 @@ if __name__ == "__main__":
         "Termografias_Dataset_Segmentação_Unidas/masks"
     )
 
-    delete_folder("Yolo_dataset_marcadores")
+
 
     resize_imgs_masks_dataset_png(
-        img_dir="Termografias_Dataset_Segmentação_Marcadores/images",
+        img_dir="Termografias_Dataset_Segmentação/images",
         mask_dir="Termografias_Dataset_Segmentação_Unidas/masks",
         output_base="Yolo_dataset_marcadores",
         target=224,          # mesmo tamanho definido no YAML da YOLO,
@@ -1926,27 +1913,28 @@ if __name__ == "__main__":
     )
 
 
-    yolo_data("Frontal", "Termografias_Dataset_Segmentação_Marcadores/images", "Termografias_Dataset_Segmentação_Unidas/masks", "Yolo_dataset_marcadores", True)
+    yolo_data("Frontal", "Yolo_dataset_marcadores/images", "Yolo_dataset_marcadores/masks", "dataset_yolo_pads", True)
 
-    # # ##Ultimo train30 Então: esse modelo vai ser salvo em train31
-    # train_yolo_seg("n", 500, "dataset_black.yaml", seed=SEMENTE)
+    train_yolo_seg("n", 500, "dataset_yolo_pads.yaml", seed=SEMENTE)
     
 
-
+    # train_model_cv(Vgg_16,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                segmenter= "yolo",
+    #                message="Vgg_yolon_AUG_CV_BlackPadding_28_09_25", seg_model_path="runs/segment/train35/weights/best.pt",
+    #                resize_method="BlackPadding")
 
 
 
     
     
     
-
-    
-
-
-
-    
-
-
 
     
 
