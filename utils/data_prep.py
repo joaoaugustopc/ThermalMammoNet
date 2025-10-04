@@ -635,7 +635,7 @@ def yolo_data(angulo, img_path, mask_path, outputDir="", augment=False):
 
     if augment:
 
-        augment_and_save_uint16(
+        augment_and_save(
             imgs_train, masks_train, outputDir, num_augmented_copies=2
         )
 
@@ -648,7 +648,6 @@ def yolo_data(angulo, img_path, mask_path, outputDir="", augment=False):
         input_dir=f"{outputDir}/masks/val",
         output_dir=f"{outputDir}/labels/val"
     )
-
 
 
 
@@ -1551,5 +1550,3 @@ def make_tvt_splits_without_ids(imgs, labels, k=5, val_size=0.25, seed=42):
         train, val = next(sss.split(imgs[outer_train_val], labels[outer_train_val]))
         
         yield outer_train_val[train], outer_train_val[val], test
-
-
