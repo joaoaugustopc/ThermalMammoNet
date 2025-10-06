@@ -653,7 +653,7 @@ def load_jpg_images(base_dir):
         class_path = os.path.join(frontal_path, class_name)
         
         if not os.path.exists(class_path):
-            print(f"⚠️ Aviso: Pasta '{class_name}' não encontrada em {frontal_path}")
+            print(f"  Aviso: Pasta '{class_name}' não encontrada em {frontal_path}")
             continue
             
         label = 0 if class_name == 'healthy' else 1
@@ -2003,14 +2003,583 @@ def unir_mascaras(pasta_breast, pasta_marker, pasta_saida):
 
     print(f"Máscaras unidas foram salvas em: {pasta_saida}")
 
+# =========================================================================================
+# --------------------------------COMPARACOES ESTATISTICAS--------------------------------
+# =========================================================================================
+# Para fazer ESSAS comparações, tem que ter gerados os relatórios acima de comparações em "comparar_resultados_modelo_completo" e gerar as pastas com os resultados
 
-
-from utils.transform_to_therm import *
+import os
+import shutil
+import pandas as pd
 import numpy as np
-import cv2
-import sys
+from collections import defaultdict
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
+import re
+
+def analisar_comparacoes_cruzadas(base_dir="comparacoes", output_dir="Analise_Global_Comparacoes"):
+    """
+    Analisa múltiplas estratégias de comparação através dos folds
+    """
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    estrategias = defaultdict(list)
+    
+    #   IDENTIFICAÇÃO DOS FOLDS
+    for item in os.listdir(base_dir):
+        item_path = os.path.join(base_dir, item)
+        
+        if os.path.isdir(item_path):
+            # Padrão flexível para identificar folds
+            if '_F' in item and item.split('_F')[-1].isdigit():
+                partes = item.split('_F')
+                nome_estrategia = partes[0]
+                fold_num = int(partes[1])
+                
+                estrategias[nome_estrategia].append((fold_num, item_path))
+    
+    # Ordenar por fold
+    for estrategia in estrategias:
+        estrategias[estrategia].sort(key=lambda x: x[0])
+    
+    print("  ESTRATÉGIAS E FOLDS IDENTIFICADOS:")
+    for estrategia, folds in estrategias.items():
+        print(f"   {estrategia}: {len(folds)} folds → {[f[0] for f in folds]}")
+    
+    if not estrategias:
+        print(" Nenhuma pasta com padrão *_F* encontrada!")
+        return None
+    
+    # Coletar métricas
+    metricas_globais = coletar_metricas_globais(estrategias, output_dir)
+    
+    if metricas_globais is None:
+        return None
+    
+    # Análises
+    analisar_estrategias(metricas_globais, output_dir)
+    analisar_consistencia_folds(metricas_globais, output_dir)
+    
+    return metricas_globais
+
+def coletar_metricas_globais(estrategias, output_dir):
+    """Coleta métricas de forma robusta baseada no formato conhecido"""
+    
+    metricas = {
+        'estrategia': [],
+        'fold': [],
+        'classe': [],
+        'categoria': [],
+        'quantidade': []
+    }
+    
+    total_metricas = 0
+    
+    for estrategia_nome, folds in estrategias.items():
+        for fold, pasta in folds:
+            relatorio_path = os.path.join(pasta, "relatorio_comparacao.txt")
+            
+            if os.path.exists(relatorio_path):
+                print(f"📖 Processando: {estrategia_nome} - Fold {fold}")
+                
+                # Extrair métricas para Health e Sick
+                for classe in ['Health', 'Sick']:
+                    metricas_classe = extrair_metricas_por_classe(relatorio_path, classe)
+                    
+                    for categoria, quantidade in metricas_classe.items():
+                        metricas['estrategia'].append(estrategia_nome)
+                        metricas['fold'].append(fold)
+                        metricas['classe'].append(classe)
+                        metricas['categoria'].append(categoria)
+                        metricas['quantidade'].append(quantidade)
+                        total_metricas += 1
+            else:
+                print(f"   Relatório não encontrado: {relatorio_path}")
+    
+    print(f"  Total de métricas coletadas: {total_metricas}")
+    
+    if total_metricas == 0:
+        print(" Nenhuma métrica válida foi coletada!")
+        return None
+    
+    #   VERIFICAR INTEGRIDADE DOS DADOS
+    comprimentos = {key: len(values) for key, values in metricas.items()}
+    print(f"  Comprimentos das listas: {comprimentos}")
+    
+    if len(set(comprimentos.values())) != 1:
+        print(" ERRO: As listas têm comprimentos diferentes!")
+        return None
+    
+    try:
+        df_metricas = pd.DataFrame(metricas)
+        df_metricas.to_csv(os.path.join(output_dir, "metricas_brutas.csv"), index=False)
+        print(f"  DataFrame criado com sucesso: {len(df_metricas)} registros")
+        
+        return {'df': df_metricas}
+    
+    except Exception as e:
+        print(f" Erro ao criar DataFrame: {e}")
+        return None
+
+def extrair_metricas_por_classe(relatorio_path, classe_alvo):
+    """
+    Extrai métricas ESPECÍFICAS do formato exato do seu relatório
+    """
+    
+    metricas = {
+        'acertos_modelo1': 0,
+        'erros_modelo1': 0, 
+        'acertos_modelo2': 0,
+        'erros_modelo2': 0,
+        'melhorou': 0,
+        'piorou': 0,
+        'manteve_acerto': 0,
+        'manteve_erro': 0
+    }
+    
+    try:
+        with open(relatorio_path, 'r', encoding='utf-8') as f:
+            linhas = f.readlines()
+        
+        dentro_classe = False
+        
+        for i, linha in enumerate(linhas):
+            linha = linha.strip()
+            
+            # Identificar início da seção da classe
+            if f"============================================= {classe_alvo} =============================================" in linha:
+                dentro_classe = True
+                print(f"     Encontrou seção: {classe_alvo}")
+                continue
+            elif dentro_classe and "=============================================" in linha and classe_alvo not in linha:
+                dentro_classe = False
+                continue
+            
+            if not dentro_classe:
+                continue
+            
+            #   DEBUG: Mostrar linhas relevantes
+            if "Total de imagens" in linha or "Imagens que o modelo" in linha or "Manteve_" in linha:
+                print(f"     Linha {i}: {linha}")
+            
+            #   EXTRAÇÃO PRECISA - FORMATO EXATO DO SEU RELATÓRIO
+            
+            # 1. Quantitativos totais
+            if "Total de imagens" in linha:
+                # Saúde
+                if classe_alvo == "Health":
+                    if "acertos (modelo 1)" in linha and "saudáveis" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['acertos_modelo1'] = int(valor.group(1))
+                            print(f"     acertos_modelo1 (Health): {metricas['acertos_modelo1']}")
+                    
+                    elif "erros (modelo 1)" in linha and "saudáveis" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['erros_modelo1'] = int(valor.group(1))
+                            print(f"     erros_modelo1 (Health): {metricas['erros_modelo1']}")
+                    
+                    elif "acertos (modelo 2)" in linha and "saudáveis" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['acertos_modelo2'] = int(valor.group(1))
+                            print(f"     acertos_modelo2 (Health): {metricas['acertos_modelo2']}")
+                    
+                    elif "erros (modelo 2)" in linha and "saudáveis" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['erros_modelo2'] = int(valor.group(1))
+                            print(f"     erros_modelo2 (Health): {metricas['erros_modelo2']}")
+                
+                # Doença  
+                else:  # Sick
+                    if "acertos (modelo 1)" in linha and "doentes" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['acertos_modelo1'] = int(valor.group(1))
+                            print(f"     acertos_modelo1 (Sick): {metricas['acertos_modelo1']}")
+                    
+                    elif "erros (modelo 1)" in linha and "doentes" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['erros_modelo1'] = int(valor.group(1))
+                            print(f"     erros_modelo1 (Sick): {metricas['erros_modelo1']}")
+                    
+                    elif "acertos (modelo 2)" in linha and "doentes" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['acertos_modelo2'] = int(valor.group(1))
+                            print(f"     acertos_modelo2 (Sick): {metricas['acertos_modelo2']}")
+                    
+                    elif "erros (modelo 2)" in linha and "doentes" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['erros_modelo2'] = int(valor.group(1))
+                            print(f"     erros_modelo2 (Sick): {metricas['erros_modelo2']}")
+            
+            # 2. Categorias de comparação - FORMATO EXATO
+            elif "Imagens que o modelo 1 errava e agora o modelo 2 acerta:" in linha:
+                # Procura o número na MESMA linha
+                valor = re.search(r':\s*(\d+)\s*imagens', linha)
+                if valor:
+                    metricas['melhorou'] = int(valor.group(1))
+                    print(f"     melhorou: {metricas['melhorou']}")
+                else:
+                    # Tentativa alternativa
+                    valor = re.search(r':\s*(\d+)', linha)
+                    if valor:
+                        metricas['melhorou'] = int(valor.group(1))
+                        print(f"     melhorou (alt): {metricas['melhorou']}")
+            
+            elif "Imagens que o modelo 1 acertava e agora o modelo 2 erra" in linha:
+                valor = re.search(r':\s*(\d+)\s*imagens', linha)
+                if valor:
+                    metricas['piorou'] = int(valor.group(1))
+                    print(f"     piorou: {metricas['piorou']}")
+                else:
+                    valor = re.search(r':\s*(\d+)', linha)
+                    if valor:
+                        metricas['piorou'] = int(valor.group(1))
+                        print(f"     piorou (alt): {metricas['piorou']}")
+            
+            elif "Manteve_Acerto:" in linha:
+                valor = re.search(r':\s*(\d+)\s*imagens', linha)
+                if valor:
+                    metricas['manteve_acerto'] = int(valor.group(1))
+                    print(f"     manteve_acerto: {metricas['manteve_acerto']}")
+                else:
+                    valor = re.search(r':\s*(\d+)', linha)
+                    if valor:
+                        metricas['manteve_acerto'] = int(valor.group(1))
+                        print(f"     manteve_acerto (alt): {metricas['manteve_acerto']}")
+            
+            elif "Manteve_Erro:" in linha:
+                valor = re.search(r':\s*(\d+)\s*imagens', linha)
+                if valor:
+                    metricas['manteve_erro'] = int(valor.group(1))
+                    print(f"     manteve_erro: {metricas['manteve_erro']}")
+                else:
+                    valor = re.search(r':\s*(\d+)', linha)
+                    if valor:
+                        metricas['manteve_erro'] = int(valor.group(1))
+                        print(f"     manteve_erro (alt): {metricas['manteve_erro']}")
+    
+    except Exception as e:
+        print(f" Erro ao processar {relatorio_path}: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    #   MOSTRAR RESULTADO FINAL
+    print(f"     RESULTADOS EXTRAÍDOS para {classe_alvo}:")
+    for key, value in metricas.items():
+        print(f"      {key}: {value}")
+    
+    return metricas
+
+def analisar_estrategias(metricas_globais, output_dir):
+    """Analisa as diferenças entre as estratégias"""
+    
+    df = metricas_globais['df']
+    
+    with open(os.path.join(output_dir, "analise_estrategias.txt"), "w") as f:
+        f.write("=== ANÁLISE COMPARATIVA ENTRE ESTRATÉGIAS ===\n\n")
+        
+        estrategias = df['estrategia'].unique()
+        f.write(f"Estratégias identificadas: {', '.join(estrategias)}\n\n")
+        
+        # Configurar pandas para mostrar todas as colunas
+        pd.set_option('display.max_columns', None)
+        pd.set_option('display.width', None)
+        pd.set_option('display.max_colwidth', None)
+        
+        #   RESUMO GERAL COMPLETO
+        f.write("  RESUMO GERAL COMPLETO:\n")
+        resumo = df.groupby(['estrategia', 'categoria'])['quantidade'].mean().unstack()
+        
+        # Reordenar as colunas para uma visualização mais lógica
+        colunas_ordenadas = [
+            'acertos_modelo1', 'erros_modelo1', 
+            'acertos_modelo2', 'erros_modelo2',
+            'melhorou', 'piorou', 
+            'manteve_acerto', 'manteve_erro'
+        ]
+        
+        # Manter apenas as colunas que existem
+        colunas_existentes = [col for col in colunas_ordenadas if col in resumo.columns]
+        resumo = resumo[colunas_existentes]
+        
+        f.write(str(resumo.round(2)) + "\n\n")
+        
+        #  ANÁLISE DETALHADA DAS MELHORIAS
+        f.write(" ANÁLISE DETALHADA DAS MELHORIAS:\n")
+        
+        for classe in ['Health', 'Sick']:
+            f.write(f"\n🔬 CLASSE: {classe}\n")
+            
+            for estrategia in estrategias:
+                # Melhorias
+                melhorias = df[
+                    (df['estrategia'] == estrategia) & 
+                    (df['classe'] == classe) & 
+                    (df['categoria'] == 'melhorou')
+                ]['quantidade']
+                
+                # Pioras
+                pioras = df[
+                    (df['estrategia'] == estrategia) & 
+                    (df['classe'] == classe) & 
+                    (df['categoria'] == 'piorou')
+                ]['quantidade']
+                
+                if len(melhorias) > 0 and len(pioras) > 0:
+                    f.write(f"   {estrategia}:\n")
+                    f.write(f"      Melhorias: {melhorias.mean():.1f} ± {melhorias.std():.1f}\n")
+                    f.write(f"      Pioras: {pioras.mean():.1f} ± {pioras.std():.1f}\n")
+                    
+                    # Razão Melhoria/Piora
+                    if pioras.mean() > 0:
+                        razao = melhorias.mean() / pioras.mean()
+                        f.write(f"      Razão M/P: {razao:.2f}\n")
+            
+            # Comparação estatística entre estratégias
+            if len(estrategias) == 2:
+                estrat1, estrat2 = estrategias
+                
+                melhorias1 = df[
+                    (df['estrategia'] == estrat1) & 
+                    (df['classe'] == classe) & 
+                    (df['categoria'] == 'melhorou')
+                ]['quantidade']
+                
+                melhorias2 = df[
+                    (df['estrategia'] == estrat2) & 
+                    (df['classe'] == classe) & 
+                    (df['categoria'] == 'melhorou')
+                ]['quantidade']
+                
+                if len(melhorias1) > 1 and len(melhorias2) > 1:
+                    t_stat, p_value = stats.ttest_ind(melhorias1, melhorias2)
+                    f.write(f"     Teste t {estrat1} vs {estrat2}: t={t_stat:.3f}, p={p_value:.3f}\n")
+        
+        # 📋 TABELA DETALHADA POR FOLD
+        f.write(f"\n📋 DADOS DETALHADOS POR FOLD:\n")
+        f.write("="*80 + "\n")
+        
+        for fold in sorted(df['fold'].unique()):
+            f.write(f"\n  FOLD {fold}:\n")
+            df_fold = df[df['fold'] == fold]
+            
+            for estrategia in df_fold['estrategia'].unique():
+                f.write(f"   {estrategia}:\n")
+                
+                for classe in ['Health', 'Sick']:
+                    f.write(f"      {classe}:\n")
+                    
+                    # Buscar todas as métricas para esta combinação
+                    dados_classe = df_fold[
+                        (df_fold['estrategia'] == estrategia) & 
+                        (df_fold['classe'] == classe)
+                    ]
+                    
+                    for _, row in dados_classe.iterrows():
+                        f.write(f"         {row['categoria']}: {row['quantidade']}\n")
+
+def analisar_consistencia_folds(metricas_globais, output_dir):
+    """Analisa a consistência entre os folds com visualização completa"""
+    
+    df = metricas_globais['df']
+    
+    # Configurar o estilo dos gráficos
+    plt.style.use('seaborn-v0_8')
+    fig = plt.figure(figsize=(20, 15))
+    
+    # Gráfico 1: Todas as métricas por fold
+    ax1 = plt.subplot(2, 3, 1)
+    
+    metricas_principais = ['melhorou', 'piorou', 'manteve_acerto', 'manteve_erro']
+    cores = ['green', 'red', 'blue', 'orange']
+    
+    for i, metrica in enumerate(metricas_principais):
+        if metrica in df['categoria'].unique():
+            dados_metrica = df[df['categoria'] == metrica]
+            
+            for estrategia in dados_metrica['estrategia'].unique():
+                subset = dados_metrica[dados_metrica['estrategia'] == estrategia]
+                if not subset.empty:
+                    plt.plot(subset['fold'], subset['quantidade'], 
+                            marker='o', linewidth=2, markersize=6,
+                            label=f'{estrategia} - {metrica}',
+                            color=cores[i], alpha=0.7)
+    
+    plt.xlabel('Fold')
+    plt.ylabel('Quantidade')
+    plt.title('TODAS AS MÉTRICAS POR FOLD')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.grid(True, alpha=0.3)
+    
+    # Gráfico 2: Heatmap das métricas
+    ax2 = plt.subplot(2, 3, 2)
+    
+    # Preparar dados para heatmap
+    heatmap_data = df.pivot_table(
+        index=['estrategia', 'fold'], 
+        columns='categoria', 
+        values='quantidade',
+        aggfunc='mean'
+    ).fillna(0)
+    
+    # Reordenar colunas
+    colunas_ordenadas = [col for col in [
+        'acertos_modelo1', 'erros_modelo1', 'acertos_modelo2', 'erros_modelo2',
+        'melhorou', 'piorou', 'manteve_acerto', 'manteve_erro'
+    ] if col in heatmap_data.columns]
+    
+    heatmap_data = heatmap_data[colunas_ordenadas]
+    
+    sns.heatmap(heatmap_data, annot=True, fmt='.1f', cmap='YlOrRd', ax=ax2)
+    plt.title('HEATMAP - MÉTRICAS POR FOLD/ESTRATÉGIA')
+    plt.tight_layout()
+    
+    # Gráfico 3: Comparação direta das melhorias
+    ax3 = plt.subplot(2, 3, 3)
+    
+    dados_melhorias = df[df['categoria'] == 'melhorou']
+    sns.boxplot(data=dados_melhorias, x='estrategia', y='quantidade', hue='classe', ax=ax3)
+    plt.title('DISTRIBUIÇÃO DAS MELHORIAS')
+    plt.ylabel('Número de Melhorias')
+    
+    # Gráfico 4: Razão Melhoria/Piora
+    ax4 = plt.subplot(2, 3, 4)
+    
+    ratios = []
+    for estrategia in df['estrategia'].unique():
+        for fold in df['fold'].unique():
+            for classe in ['Health', 'Sick']:
+                try:
+                    melhorou = df[
+                        (df['estrategia'] == estrategia) & 
+                        (df['fold'] == fold) & 
+                        (df['classe'] == classe) & 
+                        (df['categoria'] == 'melhorou')
+                    ]['quantidade'].values[0]
+                    
+                    piorou = df[
+                        (df['estrategia'] == estrategia) & 
+                        (df['fold'] == fold) & 
+                        (df['classe'] == classe) & 
+                        (df['categoria'] == 'piorou')
+                    ]['quantidade'].values[0]
+                    
+                    ratio = melhorou / piorou if piorou > 0 else melhorou
+                    ratios.append({
+                        'estrategia': estrategia,
+                        'fold': fold,
+                        'classe': classe,
+                        'ratio': ratio
+                    })
+                except:
+                    continue
+    
+    if ratios:
+        df_ratios = pd.DataFrame(ratios)
+        sns.boxplot(data=df_ratios, x='estrategia', y='ratio', hue='classe', ax=ax4)
+        plt.title('RAZÃO MELHORIA/PIORA')
+        plt.ylabel('Ratio (Melhorias/Pioras)')
+    
+    # Gráfico 5: Estabilidade entre folds
+    ax5 = plt.subplot(2, 3, 5)
+    
+    # Calcular coeficiente de variação por estratégia
+    cv_data = []
+    for estrategia in df['estrategia'].unique():
+        for categoria in df['categoria'].unique():
+            valores = df[
+                (df['estrategia'] == estrategia) & 
+                (df['categoria'] == categoria)
+            ]['quantidade']
+            
+            if len(valores) > 1:
+                cv = valores.std() / valores.mean() if valores.mean() > 0 else 0
+                cv_data.append({
+                    'estrategia': estrategia,
+                    'categoria': categoria,
+                    'cv': cv
+                })
+    
+    if cv_data:
+        df_cv = pd.DataFrame(cv_data)
+        cv_pivot = df_cv.pivot(index='categoria', columns='estrategia', values='cv')
+        sns.heatmap(cv_pivot, annot=True, fmt='.3f', cmap='viridis', ax=ax5)
+        plt.title('COEFICIENTE DE VARIAÇÃO (Estabilidade)')
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'analise_completa_folds.png'), 
+                dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    # Restaurar configurações padrão do pandas
+    pd.reset_option('display.max_columns')
+    pd.reset_option('display.width')
+    pd.reset_option('display.max_colwidth')
+
+# Adicionar também no final da análise_completa_comparacoes:
+def analise_completa_comparacoes():
+    print("  Iniciando análise completa...")
+    
+    metricas_globais = analisar_comparacoes_cruzadas()
+    
+    if metricas_globais is not None:
+        print("  Análise completa concluída!")
+        
+        # Mostrar resumo no console também
+        df = metricas_globais['df']
+        print("\n" + "="*80)
+        print("  RESUMO GERAL COMPLETO (CONSOLE):")
+        print("="*80)
+        
+        resumo = df.groupby(['estrategia', 'categoria'])['quantidade'].mean().unstack()
+        colunas_ordenadas = [
+            'acertos_modelo1', 'erros_modelo1', 'acertos_modelo2', 'erros_modelo2',
+            'melhorou', 'piorou', 'manteve_acerto', 'manteve_erro'
+        ]
+        colunas_existentes = [col for col in colunas_ordenadas if col in resumo.columns]
+        resumo = resumo[colunas_existentes]
+        
+        print(resumo.round(2))
+        print("\n Resultados salvos em: Analise_Global_Comparacoes/")
+    
+    return metricas_globais
 
 if __name__ == "__main__":
+    
+    # ----------------------- CRIANDO A PASTA COM OS MODELOS -----------------------
+    # move_folder("ComparacaoVggF0", "Análises")
+    # move_folder("ComparacaoVggF1", "Análises")
+    # move_folder("ComparacaoVggF2", "Análises")
+    # move_folder("ComparacaoVggF3", "Análises")
+    # move_folder("ComparacaoVggF4", "Análises")
+
+    # move_folder("Comparacoes/ComparacaoVgg_yolon_F0", "Análises")
+    # move_folder("Comparacoes/ComparacaoVgg_yolon_F1", "Análises")
+    # move_folder("Comparacoes/ComparacaoVgg_yolon_F2", "Análises")
+    # move_folder("Comparacoes/ComparacaoVgg_yolon_F3", "Análises")
+    # move_folder("Comparacoes/ComparacaoVgg_yolon_F4", "Análises")
+
+    # rename_folder("Análises/ComparacaoVggF0", "Análises/ComparacaoVgg_F0")
+    # rename_folder("Análises/ComparacaoVggF1", "Análises/ComparacaoVgg_F1")
+    # rename_folder("Análises/ComparacaoVggF2", "Análises/ComparacaoVgg_F2")
+    # rename_folder("Análises/ComparacaoVggF3", "Análises/ComparacaoVgg_F3")
+    # rename_folder("Análises/ComparacaoVggF4", "Análises/ComparacaoVgg_F4")
+
+    # ----------------------- CHAMANDO AS COMPARAÇÕES -----------------------
+    analisar_comparacoes_cruzadas(
+        base_dir="Análises", 
+        output_dir="Resultados_Finais_VGG_Yolon"
+    )
+
 
     SEMENTE = 13388
 
@@ -2189,163 +2758,163 @@ if __name__ == "__main__":
 
     # ------------------ Primeira abordagem testada para incluir os marcadores na segmentação --------------
 
-    resize_imgs_two_masks_dataset(
-        img_dir="Termografias_Dataset_Segmentação/images",
-        mask_breast_dir="Termografias_Dataset_Segmentação/masks",
-        mask_marker_dir = "Termografias_Dataset_Segmentação_Marcadores/masks",
-        output_base="Yolo_dataset_marcadores_two_classes",
-        target=224,          # mesmo tamanho definido no YAML da YOLO,
-        resize_method="BlackPadding"
-    )
+    # resize_imgs_two_masks_dataset(
+    #     img_dir="Termografias_Dataset_Segmentação/images",
+    #     mask_breast_dir="Termografias_Dataset_Segmentação/masks",
+    #     mask_marker_dir = "Termografias_Dataset_Segmentação_Marcadores/masks",
+    #     output_base="Yolo_dataset_marcadores_two_classes",
+    #     target=224,          # mesmo tamanho definido no YAML da YOLO,
+    #     resize_method="BlackPadding"
+    # )
 
 
-    yolo_data_2_classes("Frontal", "Yolo_dataset_marcadores_two_classes/images", "Yolo_dataset_marcadores_two_classes/masks_breast", "Yolo_dataset_marcadores_two_classes/masks_marker", "dataset_two_classes_yolo", True)
-    # train36
-    train_yolo_seg("n", 500, "dataset_yolo_two_classes.yaml", seed=SEMENTE)
+    # yolo_data_2_classes("Frontal", "Yolo_dataset_marcadores_two_classes/images", "Yolo_dataset_marcadores_two_classes/masks_breast", "Yolo_dataset_marcadores_two_classes/masks_marker", "dataset_two_classes_yolo", True)
+    # # train36
+    # train_yolo_seg("n", 500, "dataset_yolo_two_classes.yaml", seed=SEMENTE)
 
 
-    train_model_cv(Vgg_16,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   segmenter= "yolo",
-                   message="Vgg_yolon_AUG_CV_BlackPadding_04_10_25", seg_model_path="runs/segment/train36/weights/best.pt",
-                   resize_method="BlackPadding")
+    # train_model_cv(Vgg_16,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                segmenter= "yolo",
+    #                message="Vgg_yolon_AUG_CV_BlackPadding_04_10_25", seg_model_path="runs/segment/train36/weights/best.pt",
+    #                resize_method="BlackPadding")
 
 
 
     
     
-    MODEL_DIRS = {
-    "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
-    "resnet": "modelos/ResNet34"
-    }
+    # MODEL_DIRS = {
+    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    # "resnet": "modelos/ResNet34"
+    # }
 
-    CONF_BASE  = "Resultados_Retreinamento_seg_pad_two_classes"     # pasta-raiz onde deseja guardar as figuras
-    CLASSES    = ("Healthy", "Sick")    # rótulos das classes
-    RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
-    ANGLE      = "Frontal"              # visão utilizada nos treinos
+    # CONF_BASE  = "Resultados_Retreinamento_seg_pad_two_classes"     # pasta-raiz onde deseja guardar as figuras
+    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    # ANGLE      = "Frontal"              # visão utilizada nos treinos
 
-    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
-    X, y , patient_ids = load_raw_images(
-        f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
-    # --------------------------------------------------
-    # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
-    # --------------------------------------------------
-    experiments = [
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "Vgg_unet_AUG_CV_BlackPadding_13_09_25",
-        #     "segment": "unet",
-        #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-        # },
-        {
-            "resize_method": "BlackPadding",
-            "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
-            "segment": "yolo",
-            "segmenter_path": "runs/segment/train36/weights/best.pt",
-        },
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "ResNet34_unet_AUG_CV_BlackPadding_13_09_25",
-        #     "segment": "unet",
-        #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-        # },
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "ResNet34_yolon_AUG_CV_BlackPadding_13_09_25",
-        #     "segment": "yolo",
-        #     "segmenter_path": "runs/segment/train31/weights/best.pt",
-        # },
+    # exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
+    # X, y , patient_ids = load_raw_images(
+    #     f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
+    # # --------------------------------------------------
+    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # # --------------------------------------------------
+    # experiments = [
+    #     # {
+    #     #     "resize_method": "BlackPadding",
+    #     #     "message": "Vgg_unet_AUG_CV_BlackPadding_13_09_25",
+    #     #     "segment": "unet",
+    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
+    #     # },
+    #     {
+    #         "resize_method": "BlackPadding",
+    #         "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
+    #         "segment": "yolo",
+    #         "segmenter_path": "runs/segment/train36/weights/best.pt",
+    #     },
+    #     # {
+    #     #     "resize_method": "BlackPadding",
+    #     #     "message": "ResNet34_unet_AUG_CV_BlackPadding_13_09_25",
+    #     #     "segment": "unet",
+    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
+    #     # },
+    #     # {
+    #     #     "resize_method": "BlackPadding",
+    #     #     "message": "ResNet34_yolon_AUG_CV_BlackPadding_13_09_25",
+    #     #     "segment": "yolo",
+    #     #     "segmenter_path": "runs/segment/train31/weights/best.pt",
+    #     # },
 
 
-    ]
+    # ]
 
-    # --------------------------------------------------
-    # --- LOOP PRINCIPAL -------------------------------
-    # --------------------------------------------------
-    for exp in experiments:
+    # # --------------------------------------------------
+    # # --- LOOP PRINCIPAL -------------------------------
+    # # --------------------------------------------------
+    # for exp in experiments:
 
-        rsz           = exp["resize_method"]
-        msg           = exp["message"]
-        segment       = exp["segment"]
-        segmenter_path= exp["segmenter_path"]
+    #     rsz           = exp["resize_method"]
+    #     msg           = exp["message"]
+    #     segment       = exp["segment"]
+    #     segmenter_path= exp["segmenter_path"]
 
-        # Identifica qual backbone para escolher a pasta correta
-        backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
-        model_dir    = MODEL_DIRS[backbone_key]
+    #     # Identifica qual backbone para escolher a pasta correta
+    #     backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
+    #     model_dir    = MODEL_DIRS[backbone_key]
 
-        # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
-        out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
-        out_dir_cm.mkdir(parents=True, exist_ok=True)
+    #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+    #     out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
+    #     out_dir_cm.mkdir(parents=True, exist_ok=True)
 
-        for i in range(5):                                   # k-fold = 5
-            # ---- Caminhos de entrada ---------------------
-            model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-            split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
+    #     for i in range(5):                                   # k-fold = 5
+    #         # ---- Caminhos de entrada ---------------------
+    #         model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    #         split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
 
-            # ---- Nome para salvar arquivos/figura --------
-            cm_message = f"{msg}_F{i}"
+    #         # ---- Nome para salvar arquivos/figura --------
+    #         cm_message = f"{msg}_F{i}"
 
-            # ---- Avaliação -------------------------------
-            y_pred = evaluate_model_cm(
-                model_path   = model_path_cm,
-                output_path  = str(out_dir_cm),
-                split_json   = split_path_cm,
-                raw_root     = RAW_ROOT,
-                message      = cm_message,
-                angle        = ANGLE,
-                classes      = CLASSES,
-                rgb          = False,
-                resize_method= rsz,
-                resize       = True,
-                resize_to    = 224,
-                segmenter= segment,
-                seg_model_path = segmenter_path
-            )
+    #         # ---- Avaliação -------------------------------
+    #         y_pred = evaluate_model_cm(
+    #             model_path   = model_path_cm,
+    #             output_path  = str(out_dir_cm),
+    #             split_json   = split_path_cm,
+    #             raw_root     = RAW_ROOT,
+    #             message      = cm_message,
+    #             angle        = ANGLE,
+    #             classes      = CLASSES,
+    #             rgb          = False,
+    #             resize_method= rsz,
+    #             resize       = True,
+    #             resize_to    = 224,
+    #             segmenter= segment,
+    #             seg_model_path = segmenter_path
+    #         )
 
-            split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
+    #         split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
 
-            X_test, y_test, ids_test = ppeprocessEigenCam(
-                X, y, patient_ids,
-                split_json_hm,
-                segment=segment,
-                segmenter_path=segmenter_path,
-                resize_method= rsz  # ou "BlackPadding", "GrayPadding"
-            )
+    #         X_test, y_test, ids_test = ppeprocessEigenCam(
+    #             X, y, patient_ids,
+    #             split_json_hm,
+    #             segment=segment,
+    #             segmenter_path=segmenter_path,
+    #             resize_method= rsz  # ou "BlackPadding", "GrayPadding"
+    #         )
 
-            hits = y_pred == y_test 
-            miss = y_pred != y_test
+    #         hits = y_pred == y_test 
+    #         miss = y_pred != y_test
 
-            # ---------- EigenCAM ----------
-            model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-            out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
-            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+    #         # ---------- EigenCAM ----------
+    #         model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
+    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
 
-            run_eigencam(
-                imgs       = X_test[hits],
-                labels     = y_test[hits],
-                ids        = ids_test[hits],
-                model_path = model_path_hm,
-                out_dir    = out_dir_hm,
-            )
+    #         run_eigencam(
+    #             imgs       = X_test[hits],
+    #             labels     = y_test[hits],
+    #             ids        = ids_test[hits],
+    #             model_path = model_path_hm,
+    #             out_dir    = out_dir_hm,
+    #         )
 
-            out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
-            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
+    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
 
-            run_eigencam(
-                imgs       = X_test[miss],
-                labels     = y_test[miss],
-                ids        = ids_test[miss],
-                model_path = model_path_hm,
-                out_dir    = out_dir_hm,
-            )
+    #         run_eigencam(
+    #             imgs       = X_test[miss],
+    #             labels     = y_test[miss],
+    #             ids        = ids_test[miss],
+    #             model_path = model_path_hm,
+    #             out_dir    = out_dir_hm,
+    #         )
 
-            print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
+    #         print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
 
 
 
