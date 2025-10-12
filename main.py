@@ -2020,9 +2020,9 @@ if __name__ == "__main__":
     "resnet": "modelos/ResNet34"
     }
 
-    CONF_BASE  = "Resultados_TESTE"     # pasta-raiz onde deseja guardar as figuras
+    CONF_BASE  = "Resultados_corrigidos_12_10_25"     # pasta-raiz onde deseja guardar as figuras
     CLASSES    = ("Healthy", "Sick")    # rótulos das classes
-    RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    RAW_ROOT   = "recovered_data" # pasta com os exames originais
     ANGLE      = "Frontal"              # visão utilizada nos treinos
 
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
@@ -2032,32 +2032,31 @@ if __name__ == "__main__":
     # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
     # --------------------------------------------------
     experiments = [
+        
         # {
         #     "resize_method": "BlackPadding",
-        #     "message": "Vgg_unet_AUG_CV_BlackPadding_13_09_25",
-        #     "segment": "unet",
-        #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
+        #     "message": "Vgg_AUG_CV_BlackPadding_13_09_25",
+        #     "segment": "none",
+        #     "segmenter_path": "",
         # },
         {
             "resize_method": "BlackPadding",
-            "message": "Vgg_AUG_CV_BlackPadding_13_09_25",
+            "message": "VGG16_AUG_UFF_BlackPadding_NO_PAD",
             "segment": "none",
             "segmenter_path": "",
         },
         # {
         #     "resize_method": "BlackPadding",
-        #     "message": "ResNet34_unet_AUG_CV_BlackPadding_13_09_25",
-        #     "segment": "unet",
-        #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-        # },
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "ResNet34_yolon_AUG_CV_BlackPadding_13_09_25",
+        #     "message": "Vgg_yolon_AUG_CV_BlackPadding_13_09_25",
         #     "segment": "yolo",
         #     "segmenter_path": "runs/segment/train31/weights/best.pt",
         # },
-
-
+        # {
+        #     "resize_method": "BlackPadding",
+        #     "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
+        #     "segment": "yolo",
+        #     "segmenter_path": "runs/segment/train36/weights/best.pt",
+        # }
     ]
 
     # --------------------------------------------------
@@ -2141,9 +2140,6 @@ if __name__ == "__main__":
             )
 
             print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
-
-    delete_folder("Resultados_TESTE")
-
 
 
 
