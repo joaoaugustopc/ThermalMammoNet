@@ -1208,6 +1208,7 @@ def filter_dataset_by_id(src_dir: str, dst_dir: str, ids_to_remove):
 def load_raw_images(angle_dir, exclude=False, exclude_set=None):
     
     imgs, labels, ids = [], [], []
+    nomes = []
 
     for label_name, label_val in [('healthy', 0), ('sick', 1)]:
         for file in os.listdir(os.path.join(angle_dir, label_name)):
@@ -1236,12 +1237,13 @@ def load_raw_images(angle_dir, exclude=False, exclude_set=None):
                 imgs.append(arr)
                 labels.append(label_val)
                 ids.append(extract_id(file))  # sua função
+                nomes.append(file)
 
             except Exception as e:
                 print(f"Erro ao processar {fpath}: {e}")
                 continue
 
-    return np.array(imgs), np.array(labels), np.array(ids, dtype= int)
+    return np.array(imgs), np.array(labels), np.array(ids, dtype= int), nomes
 
 def load_raw_images_ufpe(angle_dir, exclude=False, exclude_set=None):
     
@@ -1735,7 +1737,7 @@ def apply_augmentation_and_expand_jpg_ufpe(train, labels, num_augmented_copies, 
 
     return all_images, all_labels
 
-from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
+
 # ---------------------- ESPECIFICO PARA UFPE
 def make_tvt_splits_without_ids(imgs, labels, k=5, val_size=0.25, seed=42):
     """
@@ -1748,3 +1750,83 @@ def make_tvt_splits_without_ids(imgs, labels, k=5, val_size=0.25, seed=42):
         train, val = next(sss.split(imgs[outer_train_val], labels[outer_train_val]))
         
         yield outer_train_val[train], outer_train_val[val], test
+        
+# FUNÇÕES PARA FAZER SEPARAÇÃO DOS FOLDS COM MARCADOR E SEM
+def make_tvt_splits_marker_aware(X_com, X_sem, y, patient_ids, k=5, val_size=0.25, seed=42):
+    """
+    Gera splits para treino/val/teste com k-fold cross validation:
+    - Treino/val: metade sem marcador, metade com marcador
+    - Teste: apenas sem marcador
+    """
+    np.random.seed(seed)
+
+    n_sem = len(X_sem)
+    n_com = len(X_com)
+    assert n_sem == n_com, "X_sem e X_com devem ter o mesmo número de imagens"
+
+    # Usar StratifiedGroupKFold apenas no dataset sem marcador para definir os folds
+    sgkf = StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=seed)
+
+    for outer_train_val, test in sgkf.split(X_sem, y, groups=patient_ids):
+        # Dentro do conjunto que resta, sorteia validação
+        gss = GroupShuffleSplit(
+            n_splits=1, test_size=val_size,
+            random_state=seed)
+        train, val = next(gss.split(X_sem[outer_train_val],
+                                    y[outer_train_val],
+                                    groups=patient_ids[outer_train_val]))
+        
+        # Ajusta índices ao vetor global para SEM marcador
+        train_idx_sem = outer_train_val[train]
+        val_idx_sem = outer_train_val[val]
+        test_idx_sem = test
+
+        # Para COM marcador, usa os MESMOS índices (mesmas imagens)
+        # Mas precisamos mapear para os índices corretos no dataset COM marcador
+        train_idx_com = train_idx_sem.copy()  # Mesmas posições no dataset COM
+        val_idx_com = val_idx_sem.copy()      # Mesmas posições no dataset COM
+
+        # Combina treino: sem marcador + com marcador
+        # No dataset combinado: sem marcador vem primeiro (0 a n_sem-1), depois com marcador (n_sem a n_total-1)
+        train_idx_combined = np.concatenate([train_idx_sem, train_idx_com + n_sem])
+        val_idx_combined = np.concatenate([val_idx_sem, val_idx_com + n_sem])
+        test_idx_combined = test_idx_sem  # teste = só sem marcador
+
+        print(f"Fold - Treino sem: {len(train_idx_sem)}, com: {len(train_idx_com)} | "
+              f"Val sem: {len(val_idx_sem)}, com: {len(val_idx_com)} | "
+              f"Teste sem: {len(test_idx_sem)}")
+
+        yield train_idx_combined, val_idx_combined, test_idx_combined
+        
+        
+def verificar_splits_marker_aware(tr_idx, va_idx, te_idx, n_sem, fold):
+    """
+    Verifica se os splits estão corretos para o modo marker-aware
+    """
+    print(f"\n=== VERIFICAÇÃO FOLD {fold} ===")
+    
+    # Verificar treino
+    tr_sem = tr_idx[tr_idx < n_sem]
+    tr_com = tr_idx[tr_idx >= n_sem] - n_sem
+    
+    # Verificar validação
+    va_sem = va_idx[va_idx < n_sem]
+    va_com = va_idx[va_idx >= n_sem] - n_sem
+    
+    # Verificar teste (deve ser apenas sem marcador)
+    te_sem = te_idx[te_idx < n_sem]
+    te_com = te_idx[te_idx >= n_sem]  # Deve estar vazio
+    
+    print(f"Treino - SEM: {len(tr_sem)}, COM: {len(tr_com)}")
+    print(f"Validação - SEM: {len(va_sem)}, COM: {len(va_com)}")
+    print(f"Teste - SEM: {len(te_sem)}, COM: {len(te_com)}")
+    
+    # Verificar se são as mesmas imagens
+    if len(tr_sem) > 0 and len(tr_com) > 0:
+        print(f"Mesmas imagens no treino? {np.array_equal(tr_sem, tr_com)}")
+    
+    # Verificar se teste tem apenas sem marcador
+    if len(te_com) > 0:
+        print("❌ ERRO: Teste contém imagens COM marcador!")
+    else:
+        print("✅ Teste contém apenas imagens SEM marcador")

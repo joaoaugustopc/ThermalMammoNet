@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes
+from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes, make_tvt_splits_marker_aware, verificar_splits_marker_aware
 from utils.files_manipulation import move_files_within_folder, create_folder, move_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model, unet_model_retangular
@@ -282,44 +282,165 @@ def visualize_processed_images(images, labels, title, save_path=None):
         print(f"Imagem salva em: {save_path}")
     else:
         plt.show()
+        
+def salvar_amostras_split_combined_paths(nomes_com, nomes_sem,
+                                         tr_sem_idx, tr_com_idx,
+                                         va_sem_idx, va_com_idx,
+                                         te_sem_idx,
+                                         fold, out_dir="amostras_split", n_amostras=5):
+    """
+    Salva apenas os caminhos das amostras (não as imagens) para conferência.
+    
+    tr_sem_idx, tr_com_idx, va_sem_idx, va_com_idx, te_sem_idx: índices dentro de X_sem/X_com
+    nomes_com, nomes_sem: arrays numpy de strings com nomes dos arquivos
+    """
+    import os
+    os.makedirs(os.path.join(out_dir, f"fold{fold}"), exist_ok=True)
 
+    base_dir = os.path.join(out_dir, f"fold{fold}")
+    dirs = {
+        "train_com": tr_com_idx,
+        "train_sem": tr_sem_idx,
+        "val_com": va_com_idx,
+        "val_sem": va_sem_idx,
+        "test_sem": te_sem_idx
+    }
 
+    for d, idxs in dirs.items():
+        path_file = os.path.join(base_dir, f"{d}_paths.txt")
+        with open(path_file, "w") as f:
+            nomes = nomes_com if "com" in d else nomes_sem
+            if len(idxs) == 0:
+                continue
+            sel = idxs if len(idxs) <= n_amostras else np.random.choice(idxs, n_amostras, replace=False)
+            for i in sel:
+                f.write(f"{nomes[i]}\n")
+
+    print(f"Amostras salvas em: {base_dir}")
+    print(f"Counts -> "
+          f"train_com={len(tr_com_idx)}, train_sem={len(tr_sem_idx)}, "
+          f"val_com={len(va_com_idx)}, val_sem={len(va_sem_idx)}, "
+          f"test_sem={len(te_sem_idx)}")
+
+def salvar_caminhos_reais_split(nomes_com, nomes_sem, com_marcador_dir, sem_marcador_dir,
+                               tr_sem_idx, tr_com_idx, va_sem_idx, va_com_idx, te_sem_idx,
+                               fold, out_dir="caminhos_split"):
+    """
+    Salva os caminhos completos das imagens usadas em cada split
+    """
+    import os
+    os.makedirs(os.path.join(out_dir, f"fold{fold}"), exist_ok=True)
+    
+    base_dir = os.path.join(out_dir, f"fold{fold}")
+    
+    # Dicionário com os splits
+    splits = {
+        "train_sem": (tr_sem_idx, nomes_sem, sem_marcador_dir),
+        "train_com": (tr_com_idx, nomes_com, com_marcador_dir),
+        "val_sem": (va_sem_idx, nomes_sem, sem_marcador_dir),
+        "val_com": (va_com_idx, nomes_com, com_marcador_dir),
+        "test_sem": (te_sem_idx, nomes_sem, sem_marcador_dir)
+    }
+    
+    for split_name, (indices, nomes, base_path) in splits.items():
+        caminhos_file = os.path.join(base_dir, f"{split_name}_caminhos.txt")
+        
+        with open(caminhos_file, "w") as f:
+            f.write(f"# Split: {split_name}\n")
+            f.write(f"# Total de imagens: {len(indices)}\n")
+            f.write(f"# Diretório base: {base_path}\n")
+            f.write("-" * 50 + "\n")
+            
+            for idx in indices:
+                nome_arquivo = nomes[idx]
+                # Determinar se é saudável ou doente baseado no nome ou caminho
+                if "healthy" in base_path or "saudavel" in base_path:
+                    classe = "saudavel"
+                else:
+                    classe = "doente"
+                
+                caminho_completo = os.path.join(base_path, "Frontal", classe, nome_arquivo)
+                f.write(f"{caminho_completo}\n")
+    
+    print(f"Caminhos salvos em: {base_dir}")
+
+    # Também salvar um resumo
+    resumo_file = os.path.join(base_dir, "resumo_split.txt")
+    with open(resumo_file, "w") as f:
+        f.write("RESUMO DO SPLIT - FOLD {fold}\n")
+        f.write("=" * 50 + "\n")
+        f.write(f"Treino SEM marcador: {len(tr_sem_idx)} imagens\n")
+        f.write(f"Treino COM marcador: {len(tr_com_idx)} imagens\n")
+        f.write(f"Validação SEM marcador: {len(va_sem_idx)} imagens\n")
+        f.write(f"Validação COM marcador: {len(va_com_idx)} imagens\n")
+        f.write(f"Teste SEM marcador: {len(te_sem_idx)} imagens\n")
+        f.write("=" * 50 + "\n")
+        f.write(f"Total Treino: {len(tr_sem_idx) + len(tr_com_idx)}\n")
+        f.write(f"Total Validação: {len(va_sem_idx) + len(va_com_idx)}\n")
+        f.write(f"Total Teste: {len(te_sem_idx)}\n")
+        
 """
-FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
+FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS -> ALTERADA PARA FAZER TREINO DE IMAGENS COM MARCADOR E SEM
 """
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
                   resize=True, resize_method = "BlackPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
-                  segmenter="none", seg_model_path="",channel_method ="MapaCalor"):
+                  segmenter="none", seg_model_path="",channel_method ="MapaCalor", raw_root_no_pad=""):
     
     # DEBUG: vendo o nome do modeloo
     #print(model.__name__)
     
-    
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
-    
-    if "ufpe" in raw_root:
-        X, y, patient_ids = load_raw_images_ufpe(
-            os.path.join(raw_root, angle), exclude=False)
-        print(f"Carregando imagens da UFPE: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+
+    # ======================================================
+    # Carrega o dataset (ou os dois, se raw_root_no_pad != "")
+    # ======================================================
+    def load_dataset(root): #alterando funcao para pegar nomes dos arquivos
+        if "ufpe" in root:
+            X, y, patient_ids = load_raw_images_ufpe(
+                os.path.join(root, angle), exclude=False)
+            print(f"Carregando imagens da UFPE: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+            root_names = []
+            
+        else:
+            X, y, patient_ids, root_names = load_raw_images(
+                os.path.join(root, angle), exclude=True, exclude_set=exclude_set)
+            print(f"Carregando imagens: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+        return X, y, patient_ids, root_names
+
+    if raw_root_no_pad == "":
+        X, y, patient_ids, nomes = load_dataset(raw_root)
+        split_generator = make_tvt_splits(X, y, patient_ids, k=k, val_size=0.25, seed=seed)
     else:
-        X, y, patient_ids = load_raw_images(
-            os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
-        print(f"Carregando imagens: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+        print(f"Usando modo marker-aware: raw_root={raw_root}, raw_root_no_pad={raw_root_no_pad}")
+        # Carrega os datasets marker-aware
+        X_com, y_com, patient_ids_com, nomes_com = load_dataset(raw_root)
+        X_sem, y_sem, patient_ids_sem, nomes_sem = load_dataset(raw_root_no_pad)
 
-    print(f"Saudavéis: {np.sum(y==0)}, Doentes: {np.sum(y==1)}")
 
-    
+        # CONVERTER PARA NUMPY AQUI MESMO, fora do loop
+        nomes_com = np.array(nomes_com)
+        nomes_sem = np.array(nomes_sem)
+
+
+        # Agora nomes_com e nomes_sem podem ser indexados com arrays NumPy
+
+
+        assert np.array_equal(y_com, y_sem), "As labels entre as duas bases não coincidem!"
+        assert np.array_equal(patient_ids_com, patient_ids_sem), "Os IDs de paciente não coincidem!"
+
+        X, y, patient_ids = X_sem, y_sem, patient_ids_sem
+        split_generator = make_tvt_splits_marker_aware(X_com, X_sem, y, patient_ids, k=k, val_size=0.25, seed=seed)
+
+
+    print(f"Saudáveis: {np.sum(y==0)}, Doentes: {np.sum(y==1)}")
+
+    os.makedirs("modelos", exist_ok=True)
     with open("modelos/random_seed.txt", "a") as f:
-        f.write(f"{message}\n"
-                f"SEMENTE: {seed}\n")
+        f.write(f"{message}\nSEMENTE: {seed}\n")
 
-    for fold, (tr_idx, va_idx, te_idx) in enumerate(
-                    make_tvt_splits(X, y, patient_ids,
-                                   k=k, val_size=0.25, seed=seed)):
-        
+    for fold, (tr_idx, va_idx, te_idx) in enumerate(split_generator):
         def run_fold():
-        
-            # salva índices para reuso posterior
+            # Salva índices para reuso posterior
             split_file = f"splits/{message}_{angle}_F{fold}.json"
             os.makedirs("splits", exist_ok=True)
             with open(split_file, "w") as f:
@@ -329,25 +450,109 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                     "test_idx": te_idx.tolist()
                 }, f)
 
-            # ------ prepara dados -----------
-            X_tr, y_tr = X[tr_idx], y[tr_idx]
-            X_val,    y_val = X[va_idx], y[va_idx]
+            if raw_root_no_pad != "":
+                # Marker-aware: combina datasets
+                X_all = np.concatenate([X_sem, X_com])
+                y_all = np.concatenate([y_sem, y_com])
+                nomes_sem_np = np.array(nomes_sem)
+                nomes_com_np = np.array(nomes_com)
+                nomes_all = np.concatenate([nomes_sem_np, nomes_com_np])
 
-            X_test,   y_test= X[te_idx], y[te_idx]
+                # No train_model_cv, dentro do if raw_root_no_pad != "":
 
-            print(f"Shape de treinamento fold {fold} antes do aumento de dados: {X_tr.shape}")
+# No train_model_cv, dentro do if raw_root_no_pad != "":
+
+                n_sem = len(X_sem)
+                n_total = n_sem + len(X_com)
+
+                # VERIFICAÇÃO DOS SPLITS
+                verificar_splits_marker_aware(tr_idx, va_idx, te_idx, n_sem, fold)
+
+                # Separar índices sem/com marcador para treino, validação e teste
+                tr_sem_mask = tr_idx < n_sem
+                tr_com_mask = (tr_idx >= n_sem) & (tr_idx < n_total)
+                va_sem_mask = va_idx < n_sem
+                va_com_mask = (va_idx >= n_sem) & (va_idx < n_total)
+                te_sem_mask = te_idx < n_sem  # teste só sem marcador
+
+                tr_sem_idx = tr_idx[tr_sem_mask]
+                tr_com_idx = tr_idx[tr_com_mask] - n_sem  # Subtrai n_sem para obter índice dentro de X_com
+                va_sem_idx = va_idx[va_sem_mask]
+                va_com_idx = va_idx[va_com_mask] - n_sem  # Subtrai n_sem para obter índice dentro de X_com
+                te_sem_idx = te_idx[te_sem_mask]
+
+                print(f"Índices processados - tr_sem: {len(tr_sem_idx)}, tr_com: {len(tr_com_idx)}")
+
+                # Verificar se são as mesmas imagens
+                if len(tr_sem_idx) > 0 and len(tr_com_idx) > 0:
+                    print(f"São as mesmas imagens? {np.array_equal(tr_sem_idx, tr_com_idx)}")
+
+                # Treino e validação combinados
+                X_tr = np.concatenate([X_sem[tr_sem_idx], X_com[tr_com_idx]])
+                y_tr = np.concatenate([y_sem[tr_sem_idx], y_com[tr_com_idx]])
+
+                X_val = np.concatenate([X_sem[va_sem_idx], X_com[va_com_idx]])
+                y_val = np.concatenate([y_sem[va_sem_idx], y_com[va_com_idx]])
+
+                # Teste só sem marcador
+                X_test, y_test = X_sem[te_sem_idx], y_sem[te_sem_idx]                # Contagem
+                train_sem_count, train_com_count = len(tr_sem_idx), len(tr_com_idx)
+                val_sem_count, val_com_count = len(va_sem_idx), len(va_com_idx)
+                test_sem_count = len(te_sem_idx)
+
+                # Salvar amostras
+                try:
+                    salvar_amostras_split_combined_paths(
+                        nomes_com=nomes_com_np,
+                        nomes_sem=nomes_sem_np,
+                        tr_sem_idx=tr_sem_idx,
+                        tr_com_idx=tr_com_idx,
+                        va_sem_idx=va_sem_idx,
+                        va_com_idx=va_com_idx,
+                        te_sem_idx=te_sem_idx,
+                        fold=fold
+                    )
+                    
+                        # Ou para salvar em arquivo:
+                    salvar_caminhos_reais_split(
+                        nomes_com=nomes_com_np,
+                        nomes_sem=nomes_sem_np,
+                        com_marcador_dir=raw_root,
+                        sem_marcador_dir=raw_root_no_pad,
+                        tr_sem_idx=tr_sem_idx,
+                        tr_com_idx=tr_com_idx,
+                        va_sem_idx=va_sem_idx,
+                        va_com_idx=va_com_idx,
+                        te_sem_idx=te_sem_idx,
+                        fold=fold
+                    )
+                except Exception as e:
+                    print(f"[AVISO] Falha ao salvar amostras do fold {fold}: {e}")
+
+            else:
+                # Caso normal: apenas um dataset
+                X_tr, y_tr = X_all[tr_idx], y_all[tr_idx]
+                X_val, y_val = X_all[va_idx], y_all[va_idx]
+                X_test, y_test = X_all[te_idx], y_all[te_idx]
+
+                train_sem_count, train_com_count = len(tr_idx), 0
+                val_sem_count, val_com_count = len(va_idx), 0
+                test_sem_count = len(te_idx)
+
+            print(f"Shape de treinamento fold {fold}: {X_tr.shape}")
             print(f"Shape de validação fold {fold}: {X_val.shape}")
             print(f"Shape de teste fold {fold}: {X_test.shape}")
+            print(f"Counts -> train_com={train_com_count}, train_sem={train_sem_count}, "
+                f"val_com={val_com_count}, val_sem={val_sem_count}, test_sem={test_sem_count}")
 
-            
 
             # min/max APENAS dos originais
             mn, mx = X_tr.min(), X_tr.max()
 
             # normaliza
             X_tr = normalize(X_tr, mn, mx)
-            X_val= normalize(X_val,    mn, mx)
-            X_test=normalize(X_test,   mn, mx)
+            X_val= normalize(X_val, mn, mx)
+            X_test=normalize(X_test, mn, mx)
 
                 
 
@@ -2982,92 +3187,110 @@ def comparar_modelos_por_id_com_consistencia_certo(
 
 if __name__ == "__main__":
     
-    delete_folder("ComparacaoVGGFULL&YoloMARCADOR")
-    create_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
+# TREINANDO MODELO DE IMAGENS COM MARCADOR E SEM
+    SEMENTE = 13388
+
+    train_model_cv(Vgg_16,
+                   raw_root="filtered_raw_dataset",
+                   raw_root_no_pad="recovered_data",
+                   angle="Frontal",
+                   k=5,                 
+                   resize_to=224,
+                   n_aug=2,             
+                   batch=8,
+                   seed= SEMENTE,
+                   message="Vgg_metade_marcador_19_10_25",
+                   resize_method="BlackPadding")
+
+
+
     
-    comparar_modelos_por_id_com_consistencia_certo(
-        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F0",
-        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F0",
-        output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF0"
-    )
+    # delete_folder("ComparacaoVGGFULL&YoloMARCADOR")
+    # create_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
     
-    comparar_modelos_por_id_com_consistencia_certo(
-        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F1",
-        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F1",
-        output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF1",
-    )
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F0",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F0",
+    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF0"
+    # )
     
-    comparar_modelos_por_id_com_consistencia_certo(
-        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F2",
-        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F2",
-        output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF2",
-    )
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F1",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F1",
+    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF1",
+    # )
     
-    comparar_modelos_por_id_com_consistencia_certo(
-        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F3",
-        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F3",
-        output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF3",
-    )
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F2",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F2",
+    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF2",
+    # )
     
-    comparar_modelos_por_id_com_consistencia_certo(
-        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F4",
-        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F4",
-        output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF4",
-    )
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F3",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F3",
+    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF3",
+    # )
+    
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F4",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F4",
+    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF4",
+    # )
     
     
-    delete_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
-    create_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
+    # delete_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
+    # create_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
     
-    comparar_modelos_por_id_com_consistencia_certo(
-        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F0",
-        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F0",
-        output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF0",
-    )
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F0",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F0",
+    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF0",
+    # )
    
-    comparar_modelos_por_id_com_consistencia_certo(
-        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F1",
-        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F1",
-        output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF1",
-    )
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F1",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F1",
+    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF1",
+    # )
     
-    comparar_modelos_por_id_com_consistencia_certo(
-        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F2",
-        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F2",
-        output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF2",
-    )
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F2",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F2",
+    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF2",
+    # )
     
-    comparar_modelos_por_id_com_consistencia_certo(
-        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F3",
-        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F3",
-        output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF3",
-    )
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F3",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F3",
+    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF3",
+    # )
     
-    comparar_modelos_por_id_com_consistencia_certo(
-        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F4",
-        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F4",
-        output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF4",
-    )
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F4",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F4",
+    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF4",
+    # )
     
 
 
@@ -3104,7 +3327,6 @@ if __name__ == "__main__":
 
 
 
-    SEMENTE = 13388
 
     # Foi adicionado algumas funções para lidar com as imagens .png em uint16 no processo de criação do dataset no formato esperado pela yolo.
 
