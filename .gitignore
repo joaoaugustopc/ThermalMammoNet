@@ -177,6 +177,12 @@ Yolo_dataset_marcadores_two_classes/
 dataset_two_classes_yolo/
 dataset_yolo_pads/
 
+marcadores_segmentados_txt/
+Resultados_Finais*
+marcadores_segmentados_txt_analise*
+Vgg_16
+analise_estrategias.txt
+
 YOLO-V11-CAM/
 Yolon_Seg_Yolos_cls/
 Yolos_Cls/

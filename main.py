@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes
+from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes, make_tvt_splits_marker_aware, verificar_splits_marker_aware
 from utils.files_manipulation import move_files_within_folder, create_folder, move_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model, unet_model_retangular
@@ -282,44 +282,165 @@ def visualize_processed_images(images, labels, title, save_path=None):
         print(f"Imagem salva em: {save_path}")
     else:
         plt.show()
+        
+def salvar_amostras_split_combined_paths(nomes_com, nomes_sem,
+                                         tr_sem_idx, tr_com_idx,
+                                         va_sem_idx, va_com_idx,
+                                         te_sem_idx,
+                                         fold, out_dir="amostras_split", n_amostras=5):
+    """
+    Salva apenas os caminhos das amostras (não as imagens) para conferência.
+    
+    tr_sem_idx, tr_com_idx, va_sem_idx, va_com_idx, te_sem_idx: índices dentro de X_sem/X_com
+    nomes_com, nomes_sem: arrays numpy de strings com nomes dos arquivos
+    """
+    import os
+    os.makedirs(os.path.join(out_dir, f"fold{fold}"), exist_ok=True)
 
+    base_dir = os.path.join(out_dir, f"fold{fold}")
+    dirs = {
+        "train_com": tr_com_idx,
+        "train_sem": tr_sem_idx,
+        "val_com": va_com_idx,
+        "val_sem": va_sem_idx,
+        "test_sem": te_sem_idx
+    }
 
+    for d, idxs in dirs.items():
+        path_file = os.path.join(base_dir, f"{d}_paths.txt")
+        with open(path_file, "w") as f:
+            nomes = nomes_com if "com" in d else nomes_sem
+            if len(idxs) == 0:
+                continue
+            sel = idxs if len(idxs) <= n_amostras else np.random.choice(idxs, n_amostras, replace=False)
+            for i in sel:
+                f.write(f"{nomes[i]}\n")
+
+    print(f"Amostras salvas em: {base_dir}")
+    print(f"Counts -> "
+          f"train_com={len(tr_com_idx)}, train_sem={len(tr_sem_idx)}, "
+          f"val_com={len(va_com_idx)}, val_sem={len(va_sem_idx)}, "
+          f"test_sem={len(te_sem_idx)}")
+
+def salvar_caminhos_reais_split(nomes_com, nomes_sem, com_marcador_dir, sem_marcador_dir,
+                               tr_sem_idx, tr_com_idx, va_sem_idx, va_com_idx, te_sem_idx,
+                               fold, out_dir="caminhos_split"):
+    """
+    Salva os caminhos completos das imagens usadas em cada split
+    """
+    import os
+    os.makedirs(os.path.join(out_dir, f"fold{fold}"), exist_ok=True)
+    
+    base_dir = os.path.join(out_dir, f"fold{fold}")
+    
+    # Dicionário com os splits
+    splits = {
+        "train_sem": (tr_sem_idx, nomes_sem, sem_marcador_dir),
+        "train_com": (tr_com_idx, nomes_com, com_marcador_dir),
+        "val_sem": (va_sem_idx, nomes_sem, sem_marcador_dir),
+        "val_com": (va_com_idx, nomes_com, com_marcador_dir),
+        "test_sem": (te_sem_idx, nomes_sem, sem_marcador_dir)
+    }
+    
+    for split_name, (indices, nomes, base_path) in splits.items():
+        caminhos_file = os.path.join(base_dir, f"{split_name}_caminhos.txt")
+        
+        with open(caminhos_file, "w") as f:
+            f.write(f"# Split: {split_name}\n")
+            f.write(f"# Total de imagens: {len(indices)}\n")
+            f.write(f"# Diretório base: {base_path}\n")
+            f.write("-" * 50 + "\n")
+            
+            for idx in indices:
+                nome_arquivo = nomes[idx]
+                # Determinar se é saudável ou doente baseado no nome ou caminho
+                if "healthy" in base_path or "saudavel" in base_path:
+                    classe = "saudavel"
+                else:
+                    classe = "doente"
+                
+                caminho_completo = os.path.join(base_path, "Frontal", classe, nome_arquivo)
+                f.write(f"{caminho_completo}\n")
+    
+    print(f"Caminhos salvos em: {base_dir}")
+
+    # Também salvar um resumo
+    resumo_file = os.path.join(base_dir, "resumo_split.txt")
+    with open(resumo_file, "w") as f:
+        f.write("RESUMO DO SPLIT - FOLD {fold}\n")
+        f.write("=" * 50 + "\n")
+        f.write(f"Treino SEM marcador: {len(tr_sem_idx)} imagens\n")
+        f.write(f"Treino COM marcador: {len(tr_com_idx)} imagens\n")
+        f.write(f"Validação SEM marcador: {len(va_sem_idx)} imagens\n")
+        f.write(f"Validação COM marcador: {len(va_com_idx)} imagens\n")
+        f.write(f"Teste SEM marcador: {len(te_sem_idx)} imagens\n")
+        f.write("=" * 50 + "\n")
+        f.write(f"Total Treino: {len(tr_sem_idx) + len(tr_com_idx)}\n")
+        f.write(f"Total Validação: {len(va_sem_idx) + len(va_com_idx)}\n")
+        f.write(f"Total Teste: {len(te_sem_idx)}\n")
+        
 """
-FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
+FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS -> ALTERADA PARA FAZER TREINO DE IMAGENS COM MARCADOR E SEM
 """
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
                   resize=True, resize_method = "BlackPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
-                  segmenter="none", seg_model_path="",channel_method ="MapaCalor"):
+                  segmenter="none", seg_model_path="",channel_method ="MapaCalor", raw_root_no_pad=""):
     
     # DEBUG: vendo o nome do modeloo
     #print(model.__name__)
     
-    
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
-    
-    if "ufpe" in raw_root:
-        X, y, patient_ids = load_raw_images_ufpe(
-            os.path.join(raw_root, angle), exclude=False)
-        print(f"Carregando imagens da UFPE: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+
+    # ======================================================
+    # Carrega o dataset (ou os dois, se raw_root_no_pad != "")
+    # ======================================================
+    def load_dataset(root): #alterando funcao para pegar nomes dos arquivos
+        if "ufpe" in root:
+            X, y, patient_ids = load_raw_images_ufpe(
+                os.path.join(root, angle), exclude=False)
+            print(f"Carregando imagens da UFPE: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+            root_names = []
+            
+        else:
+            X, y, patient_ids, root_names = load_raw_images(
+                os.path.join(root, angle), exclude=True, exclude_set=exclude_set)
+            print(f"Carregando imagens: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+        return X, y, patient_ids, root_names
+
+    if raw_root_no_pad == "":
+        X, y, patient_ids, nomes = load_dataset(raw_root)
+        split_generator = make_tvt_splits(X, y, patient_ids, k=k, val_size=0.25, seed=seed)
     else:
-        X, y, patient_ids = load_raw_images(
-            os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
-        print(f"Carregando imagens: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+        print(f"Usando modo marker-aware: raw_root={raw_root}, raw_root_no_pad={raw_root_no_pad}")
+        # Carrega os datasets marker-aware
+        X_com, y_com, patient_ids_com, nomes_com = load_dataset(raw_root)
+        X_sem, y_sem, patient_ids_sem, nomes_sem = load_dataset(raw_root_no_pad)
 
-    print(f"Saudavéis: {np.sum(y==0)}, Doentes: {np.sum(y==1)}")
 
-    
+        # CONVERTER PARA NUMPY AQUI MESMO, fora do loop
+        nomes_com = np.array(nomes_com)
+        nomes_sem = np.array(nomes_sem)
+
+
+        # Agora nomes_com e nomes_sem podem ser indexados com arrays NumPy
+
+
+        assert np.array_equal(y_com, y_sem), "As labels entre as duas bases não coincidem!"
+        assert np.array_equal(patient_ids_com, patient_ids_sem), "Os IDs de paciente não coincidem!"
+
+        X, y, patient_ids = X_sem, y_sem, patient_ids_sem
+        split_generator = make_tvt_splits_marker_aware(X_com, X_sem, y, patient_ids, k=k, val_size=0.25, seed=seed)
+
+
+    print(f"Saudáveis: {np.sum(y==0)}, Doentes: {np.sum(y==1)}")
+
+    os.makedirs("modelos", exist_ok=True)
     with open("modelos/random_seed.txt", "a") as f:
-        f.write(f"{message}\n"
-                f"SEMENTE: {seed}\n")
+        f.write(f"{message}\nSEMENTE: {seed}\n")
 
-    for fold, (tr_idx, va_idx, te_idx) in enumerate(
-                    make_tvt_splits(X, y, patient_ids,
-                                   k=k, val_size=0.25, seed=seed)):
-        
+    for fold, (tr_idx, va_idx, te_idx) in enumerate(split_generator):
         def run_fold():
-        
-            # salva índices para reuso posterior
+            # Salva índices para reuso posterior
             split_file = f"splits/{message}_{angle}_F{fold}.json"
             os.makedirs("splits", exist_ok=True)
             with open(split_file, "w") as f:
@@ -329,25 +450,109 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                     "test_idx": te_idx.tolist()
                 }, f)
 
-            # ------ prepara dados -----------
-            X_tr, y_tr = X[tr_idx], y[tr_idx]
-            X_val,    y_val = X[va_idx], y[va_idx]
+            if raw_root_no_pad != "":
+                # Marker-aware: combina datasets
+                X_all = np.concatenate([X_sem, X_com])
+                y_all = np.concatenate([y_sem, y_com])
+                nomes_sem_np = np.array(nomes_sem)
+                nomes_com_np = np.array(nomes_com)
+                nomes_all = np.concatenate([nomes_sem_np, nomes_com_np])
 
-            X_test,   y_test= X[te_idx], y[te_idx]
+                # No train_model_cv, dentro do if raw_root_no_pad != "":
 
-            print(f"Shape de treinamento fold {fold} antes do aumento de dados: {X_tr.shape}")
+# No train_model_cv, dentro do if raw_root_no_pad != "":
+
+                n_sem = len(X_sem)
+                n_total = n_sem + len(X_com)
+
+                # VERIFICAÇÃO DOS SPLITS
+                verificar_splits_marker_aware(tr_idx, va_idx, te_idx, n_sem, fold)
+
+                # Separar índices sem/com marcador para treino, validação e teste
+                tr_sem_mask = tr_idx < n_sem
+                tr_com_mask = (tr_idx >= n_sem) & (tr_idx < n_total)
+                va_sem_mask = va_idx < n_sem
+                va_com_mask = (va_idx >= n_sem) & (va_idx < n_total)
+                te_sem_mask = te_idx < n_sem  # teste só sem marcador
+
+                tr_sem_idx = tr_idx[tr_sem_mask]
+                tr_com_idx = tr_idx[tr_com_mask] - n_sem  # Subtrai n_sem para obter índice dentro de X_com
+                va_sem_idx = va_idx[va_sem_mask]
+                va_com_idx = va_idx[va_com_mask] - n_sem  # Subtrai n_sem para obter índice dentro de X_com
+                te_sem_idx = te_idx[te_sem_mask]
+
+                print(f"Índices processados - tr_sem: {len(tr_sem_idx)}, tr_com: {len(tr_com_idx)}")
+
+                # Verificar se são as mesmas imagens
+                if len(tr_sem_idx) > 0 and len(tr_com_idx) > 0:
+                    print(f"São as mesmas imagens? {np.array_equal(tr_sem_idx, tr_com_idx)}")
+
+                # Treino e validação combinados
+                X_tr = np.concatenate([X_sem[tr_sem_idx], X_com[tr_com_idx]])
+                y_tr = np.concatenate([y_sem[tr_sem_idx], y_com[tr_com_idx]])
+
+                X_val = np.concatenate([X_sem[va_sem_idx], X_com[va_com_idx]])
+                y_val = np.concatenate([y_sem[va_sem_idx], y_com[va_com_idx]])
+
+                # Teste só sem marcador
+                X_test, y_test = X_sem[te_sem_idx], y_sem[te_sem_idx]                # Contagem
+                train_sem_count, train_com_count = len(tr_sem_idx), len(tr_com_idx)
+                val_sem_count, val_com_count = len(va_sem_idx), len(va_com_idx)
+                test_sem_count = len(te_sem_idx)
+
+                # Salvar amostras
+                try:
+                    salvar_amostras_split_combined_paths(
+                        nomes_com=nomes_com_np,
+                        nomes_sem=nomes_sem_np,
+                        tr_sem_idx=tr_sem_idx,
+                        tr_com_idx=tr_com_idx,
+                        va_sem_idx=va_sem_idx,
+                        va_com_idx=va_com_idx,
+                        te_sem_idx=te_sem_idx,
+                        fold=fold
+                    )
+                    
+                        # Ou para salvar em arquivo:
+                    salvar_caminhos_reais_split(
+                        nomes_com=nomes_com_np,
+                        nomes_sem=nomes_sem_np,
+                        com_marcador_dir=raw_root,
+                        sem_marcador_dir=raw_root_no_pad,
+                        tr_sem_idx=tr_sem_idx,
+                        tr_com_idx=tr_com_idx,
+                        va_sem_idx=va_sem_idx,
+                        va_com_idx=va_com_idx,
+                        te_sem_idx=te_sem_idx,
+                        fold=fold
+                    )
+                except Exception as e:
+                    print(f"[AVISO] Falha ao salvar amostras do fold {fold}: {e}")
+
+            else:
+                # Caso normal: apenas um dataset
+                X_tr, y_tr = X_all[tr_idx], y_all[tr_idx]
+                X_val, y_val = X_all[va_idx], y_all[va_idx]
+                X_test, y_test = X_all[te_idx], y_all[te_idx]
+
+                train_sem_count, train_com_count = len(tr_idx), 0
+                val_sem_count, val_com_count = len(va_idx), 0
+                test_sem_count = len(te_idx)
+
+            print(f"Shape de treinamento fold {fold}: {X_tr.shape}")
             print(f"Shape de validação fold {fold}: {X_val.shape}")
             print(f"Shape de teste fold {fold}: {X_test.shape}")
+            print(f"Counts -> train_com={train_com_count}, train_sem={train_sem_count}, "
+                f"val_com={val_com_count}, val_sem={val_sem_count}, test_sem={test_sem_count}")
 
-            
 
             # min/max APENAS dos originais
             mn, mx = X_tr.min(), X_tr.max()
 
             # normaliza
             X_tr = normalize(X_tr, mn, mx)
-            X_val= normalize(X_val,    mn, mx)
-            X_test=normalize(X_test,   mn, mx)
+            X_val= normalize(X_val, mn, mx)
+            X_test=normalize(X_test, mn, mx)
 
                 
 
@@ -633,7 +838,7 @@ def load_jpg_images(base_dir):
         class_path = os.path.join(frontal_path, class_name)
         
         if not os.path.exists(class_path):
-            print(f"⚠️ Aviso: Pasta '{class_name}' não encontrada em {frontal_path}")
+            print(f"  Aviso: Pasta '{class_name}' não encontrada em {frontal_path}")
             continue
             
         label = 0 if class_name == 'healthy' else 1
@@ -1851,26 +2056,44 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
     """
 
     def coletar_ids(exp_base, modelo):
+
         resultado = {"Acertos": {"Health": set(), "Sick": set()},
-                     "Erros": {"Health": set(), "Sick": set()}}
+                    "Erros": {"Health": set(), "Sick": set()}}
+        
+        padrao_id = re.compile(r"(id_\d+)")  # captura id_ seguido de números
+        
         for tipo in ["Acertos", "Erros"]:
             for classe in ["Health", "Sick"]:
                 class_path = os.path.join(exp_base, tipo, modelo, classe)
-                print(class_path)
                 if os.path.exists(class_path):
-                    arquivos = [f for f in os.listdir(class_path) if f.endswith("_overlay.png")]
-                    resultado[tipo][classe].update([f.split("_overlay.png")[0] for f in arquivos])
+                    arquivos = [f for f in os.listdir(class_path) if f.endswith(".png")]
+                    for f in arquivos:
+                        m = padrao_id.search(f)
+                        if m:
+                            resultado[tipo][classe].add(m.group(1))  # adiciona só id_XXX
         return resultado
 
 
     exp1 = coletar_ids(exp1_base, exp1_modelo)
     exp2 = coletar_ids(exp2_base, exp2_modelo)
 
+    # --------------verificando se tá certos os ids -> teste
+    # ids_set1 = exp1["Acertos"]["Health"]
+    # ids_set2 = exp2["Acertos"]["Health"]
+
+    # # IDs que estão em ids_set2 mas não estão em ids_set1
+    # diferenca = ids_set1 - ids_set2
+
+    # # ordenar numericamente
+    # diferenca_ordenada = sorted(diferenca, key=lambda x: int(x.split("_")[1]))
+
+    # print(diferenca_ordenada)
+    # -----------------------------------------------
+
     #pasta de saída
     os.makedirs(output_dir, exist_ok=True)
     relatorio_path = os.path.join(output_dir, "relatorio_comparacao.txt")
     
-    # caso queira escrever uma mensagem no título diferente
     if mensagem == "mensagem_comparacao:":
         with open(relatorio_path, "w") as f:
             f.write(f"Comparando o modelo {exp1_modelo} com {exp2_modelo}\n")
@@ -1921,22 +2144,27 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
             for nome, ids_set in categorias.items():
                 destino = os.path.join(output_dir, nome, classe)
                 os.makedirs(destino, exist_ok=True)
+                
                 for img_id in ids_set:
-                    candidatos = [
-                        os.path.join(exp1_base, "Acertos", exp1_modelo, classe, img_id + "_overlay.png"),
-                        os.path.join(exp1_base, "Erros", exp1_modelo, classe, img_id + "_overlay.png"),
-                        os.path.join(exp2_base, "Acertos", exp2_modelo, classe, img_id + "_overlay.png"),
-                        os.path.join(exp2_base, "Erros", exp2_modelo, classe, img_id + "_overlay.png"),
-                    ]
-                    for src in candidatos:
-                        if os.path.exists(src):
-                            shutil.copy(src, os.path.join(destino, os.path.basename(src)))
-                            break
+                    # Procurar em todas as pastas possíveis
+                    for tipo, base, modelo in [
+                        ("Acertos", exp1_base, exp1_modelo),
+                        ("Erros", exp1_base, exp1_modelo),
+                        ("Acertos", exp2_base, exp2_modelo),
+                        ("Erros", exp2_base, exp2_modelo)
+                    ]:
+                        class_path = os.path.join(base, tipo, modelo, classe)
+                        if os.path.exists(class_path):
+                            for f in os.listdir(class_path):
+                                if f.startswith(img_id) and f.endswith(".png"):  
+                                    shutil.copy(os.path.join(class_path, f), os.path.join(destino, f))
+                                
+
 
     print(f"Comparação concluída!")
     print(f"Relatório: {relatorio_path}")
     print(f"Imagens copiadas para: {output_dir}")
-
+ 
 import os
 import cv2
 
@@ -1983,57 +2211,1101 @@ def unir_mascaras(pasta_breast, pasta_marker, pasta_saida):
 
     print(f"Máscaras unidas foram salvas em: {pasta_saida}")
 
+# =========================================================================================
+# --------------------------------COMPARACOES ESTATISTICAS--------------------------------
+# =========================================================================================
+# Para fazer ESSAS comparações, tem que ter gerados os relatórios acima de comparações em "comparar_resultados_modelo_completo" e gerar as pastas com os resultados
 
-
-from utils.transform_to_therm import *
+import os
+import shutil
+import pandas as pd
 import numpy as np
-import cv2
-import sys
+from collections import defaultdict
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
+import re
+
+def analisar_comparacoes_cruzadas(base_dir="comparacoes", output_dir="Analise_Global_Comparacoes"):
+    """
+    Analisa múltiplas estratégias de comparação através dos folds
+    """
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    estrategias = defaultdict(list)
+    
+    #   IDENTIFICAÇÃO DOS FOLDS
+    for item in os.listdir(base_dir):
+        item_path = os.path.join(base_dir, item)
+        
+        if os.path.isdir(item_path):
+            # Padrão flexível para identificar folds
+            if '_F' in item and item.split('_F')[-1].isdigit():
+                partes = item.split('_F')
+                nome_estrategia = partes[0]
+                fold_num = int(partes[1])
+                
+                estrategias[nome_estrategia].append((fold_num, item_path))
+    
+    # Ordenar por fold
+    for estrategia in estrategias:
+        estrategias[estrategia].sort(key=lambda x: x[0])
+    
+    print("  ESTRATÉGIAS E FOLDS IDENTIFICADOS:")
+    for estrategia, folds in estrategias.items():
+        print(f"   {estrategia}: {len(folds)} folds → {[f[0] for f in folds]}")
+    
+    if not estrategias:
+        print(" Nenhuma pasta com padrão *_F* encontrada!")
+        return None
+    
+    # Coletar métricas
+    metricas_globais = coletar_metricas_globais(estrategias, output_dir)
+    
+    if metricas_globais is None:
+        return None
+    
+    # Análises
+    analisar_estrategias(metricas_globais, output_dir)
+    # analisar_consistencia_folds(metricas_globais, output_dir)
+    plotar_acertos_erros_por_fold(metricas_globais, output_dir)
+
+    
+    return metricas_globais
+
+def coletar_metricas_globais(estrategias, output_dir):
+    """Coleta métricas de forma robusta baseada no formato conhecido"""
+    
+    metricas = {
+        'estrategia': [],
+        'fold': [],
+        'classe': [],
+        'categoria': [],
+        'quantidade': []
+    }
+    
+    total_metricas = 0
+    
+    for estrategia_nome, folds in estrategias.items():
+        for fold, pasta in folds:
+            relatorio_path = os.path.join(pasta, "relatorio_comparacao.txt")
+            
+            if os.path.exists(relatorio_path):
+                print(f"📖 Processando: {estrategia_nome} - Fold {fold}")
+                
+                # Extrair métricas para Health e Sick
+                for classe in ['Health', 'Sick']:
+                    metricas_classe = extrair_metricas_por_classe(relatorio_path, classe)
+                    
+                    for categoria, quantidade in metricas_classe.items():
+                        metricas['estrategia'].append(estrategia_nome)
+                        metricas['fold'].append(fold)
+                        metricas['classe'].append(classe)
+                        metricas['categoria'].append(categoria)
+                        metricas['quantidade'].append(quantidade)
+                        total_metricas += 1
+            else:
+                print(f"   Relatório não encontrado: {relatorio_path}")
+    
+    print(f"  Total de métricas coletadas: {total_metricas}")
+    
+    if total_metricas == 0:
+        print(" Nenhuma métrica válida foi coletada!")
+        return None
+    
+    #   VERIFICAR INTEGRIDADE DOS DADOS
+    comprimentos = {key: len(values) for key, values in metricas.items()}
+    print(f"  Comprimentos das listas: {comprimentos}")
+    
+    if len(set(comprimentos.values())) != 1:
+        print(" ERRO: As listas têm comprimentos diferentes!")
+        return None
+    
+    try:
+        df_metricas = pd.DataFrame(metricas)
+        df_metricas.to_csv(os.path.join(output_dir, "metricas_brutas.csv"), index=False)
+        print(f"  DataFrame criado com sucesso: {len(df_metricas)} registros")
+        
+        return {'df': df_metricas}
+    
+    except Exception as e:
+        print(f" Erro ao criar DataFrame: {e}")
+        return None
+
+def extrair_metricas_por_classe(relatorio_path, classe_alvo):
+    """
+    Extrai métricas ESPECÍFICAS do formato exato do seu relatório
+    """
+    
+    metricas = {
+        'acertos_modelo1': 0,
+        'erros_modelo1': 0, 
+        'acertos_modelo2': 0,
+        'erros_modelo2': 0,
+        'melhorou': 0,
+        'piorou': 0,
+        'manteve_acerto': 0,
+        'manteve_erro': 0
+    }
+    
+    try:
+        with open(relatorio_path, 'r', encoding='utf-8') as f:
+            linhas = f.readlines()
+        
+        dentro_classe = False
+        
+        for i, linha in enumerate(linhas):
+            linha = linha.strip()
+            
+            # Identificar início da seção da classe
+            if f"============================================= {classe_alvo} =============================================" in linha:
+                dentro_classe = True
+                print(f"     Encontrou seção: {classe_alvo}")
+                continue
+            elif dentro_classe and "=============================================" in linha and classe_alvo not in linha:
+                dentro_classe = False
+                continue
+            
+            if not dentro_classe:
+                continue
+            
+            #   DEBUG: Mostrar linhas relevantes
+            if "Total de imagens" in linha or "Imagens que o modelo" in linha or "Manteve_" in linha:
+                print(f"     Linha {i}: {linha}")
+            
+            #   EXTRAÇÃO PRECISA - FORMATO EXATO DO SEU RELATÓRIO
+            
+            # 1. Quantitativos totais
+            if "Total de imagens" in linha:
+                # Saúde
+                if classe_alvo == "Health":
+                    if "acertos (modelo 1)" in linha and "saudáveis" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['acertos_modelo1'] = int(valor.group(1))
+                            print(f"     acertos_modelo1 (Health): {metricas['acertos_modelo1']}")
+                    
+                    elif "erros (modelo 1)" in linha and "saudáveis" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['erros_modelo1'] = int(valor.group(1))
+                            print(f"     erros_modelo1 (Health): {metricas['erros_modelo1']}")
+                    
+                    elif "acertos (modelo 2)" in linha and "saudáveis" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['acertos_modelo2'] = int(valor.group(1))
+                            print(f"     acertos_modelo2 (Health): {metricas['acertos_modelo2']}")
+                    
+                    elif "erros (modelo 2)" in linha and "saudáveis" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['erros_modelo2'] = int(valor.group(1))
+                            print(f"     erros_modelo2 (Health): {metricas['erros_modelo2']}")
+                
+                # Doença  
+                else:  # Sick
+                    if "acertos (modelo 1)" in linha and "doentes" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['acertos_modelo1'] = int(valor.group(1))
+                            print(f"     acertos_modelo1 (Sick): {metricas['acertos_modelo1']}")
+                    
+                    elif "erros (modelo 1)" in linha and "doentes" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['erros_modelo1'] = int(valor.group(1))
+                            print(f"     erros_modelo1 (Sick): {metricas['erros_modelo1']}")
+                    
+                    elif "acertos (modelo 2)" in linha and "doentes" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['acertos_modelo2'] = int(valor.group(1))
+                            print(f"     acertos_modelo2 (Sick): {metricas['acertos_modelo2']}")
+                    
+                    elif "erros (modelo 2)" in linha and "doentes" in linha:
+                        valor = re.search(r':\s*(\d+)', linha)
+                        if valor:
+                            metricas['erros_modelo2'] = int(valor.group(1))
+                            print(f"     erros_modelo2 (Sick): {metricas['erros_modelo2']}")
+            
+            # 2. Categorias de comparação - FORMATO EXATO
+            elif "Imagens que o modelo 1 errava e agora o modelo 2 acerta:" in linha:
+                # Procura o número na MESMA linha
+                valor = re.search(r':\s*(\d+)\s*imagens', linha)
+                if valor:
+                    metricas['melhorou'] = int(valor.group(1))
+                    print(f"     melhorou: {metricas['melhorou']}")
+                else:
+                    # Tentativa alternativa
+                    valor = re.search(r':\s*(\d+)', linha)
+                    if valor:
+                        metricas['melhorou'] = int(valor.group(1))
+                        print(f"     melhorou (alt): {metricas['melhorou']}")
+            
+            elif "Imagens que o modelo 1 acertava e agora o modelo 2 erra" in linha:
+                valor = re.search(r':\s*(\d+)\s*imagens', linha)
+                if valor:
+                    metricas['piorou'] = int(valor.group(1))
+                    print(f"     piorou: {metricas['piorou']}")
+                else:
+                    valor = re.search(r':\s*(\d+)', linha)
+                    if valor:
+                        metricas['piorou'] = int(valor.group(1))
+                        print(f"     piorou (alt): {metricas['piorou']}")
+            
+            elif "Manteve_Acerto:" in linha:
+                valor = re.search(r':\s*(\d+)\s*imagens', linha)
+                if valor:
+                    metricas['manteve_acerto'] = int(valor.group(1))
+                    print(f"     manteve_acerto: {metricas['manteve_acerto']}")
+                else:
+                    valor = re.search(r':\s*(\d+)', linha)
+                    if valor:
+                        metricas['manteve_acerto'] = int(valor.group(1))
+                        print(f"     manteve_acerto (alt): {metricas['manteve_acerto']}")
+            
+            elif "Manteve_Erro:" in linha:
+                valor = re.search(r':\s*(\d+)\s*imagens', linha)
+                if valor:
+                    metricas['manteve_erro'] = int(valor.group(1))
+                    print(f"     manteve_erro: {metricas['manteve_erro']}")
+                else:
+                    valor = re.search(r':\s*(\d+)', linha)
+                    if valor:
+                        metricas['manteve_erro'] = int(valor.group(1))
+                        print(f"     manteve_erro (alt): {metricas['manteve_erro']}")
+    
+    except Exception as e:
+        print(f" Erro ao processar {relatorio_path}: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    #   MOSTRAR RESULTADO FINAL
+    print(f"     RESULTADOS EXTRAÍDOS para {classe_alvo}:")
+    for key, value in metricas.items():
+        print(f"      {key}: {value}")
+    
+    return metricas
+
+def analisar_estrategias(metricas_globais, output_dir):
+    """Analisa as diferenças entre as estratégias"""
+    
+    df = metricas_globais['df']
+    
+    with open(os.path.join(output_dir, "analise_estrategias.txt"), "w") as f:
+        f.write("=== ANÁLISE COMPARATIVA ENTRE ESTRATÉGIAS ===\n\n")
+        
+        estrategias = df['estrategia'].unique()
+        f.write(f"Estratégias identificadas: {', '.join(estrategias)}\n\n")
+        
+        # Configurar pandas para mostrar todas as colunas
+        pd.set_option('display.max_columns', None)
+        pd.set_option('display.width', None)
+        pd.set_option('display.max_colwidth', None)
+        
+        #   RESUMO GERAL COMPLETO
+        f.write("  RESUMO GERAL COMPLETO:\n")
+        resumo = df.groupby(['estrategia', 'categoria'])['quantidade'].mean().unstack()
+        
+        # Reordenar as colunas para uma visualização mais lógica
+        colunas_ordenadas = [
+            'acertos_modelo1', 'erros_modelo1', 
+            'acertos_modelo2', 'erros_modelo2',
+            'melhorou', 'piorou', 
+            'manteve_acerto', 'manteve_erro'
+        ]
+        
+        # Manter apenas as colunas que existem
+        colunas_existentes = [col for col in colunas_ordenadas if col in resumo.columns]
+        resumo = resumo[colunas_existentes]
+        
+        f.write(str(resumo.round(2)) + "\n\n")
+        
+        #  ANÁLISE DETALHADA DAS MELHORIAS
+        f.write(" ANÁLISE DETALHADA DAS MELHORIAS:\n")
+        
+        for classe in ['Health', 'Sick']:
+            f.write(f"\n🔬 CLASSE: {classe}\n")
+            
+            for estrategia in estrategias:
+                # Melhorias
+                melhorias = df[
+                    (df['estrategia'] == estrategia) & 
+                    (df['classe'] == classe) & 
+                    (df['categoria'] == 'melhorou')
+                ]['quantidade']
+                
+                # Pioras
+                pioras = df[
+                    (df['estrategia'] == estrategia) & 
+                    (df['classe'] == classe) & 
+                    (df['categoria'] == 'piorou')
+                ]['quantidade']
+                
+                if len(melhorias) > 0 and len(pioras) > 0:
+                    f.write(f"   {estrategia}:\n")
+                    f.write(f"      Melhorias: {melhorias.mean():.1f} ± {melhorias.std():.1f}\n")
+                    f.write(f"      Pioras: {pioras.mean():.1f} ± {pioras.std():.1f}\n")
+                    
+                    # Razão Melhoria/Piora
+                    if pioras.mean() > 0:
+                        razao = melhorias.mean() / pioras.mean()
+                        f.write(f"      Razão M/P: {razao:.2f}\n")
+            
+            # Comparação estatística entre estratégias
+            if len(estrategias) == 2:
+                estrat1, estrat2 = estrategias
+                
+                melhorias1 = df[
+                    (df['estrategia'] == estrat1) & 
+                    (df['classe'] == classe) & 
+                    (df['categoria'] == 'melhorou')
+                ]['quantidade']
+                
+                melhorias2 = df[
+                    (df['estrategia'] == estrat2) & 
+                    (df['classe'] == classe) & 
+                    (df['categoria'] == 'melhorou')
+                ]['quantidade']
+                
+                if len(melhorias1) > 1 and len(melhorias2) > 1:
+                    t_stat, p_value = stats.ttest_ind(melhorias1, melhorias2)
+                    f.write(f"     Teste t {estrat1} vs {estrat2}: t={t_stat:.3f}, p={p_value:.3f}\n")
+        
+        # 📋 TABELA DETALHADA POR FOLD
+        f.write(f"\n📋 DADOS DETALHADOS POR FOLD:\n")
+        f.write("="*80 + "\n")
+        
+        for fold in sorted(df['fold'].unique()):
+            f.write(f"\n  FOLD {fold}:\n")
+            df_fold = df[df['fold'] == fold]
+            
+            for estrategia in df_fold['estrategia'].unique():
+                f.write(f"   {estrategia}:\n")
+                
+                for classe in ['Health', 'Sick']:
+                    f.write(f"      {classe}:\n")
+                    
+                    # Buscar todas as métricas para esta combinação
+                    dados_classe = df_fold[
+                        (df_fold['estrategia'] == estrategia) & 
+                        (df_fold['classe'] == classe)
+                    ]
+                    
+                    for _, row in dados_classe.iterrows():
+                        f.write(f"         {row['categoria']}: {row['quantidade']}\n")
+def analisar_consistencia_folds(metricas_globais, output_dir):
+    """Analisa a consistência entre os folds com visualização completa"""
+    print("analise consistencia")
+    df = metricas_globais['df']
+    
+    # Configurar o estilo dos gráficos
+    plt.style.use('seaborn-v0_8')
+    fig = plt.figure(figsize=(20, 15))
+    
+    estrategias = df['estrategia'].unique()
+    metricas_principais = ['melhorou', 'piorou', 'manteve_acerto', 'manteve_erro']
+    
+    # 🎨 CORES DINÂMICAS - Gera automaticamente para qualquer estratégia
+    cores_disponiveis = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                         '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    cores_estrategias = {estrategia: cores_disponiveis[i % len(cores_disponiveis)] 
+                        for i, estrategia in enumerate(estrategias)}
+    
+    # 🎨 ESTILOS DE LINHA POR MÉTRICA
+    estilos_metricas = {
+        'melhorou': '-',           # Linha sólida
+        'piorou': '--',            # Linha tracejada
+        'manteve_acerto': '-.',    # Linha ponto-traço
+        'manteve_erro': ':'        # Linha pontilhada
+    }
+    
+    # 🎨 MARCADORES POR MÉTRICA
+    marcadores_metricas = {
+        'melhorou': 'o',      # Círculo
+        'piorou': 's',        # Quadrado  
+        'manteve_acerto': '^', # Triângulo
+        'manteve_erro': 'D'   # Diamante
+    }
+    
+    # Gráfico 1: Todas as métricas por fold
+    ax1 = plt.subplot(2, 3, 1)
+    
+    for estrategia in estrategias:
+        for metrica in metricas_principais:
+            if metrica in df['categoria'].unique():
+                subset = df[
+                    (df['estrategia'] == estrategia) & 
+                    (df['categoria'] == metrica)
+                ]
+                
+                if not subset.empty:
+                    cor = cores_estrategias[estrategia]
+                    estilo = estilos_metricas[metrica]
+                    marcador = marcadores_metricas[metrica]
+                    
+                    plt.plot(subset['fold'], subset['quantidade'], 
+                            marker=marcador, linestyle=estilo, linewidth=2, markersize=6,
+                            label=f'{estrategia} - {metrica}',
+                            color=cor, alpha=0.8, 
+                            markeredgecolor='white', markeredgewidth=1)
+    
+    plt.xlabel('Fold')
+    plt.ylabel('Quantidade')
+    plt.title('TODAS AS MÉTRICAS POR FOLD\n(Cores: Estratégias, Estilos: Métricas)')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+    plt.grid(True, alpha=0.3)
+    
+    # Gráfico 2: Heatmap das métricas
+    ax2 = plt.subplot(2, 3, 2)
+    
+    # Preparar dados para heatmap
+    heatmap_data = df.pivot_table(
+        index=['estrategia', 'fold'], 
+        columns='categoria', 
+        values='quantidade',
+        aggfunc='mean'
+    ).fillna(0)
+    
+    # Reordenar colunas
+    colunas_ordenadas = [col for col in [
+        'acertos_modelo1', 'erros_modelo1', 'acertos_modelo2', 'erros_modelo2',
+        'melhorou', 'piorou', 'manteve_acerto', 'manteve_erro'
+    ] if col in heatmap_data.columns]
+    
+    heatmap_data = heatmap_data[colunas_ordenadas]
+    
+    sns.heatmap(heatmap_data, annot=True, fmt='.1f', cmap='YlOrRd', ax=ax2)
+    plt.title('HEATMAP - MÉTRICAS POR FOLD/ESTRATÉGIA')
+    plt.tight_layout()
+    
+    # Gráfico 3: Comparação direta das melhorias
+    ax3 = plt.subplot(2, 3, 3)
+    
+    dados_melhorias = df[df['categoria'] == 'melhorou']
+    sns.boxplot(data=dados_melhorias, x='estrategia', y='quantidade', hue='classe', ax=ax3)
+    plt.title('DISTRIBUIÇÃO DAS MELHORIAS')
+    plt.ylabel('Número de Melhorias')
+    
+    # Gráfico 4: Razão Melhoria/Piora
+    ax4 = plt.subplot(2, 3, 4)
+    
+    ratios = []
+    for estrategia in df['estrategia'].unique():
+        for fold in df['fold'].unique():
+            for classe in ['Health', 'Sick']:
+                try:
+                    melhorou = df[
+                        (df['estrategia'] == estrategia) & 
+                        (df['fold'] == fold) & 
+                        (df['classe'] == classe) & 
+                        (df['categoria'] == 'melhorou')
+                    ]['quantidade'].values[0]
+                    
+                    piorou = df[
+                        (df['estrategia'] == estrategia) & 
+                        (df['fold'] == fold) & 
+                        (df['classe'] == classe) & 
+                        (df['categoria'] == 'piorou')
+                    ]['quantidade'].values[0]
+                    
+                    ratio = melhorou / piorou if piorou > 0 else melhorou
+                    ratios.append({
+                        'estrategia': estrategia,
+                        'fold': fold,
+                        'classe': classe,
+                        'ratio': ratio
+                    })
+                except:
+                    continue
+    
+    if ratios:
+        df_ratios = pd.DataFrame(ratios)
+        sns.boxplot(data=df_ratios, x='estrategia', y='ratio', hue='classe', ax=ax4)
+        plt.title('RAZÃO MELHORIA/PIORA')
+        plt.ylabel('Ratio (Melhorias/Pioras)')
+    
+    # Gráfico 5: Estabilidade entre folds
+    ax5 = plt.subplot(2, 3, 5)
+    
+    # Calcular coeficiente de variação por estratégia
+    cv_data = []
+    for estrategia in df['estrategia'].unique():
+        for categoria in df['categoria'].unique():
+            valores = df[
+                (df['estrategia'] == estrategia) & 
+                (df['categoria'] == categoria)
+            ]['quantidade']
+            
+            if len(valores) > 1:
+                cv = valores.std() / valores.mean() if valores.mean() > 0 else 0
+                cv_data.append({
+                    'estrategia': estrategia,
+                    'categoria': categoria,
+                    'cv': cv
+                })
+    
+    if cv_data:
+        df_cv = pd.DataFrame(cv_data)
+        cv_pivot = df_cv.pivot(index='categoria', columns='estrategia', values='cv')
+        sns.heatmap(cv_pivot, annot=True, fmt='.3f', cmap='viridis', ax=ax5)
+        plt.title('COEFICIENTE DE VARIAÇÃO (Estabilidade)')
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'analise_completa_folds.png'), 
+                dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    # Restaurar configurações padrão do pandas
+    pd.reset_option('display.max_columns')
+    pd.reset_option('display.width')
+    pd.reset_option('display.max_colwidth')
+
+# Adicionar também no final da análise_completa_comparacoes:
+def analise_completa_comparacoes():
+    print("  Iniciando análise completa...")
+    
+    metricas_globais = analisar_comparacoes_cruzadas()
+    
+    if metricas_globais is not None:
+        print("  Análise completa concluída!")
+        
+        # Mostrar resumo no console também
+        df = metricas_globais['df']
+        print("\n" + "="*80)
+        print("  RESUMO GERAL COMPLETO (CONSOLE):")
+        print("="*80)
+        
+        resumo = df.groupby(['estrategia', 'categoria'])['quantidade'].mean().unstack()
+        colunas_ordenadas = [
+            'acertos_modelo1', 'erros_modelo1', 'acertos_modelo2', 'erros_modelo2',
+            'melhorou', 'piorou', 'manteve_acerto', 'manteve_erro'
+        ]
+        colunas_existentes = [col for col in colunas_ordenadas if col in resumo.columns]
+        resumo = resumo[colunas_existentes]
+        
+        print(resumo.round(2))
+        print("\n Resultados salvos em: Analise_Global_Comparacoes/")
+    
+    return metricas_globais
+
+def plotar_acertos_erros_por_fold(metricas_globais, output_dir):
+    """
+    Gera gráficos mostrando acertos e erros por fold para cada estratégia (modelo).
+    """
+    print("Gerando gráficos de acertos e erros por fold...")
+    df = metricas_globais['df']
+    
+    # Filtrar apenas métricas de interesse
+    metricas_plot = ['acertos_modelo1', 'erros_modelo1', 'acertos_modelo2', 'erros_modelo2']
+    df_plot = df[df['categoria'].isin(metricas_plot)]
+    
+    estrategias = df_plot['estrategia'].unique()
+    
+    for estrategia in estrategias:
+        df_estrat = df_plot[df_plot['estrategia'] == estrategia]
+        
+        # Pivotar para ter as métricas como colunas
+        tabela = df_estrat.pivot_table(
+            index=['fold', 'classe'],
+            columns='categoria',
+            values='quantidade',
+            aggfunc='mean'
+        ).fillna(0)
+        
+        # Reordenar colunas
+        colunas_ordem = [c for c in metricas_plot if c in tabela.columns]
+        tabela = tabela[colunas_ordem]
+        
+        # Plotar um gráfico para cada classe
+        for classe in ['Health', 'Sick']:
+            subset = tabela.loc[(slice(None), classe), :]
+            subset.index = subset.index.droplevel(1)  # remove a coluna 'classe' do índice
+            
+            subset.plot(
+                kind='bar',
+                figsize=(10,6),
+                title=f"{estrategia} - {classe} (Acertos e Erros por Fold)",
+                color=['#4CAF50', '#F44336', '#2196F3', '#FFC107']
+            )
+            
+            plt.xlabel("Fold")
+            plt.ylabel("Quantidade de imagens")
+            plt.xticks(rotation=0)
+            plt.grid(axis='y', linestyle='--', alpha=0.4)
+            plt.tight_layout()
+            
+            save_path = os.path.join(output_dir, f"{estrategia}_{classe}_acertos_erros.png")
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            print(f"   → Gráfico salvo: {save_path}")
+
+
+import os
+import numpy as np
+import pandas as pd
+
+def verificando_temperatura_marcadores(fold_origem="marcadores_segmentados", fold_destino="marcadores_segmentados_txt"):
+    """
+    Converte imagens de fold_origem → fold_destino com recuperar_img,
+    depois lê todas as matrizes .txt da pasta fold_destino e calcula:
+      - a média de temperatura de cada imagem
+      - a diferença média entre os pixels da própria imagem
+    """
+
+
+    def recuperar_img_marcador(input_folder, output_folder):
+        """
+        Converte imagens PNG 16-bit de volta para matrizes de temperatura,
+        usando os limites salvos em limites.json.
+        
+        O nome da imagem tem o formato: T0036.1.1.S.2012-09-29.00.png
+        O arquivo JSON tem chaves como: 36_img_Static-Frontal_2012-10-08.txt
+        """
+        
+        os.makedirs(output_folder, exist_ok=True)
+
+        json_path = os.path.join(input_folder, "limites.json")
+        if not os.path.isfile(json_path):
+            raise FileNotFoundError(f"JSON de limites não encontrado em: {json_path}")
+
+        with open(json_path, "r") as f:
+            limites = json.load(f)
+
+        for fname in os.listdir(input_folder):
+            if not fname.lower().endswith(".png"):
+                continue
+
+            path = os.path.join(input_folder, fname)
+            img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+
+            if img is None:
+                print(f"Aviso: não foi possível ler {fname}. Pulando.")
+                continue
+
+            if img.ndim == 3:
+                img = img[:, :, 0]
+
+            # Extrair o ID do nome da imagem (ex: T0036 → 36)
+            match = re.search(r"T0*([0-9]+)", fname)
+            if not match:
+                print(f"AVISO: não foi possível extrair ID de {fname}. Pulando.")
+                continue
+            
+            id_str = match.group(1)  # "36"
+
+            #  Buscar chave correspondente no JSON
+            chave_json = next((k for k in limites.keys() if k.startswith(f"{id_str}_")), None)
+
+            if chave_json is None:
+                print(f"AVISO: não encontrei chave com ID {id_str} no JSON para {fname}")
+                continue
+
+            temp_min = limites[chave_json]["min"]
+            temp_max = limites[chave_json]["max"]
+
+            # Converter de volta para escala de temperatura
+            
+            # Pegar apenas pixels ≠ 0 (região da máscara)
+            mascara_valida = img > 0
+            valores_raw = img[mascara_valida].astype(np.float32)
+
+            # converter somente os pixels válidos para escala de temperatura
+            valores_temp = valores_raw / 65535.0 * (temp_max - temp_min) + temp_min
+
+            out_name = os.path.splitext(fname)[0] + ".txt"
+            out_path = os.path.join(output_folder, out_name)
+
+            np.savetxt(out_path, valores_temp, fmt="%.6f")
+
+            print(f"Arquivo recuperado: {out_name} ({len(valores_temp)} pontos válidos, id={id_str})")
+    # ---------------------------------------------------------------------------------------------------------------
+    
+    # Converter as imagens originais em .txt (temperaturas)
+    recuperar_img_marcador(fold_origem, fold_destino)
+    
+    if not os.path.exists(fold_destino):
+        print(f"Pasta não encontrada: {fold_destino}")
+        return
+    
+    # Carregar todas as imagens como matrizes numpy
+    imagens = {}
+    for fname in sorted(os.listdir(fold_destino)):
+        if fname.endswith(".txt"):
+            path = os.path.join(fold_destino, fname)
+            try:
+                matriz = np.loadtxt(path)
+                imagens[fname] = matriz
+            except Exception as e:
+                print(f"Erro ao ler {fname}: {e}")
+    
+    if not imagens:
+        print("Nenhum arquivo .txt válido encontrado.")
+        return
+    
+    print(f"{len(imagens)} imagens carregadas.")
+    
+    # 1️⃣ Média e diferença média por imagem
+    resultados = []
+    for fname, matriz in imagens.items():
+        media_temp = float(np.mean(matriz))
+        diff_media = float(np.mean(np.abs(matriz - media_temp)))
+        
+        resultados.append({
+            "Imagem": fname,
+            "Média_Temperatura": media_temp,
+            "Diferença_Média_Pixels": diff_media
+        })
+    
+    # 2️⃣ Salvar resultados
+    df = pd.DataFrame(resultados)
+    df.to_csv(f"{fold_destino}/analise_temperatura_marcadores.csv", index=False)
+    
+    print(f"\nResultados salvos em: {fold_destino}_analise_temperatura_marcadores.csv")
+    print(df.round(3))
+        
+def comparar_modelos_por_id_com_consistencia_certo(
+    exp1_base, exp1_modelo,
+    exp2_base, exp2_modelo,
+    mensagem="mensagem_comparacao:",
+    output_dir="Comparacao"
+):
+    """
+    Lógica solicitada:
+      1) Para cada classe (Health/Sick) e para cada experimento, agrupar arquivos por ID (id_###).
+      2) Verificar se há >1 arquivo para o mesmo ID:
+         - Se sim, checar se TODOS pertencem ao MESMO grupo (Acertos ou Erros) no experimento.
+           * Se sim: marcar como CONSISTENTE e usar esse grupo (Acertos/Erros) na comparação.
+           * Se não: anotar no relatório como 'revisão manual' (misto dentro do próprio experimento).
+         - Se não (>1 arquivo): comparar normalmente.
+      3) Só comparar IDs que são CONSISTENTES em AMBOS os experimentos.
+         Categorias:
+           - Erro -> Acerto (melhorou)
+           - Acerto -> Erro (piorou)
+           - Manteve_Acerto
+           - Manteve_Erro
+      4) IDs inconsistentes (mistos) em qualquer um dos experimentos vão para a seção
+         'Revisão manual', com o detalhamento de quantos arquivos caíram em cada grupo.
+    Estrutura assumida:
+      CAM_results/
+        Acertos/<modelo>/Health
+        Acertos/<modelo>/Sick
+        Erros/<modelo>/Health
+        Erros/<modelo>/Sick
+    """
+
+    def ensure_dir(p):
+        os.makedirs(p, exist_ok=True)
+
+    def only_id(name: str) -> str:
+        """Extrai 'id_###' do basename."""
+        m = re.search(r"(id_\d+)", name, flags=re.IGNORECASE)
+        return m.group(1) if m else name
+
+    def listar_pngs(path):
+        return [f for f in os.listdir(path) if f.lower().endswith(".png")]
+
+    def coletar_por_experimento(exp_base: str, modelo: str):
+        """
+        Retorna, para cada classe:
+          - por_id: dict[id] = {"Acertos": set(nomes_arquivos), "Erros": set(nomes_arquivos)}
+          - totais_arquivos: contagem bruta de arquivos por grupo (Acertos/Erros)
+        """
+        por_id = { "Health": defaultdict(lambda: {"Acertos": set(), "Erros": set()}),
+                   "Sick":   defaultdict(lambda: {"Acertos": set(), "Erros": set()}) }
+        totais_arquivos = { "Health": {"Acertos": 0, "Erros": 0},
+                            "Sick":   {"Acertos": 0, "Erros": 0} }
+
+        for classe in ["Health", "Sick"]:
+            for grupo in ["Acertos", "Erros"]:
+                class_path = os.path.join(exp_base, grupo, modelo, classe)
+                if not os.path.exists(class_path):
+                    continue
+                arquivos = listar_pngs(class_path)
+                totais_arquivos[classe][grupo] += len(arquivos)
+
+                for fname in arquivos:
+                    _id = only_id(fname)
+                    por_id[classe][_id][grupo].add(fname)
+
+        return por_id, totais_arquivos
+
+    # Coleta dos dois experimentos
+    exp1_por_id, exp1_totais = coletar_por_experimento(exp1_base, exp1_modelo)
+    exp2_por_id, exp2_totais = coletar_por_experimento(exp2_base, exp2_modelo)
+
+    # Arquivo de relatório
+    ensure_dir(output_dir)
+    relatorio_path = os.path.join(output_dir, "relatorio_comparacao.txt")
+    with open(relatorio_path, "w", encoding="utf-8") as f:
+        if mensagem == "mensagem_comparacao:":
+            f.write(f"Comparando o modelo {exp1_modelo} com {exp2_modelo}\n")
+        else:
+            f.write(mensagem.strip() + "\n")
+
+    # Função para decidir consistência de um ID dentro de UM experimento
+    def rotular_consistencia(entry: dict):
+        """
+        entry: {"Acertos": set(files), "Erros": set(files)}
+        Retorna:
+          - status: "CONSISTENTE" | "MISTO" | "AUSENTE"
+          - grupo:  "Acertos" | "Erros" | None  (quando CONSISTENTE indica o grupo)
+          - contagem: {"Acertos": n, "Erros": n}
+          - total_arquivos: n_total
+        Regras:
+          - Se ambos vazios -> AUSENTE
+          - Se ambos não vazios -> MISTO
+          - Se apenas um não vazio -> CONSISTENTE, grupo = esse
+        """
+        ca = len(entry["Acertos"])
+        ce = len(entry["Erros"])
+        total = ca + ce
+        if total == 0:
+            return "AUSENTE", None, {"Acertos": ca, "Erros": ce}, total
+        if ca > 0 and ce > 0:
+            return "MISTO", None, {"Acertos": ca, "Erros": ce}, total
+        if ca > 0:
+            return "CONSISTENTE", "Acertos", {"Acertos": ca, "Erros": ce}, total
+        return "CONSISTENTE", "Erros", {"Acertos": ca, "Erros": ce}, total
+
+    # Loop por classe para montar o relatório
+    with open(relatorio_path, "a", encoding="utf-8") as report:
+        for classe in ["Health", "Sick"]:
+            report.write(f"\n============================================= {classe} =============================================\n")
+
+            # Totais brutos por ARQUIVO (só como referência inicial)
+            if classe == "Health":
+                report.write("\n---------------------------- Quantitativo total (por ARQUIVO) ----------------------------\n")
+                report.write(f"Modelo 1 - Acertos: {exp1_totais['Health']['Acertos']} | Erros: {exp1_totais['Health']['Erros']}\n")
+                report.write(f"Modelo 2 - Acertos: {exp2_totais['Health']['Acertos']} | Erros: {exp2_totais['Health']['Erros']}\n")
+            else:
+                report.write("\n---------------------------- Quantitativo total (por ARQUIVO) ----------------------------\n")
+                report.write(f"Modelo 1 - Acertos: {exp1_totais['Sick']['Acertos']} | Erros: {exp1_totais['Sick']['Erros']}\n")
+                report.write(f"Modelo 2 - Acertos: {exp2_totais['Sick']['Acertos']} | Erros: {exp2_totais['Sick']['Erros']}\n")
+
+            # Conjuntos de IDs possíveis (união dos dois experimentos para a classe)
+            ids_classe = set(exp1_por_id[classe].keys()) | set(exp2_por_id[classe].keys())
+
+            # Buckets de comparação (apenas IDs consistentes em ambos os experimentos)
+            melhorou = []      # Erros (exp1) -> Acertos (exp2)
+            piorou = []        # Acertos (exp1) -> Erros (exp2)
+            manteve_ac = []    # Acertos -> Acertos
+            manteve_er = []    # Erros -> Erros
+
+            # IDs para revisão manual (mistos em algum experimento)
+            revisao_manual = []  # (id, detalhe_exp1, detalhe_exp2)
+
+            # IDs ausentes em algum experimento (presentes só em um)
+            ausentes = []  # (id, status_exp1, status_exp2)
+
+            for _id in sorted(ids_classe, key=lambda x: (int(re.search(r"\d+", x).group()), x) if re.search(r"\d+", x) else (10**9, x)):
+                e1_entry = exp1_por_id[classe].get(_id, {"Acertos": set(), "Erros": set()})
+                e2_entry = exp2_por_id[classe].get(_id, {"Acertos": set(), "Erros": set()})
+
+                s1, g1, c1, t1 = rotular_consistencia(e1_entry)
+                s2, g2, c2, t2 = rotular_consistencia(e2_entry)
+
+                # Se algum é AUSENTE, não dá para comparar -> registrar
+                if s1 == "AUSENTE" or s2 == "AUSENTE":
+                    ausentes.append((_id, s1, s2, c1, c2))
+                    continue
+
+                # Se algum é MISTO, mandar para revisão manual
+                if s1 == "MISTO" or s2 == "MISTO":
+                    detalhe_exp1 = f"exp1: Acertos={c1['Acertos']}, Erros={c1['Erros']}"
+                    detalhe_exp2 = f"exp2: Acertos={c2['Acertos']}, Erros={c2['Erros']}"
+                    revisao_manual.append((_id, detalhe_exp1, detalhe_exp2))
+                    continue
+
+                # Aqui ambos CONSISTENTES -> comparar grupos
+                if g1 == "Erros" and g2 == "Acertos":
+                    melhorou.append(_id)
+                elif g1 == "Acertos" and g2 == "Erros":
+                    piorou.append(_id)
+                elif g1 == "Acertos" and g2 == "Acertos":
+                    manteve_ac.append(_id)
+                elif g1 == "Erros" and g2 == "Erros":
+                    manteve_er.append(_id)
+
+            # ---- Relatório: resultados de comparação (apenas IDs consistentes) ----
+            report.write("\n---------------------------- Comparação (apenas IDs CONSISTENTES em ambos) ----------------------------\n")
+            report.write(f"Erro -> Acerto (melhorou): {len(melhorou)} IDs\n")
+            report.write(f"Acerto -> Erro (piorou):   {len(piorou)} IDs\n")
+            report.write(f"Manteve_Acerto:            {len(manteve_ac)} IDs\n")
+            report.write(f"Manteve_Erro:              {len(manteve_er)} IDs\n\n")
+
+            def listar(titulo, items):
+                report.write(f"--- {titulo} ---\n")
+                for x in items:
+                    report.write(f"{x}\n")
+                report.write("\n")
+
+            listar("Erro -> Acerto (melhorou)", melhorou)
+            listar("Acerto -> Erro (piorou)", piorou)
+            listar("Manteve_Acerto", manteve_ac)
+            listar("Manteve_Erro", manteve_er)
+
+            # ---- Relatório: revisão manual (IDs MISTOS em algum experimento) ----
+            report.write("---------------------------- IDs para REVISÃO MANUAL (mistos em algum experimento) ----------------------------\n")
+            report.write(f"Total: {len(revisao_manual)} IDs\n")
+            for _id, d1, d2 in revisao_manual:
+                report.write(f"{_id} | {d1} | {d2}\n")
+            report.write("\n")
+
+            # ---- Relatório: ausentes (sem contrapartida em algum experimento) ----
+            report.write("---------------------------- IDs AUSENTES (presentes em apenas 1 experimento) ----------------------------\n")
+            report.write(f"Total: {len(ausentes)} IDs\n")
+            for _id, s1, s2, c1, c2 in ausentes:
+                report.write(f"{_id} | exp1={s1} (A={c1['Acertos']},E={c1['Erros']}) | exp2={s2} (A={c2['Acertos']},E={c2['Erros']})\n")
+            report.write("\n")
+
+    print("Comparação concluída!")
+    print(f"Relatório: {relatorio_path}")
+    print(f"Pasta de saída: {output_dir}")
 
 if __name__ == "__main__":
-
+    
+# TREINANDO MODELO DE IMAGENS COM MARCADOR E SEM
     SEMENTE = 13388
 
-    # Transformar TXT para PNG
-    # input_folder = "filtered_raw_dataset/Frontal/sick"
-    # output_folder = "processed_images/sick"
+    train_model_cv(Vgg_16,
+                   raw_root="filtered_raw_dataset",
+                   raw_root_no_pad="recovered_data",
+                   angle="Frontal",
+                   k=5,                 
+                   resize_to=224,
+                   n_aug=2,             
+                   batch=8,
+                   seed= SEMENTE,
+                   message="Vgg_metade_marcador_19_10_25",
+                   resize_method="BlackPadding")
+
+
+
     
-    # transform_temp_img(input_folder, output_folder)
-    # print(f"Imagens transformadas salvas em: {output_folder}")
+    # delete_folder("ComparacaoVGGFULL&YoloMARCADOR")
+    # create_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
     
-    # Testar recuperação (opcional)
-    # output_recovered = "recovered_data/sick"
-    # recuperar_img(output_folder, output_recovered)
-    # print(f"Dados recuperados salvos em: {output_recovered}")
-
-
-    # delete_folder("Yolos_Cls_SegPAD")
-    # delete_folder("Yolos_Cls")
-    # delete_folder("heatmaps")
-    # delete_folder("runs/classify/Yolos_Cls_UFF_NO_PAD")
-
-    # SEMENTE = 13388
-
-    train_model_cv("yolo",
-                    raw_root="recovered_data",
-                    #raw_root="uff_no_pad",
-                    angle="Frontal",
-                    k=5,                 
-                    resize_to=224,
-                    n_aug=2,             
-                    batch=8,
-                    seed= SEMENTE,
-                    segmenter="yolo",
-                    message="Yolos_Cls_Seg",
-                    resize_method="BlackPadding",
-                    seg_model_path="runs/segment/train21/weights/best.pt")
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F0",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F0",
+    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF0"
+    # )
     
- 
-    # process_heatmaps_for_dataset("Yolos_Cls_SegPAD/dataset_fold_1/test", "runs/classify/Yolos_Cls_UFF_NO_PAD/YOLOv8_cls_fold_1_seed_13388/weights/best.pt", "heatmaps/Yolos_Cls_UFF_NO_PAD/dataset_fold_1")
-    # process_heatmaps_for_dataset("Yolos_Cls_SegPAD/dataset_fold_2/test", "runs/classify/Yolos_Cls_UFF_NO_PAD/YOLOv8_cls_fold_2_seed_13388/weights/best.pt", "heatmaps/Yolos_Cls_UFF_NO_PAD/dataset_fold_2")
-    # process_heatmaps_for_dataset("Yolos_Cls_SegPAD/dataset_fold_3/test", "runs/classify/Yolos_Cls_UFF_NO_PAD/YOLOv8_cls_fold_3_seed_13388/weights/best.pt", "heatmaps/Yolos_Cls_UFF_NO_PAD/dataset_fold_3")
-    # process_heatmaps_for_dataset("Yolos_Cls_SegPAD/dataset_fold_4/test", "runs/classify/Yolos_Cls_UFF_NO_PAD/YOLOv8_cls_fold_4_seed_13388/weights/best.pt", "heatmaps/Yolos_Cls_UFF_NO_PAD/dataset_fold_4")
-    # process_heatmaps_for_dataset("Yolos_Cls_SegPAD/dataset_fold_5/test", "runs/classify/Yolos_Cls_UFF_NO_PAD/YOLOv8_cls_fold_5_seed_13388/weights/best.pt", "heatmaps/Yolos_Cls_UFF_NO_PAD/dataset_fold_5")
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F1",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F1",
+    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF1",
+    # )
+    
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F2",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F2",
+    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF2",
+    # )
+    
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F3",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F3",
+    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF3",
+    # )
+    
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F4",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F4",
+    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF4",
+    # )
+    
+    
+    # delete_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
+    # create_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
+    
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F0",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F0",
+    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF0",
+    # )
+   
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F1",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F1",
+    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF1",
+    # )
+    
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F2",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F2",
+    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF2",
+    # )
+    
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F3",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F3",
+    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF3",
+    # )
+    
+    # comparar_modelos_por_id_com_consistencia_certo(
+    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F4",
+    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F4",
+    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF4",
+    # )
+    
+
+
+
+    
+    # ----------------------- CRIANDO A PASTA COM OS MODELOS -----------------------
+    # create_folder("Vgg")
+    
+    # move_folder("Análises/ComparacaoVgg_F0", "Vgg")
+    # move_folder("Análises/ComparacaoVgg_F1", "Vgg")
+    # move_folder("Análises/ComparacaoVgg_F2", "Vgg")
+    # move_folder("Análises/ComparacaoVgg_F3", "Vgg")
+    # move_folder("Análises/ComparacaoVgg_F4", "Vgg")
+
+    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F0", "Análises2")
+    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F1", "Análises2")
+    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F2", "Análises2")
+    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F3", "Análises2")
+    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F4", "Análises2")
+
+    # # rename_folder("Análises/ComparacaoVggF0", "Análises/ComparacaoVgg_F0")
+    # # rename_folder("Análises/ComparacaoVggF1", "Análises/ComparacaoVgg_F1")
+    # # rename_folder("Análises/ComparacaoVggF2", "Análises/ComparacaoVgg_F2")
+    # # rename_folder("Análises/ComparacaoVggF3", "Análises/ComparacaoVgg_F3")
+    # # rename_folder("Análises/ComparacaoVggF4", "Análises/ComparacaoVgg_F4")
+
+    # # ----------------------- CHAMANDO AS COMPARAÇÕES -----------------------
+    # analisar_comparacoes_cruzadas(
+    #     base_dir="Análises", 
+    #     output_dir="Resultados_Finais_VGG_yolon"
+    # )
+
+    # def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_modelo, mensagem="mensagem_comparacao:", output_dir="Comparacao"):
+
+
 
 
     # Foi adicionado algumas funções para lidar com as imagens .png em uint16 no processo de criação do dataset no formato esperado pela yolo.
@@ -2210,6 +3482,168 @@ if __name__ == "__main__":
 
 
     # # ------------------ Primeira abordagem testada para incluir os marcadores na segmentação --------------
+
+    # resize_imgs_two_masks_dataset(
+    #     img_dir="Termografias_Dataset_Segmentação/images",
+    #     mask_breast_dir="Termografias_Dataset_Segmentação/masks",
+    #     mask_marker_dir = "Termografias_Dataset_Segmentação_Marcadores/masks",
+    #     output_base="Yolo_dataset_marcadores_two_classes",
+    #     target=224,          # mesmo tamanho definido no YAML da YOLO,
+    #     resize_method="BlackPadding"
+    # )
+
+
+    # yolo_data_2_classes("Frontal", "Yolo_dataset_marcadores_two_classes/images", "Yolo_dataset_marcadores_two_classes/masks_breast", "Yolo_dataset_marcadores_two_classes/masks_marker", "dataset_two_classes_yolo", True)
+    # # train36
+    # train_yolo_seg("n", 500, "dataset_yolo_two_classes.yaml", seed=SEMENTE)
+
+
+    # train_model_cv(Vgg_16,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                segmenter= "yolo",
+    #                message="Vgg_yolon_AUG_CV_BlackPadding_04_10_25", seg_model_path="runs/segment/train36/weights/best.pt",
+    #                resize_method="BlackPadding")
+
+
+
+    
+    
+    # MODEL_DIRS = {
+    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    # "resnet": "modelos/ResNet34"
+    # }
+
+    # CONF_BASE  = "Resultados_Retreinamento_seg_pad_two_classes"     # pasta-raiz onde deseja guardar as figuras
+    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    # ANGLE      = "Frontal"              # visão utilizada nos treinos
+
+    # exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
+    # X, y , patient_ids = load_raw_images(
+    #     f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
+    # # --------------------------------------------------
+    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # # --------------------------------------------------
+    # experiments = [
+    #     # {
+    #     #     "resize_method": "BlackPadding",
+    #     #     "message": "Vgg_unet_AUG_CV_BlackPadding_13_09_25",
+    #     #     "segment": "unet",
+    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
+    #     # },
+    #     {
+    #         "resize_method": "BlackPadding",
+    #         "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
+    #         "segment": "yolo",
+    #         "segmenter_path": "runs/segment/train36/weights/best.pt",
+    #     },
+    #     # {
+    #     #     "resize_method": "BlackPadding",
+    #     #     "message": "ResNet34_unet_AUG_CV_BlackPadding_13_09_25",
+    #     #     "segment": "unet",
+    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
+    #     # },
+    #     # {
+    #     #     "resize_method": "BlackPadding",
+    #     #     "message": "ResNet34_yolon_AUG_CV_BlackPadding_13_09_25",
+    #     #     "segment": "yolo",
+    #     #     "segmenter_path": "runs/segment/train31/weights/best.pt",
+    #     # },
+
+
+    # ]
+
+    # # --------------------------------------------------
+    # # --- LOOP PRINCIPAL -------------------------------
+    # # --------------------------------------------------
+    # for exp in experiments:
+
+    #     rsz           = exp["resize_method"]
+    #     msg           = exp["message"]
+    #     segment       = exp["segment"]
+    #     segmenter_path= exp["segmenter_path"]
+
+    #     # Identifica qual backbone para escolher a pasta correta
+    #     backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
+    #     model_dir    = MODEL_DIRS[backbone_key]
+
+    #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+    #     out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
+    #     out_dir_cm.mkdir(parents=True, exist_ok=True)
+
+    #     for i in range(5):                                   # k-fold = 5
+    #         # ---- Caminhos de entrada ---------------------
+    #         model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    #         split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
+
+    #         # ---- Nome para salvar arquivos/figura --------
+    #         cm_message = f"{msg}_F{i}"
+
+    #         # ---- Avaliação -------------------------------
+    #         y_pred = evaluate_model_cm(
+    #             model_path   = model_path_cm,
+    #             output_path  = str(out_dir_cm),
+    #             split_json   = split_path_cm,
+    #             raw_root     = RAW_ROOT,
+    #             message      = cm_message,
+    #             angle        = ANGLE,
+    #             classes      = CLASSES,
+    #             rgb          = False,
+    #             resize_method= rsz,
+    #             resize       = True,
+    #             resize_to    = 224,
+    #             segmenter= segment,
+    #             seg_model_path = segmenter_path
+    #         )
+
+    #         split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
+
+    #         X_test, y_test, ids_test = ppeprocessEigenCam(
+    #             X, y, patient_ids,
+    #             split_json_hm,
+    #             segment=segment,
+    #             segmenter_path=segmenter_path,
+    #             resize_method= rsz  # ou "BlackPadding", "GrayPadding"
+    #         )
+
+    #         hits = y_pred == y_test 
+    #         miss = y_pred != y_test
+
+    #         # ---------- EigenCAM ----------
+    #         model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
+    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+
+    #         run_eigencam(
+    #             imgs       = X_test[hits],
+    #             labels     = y_test[hits],
+    #             ids        = ids_test[hits],
+    #             model_path = model_path_hm,
+    #             out_dir    = out_dir_hm,
+    #         )
+
+    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
+    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+
+    #         run_eigencam(
+    #             imgs       = X_test[miss],
+    #             labels     = y_test[miss],
+    #             ids        = ids_test[miss],
+    #             model_path = model_path_hm,
+    #             out_dir    = out_dir_hm,
+    #         )
+
+    #         print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
+
+
+
+    # -------------- Primeira abordagem testada para incluir os marcadores na segmentação --------------
 
     # resize_imgs_two_masks_dataset(
     #     img_dir="Termografias_Dataset_Segmentação/images",
