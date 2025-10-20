@@ -1871,26 +1871,37 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
     """
 
     def coletar_ids(exp_base, modelo):
+
         resultado = {"Acertos": {"Health": set(), "Sick": set()},
-                     "Erros": {"Health": set(), "Sick": set()}}
+                    "Erros": {"Health": set(), "Sick": set()}}
+        
+        totais_arquivos = {"Acertos": {"Health": 0, "Sick": 0},
+                       "Erros":   {"Health": 0, "Sick": 0}}
+        
+        padrao_chave = re.compile(r"^(id_\d+.*)\.png$", re.IGNORECASE)
+                
         for tipo in ["Acertos", "Erros"]:
             for classe in ["Health", "Sick"]:
                 class_path = os.path.join(exp_base, tipo, modelo, classe)
-                print(class_path)
                 if os.path.exists(class_path):
-                    arquivos = [f for f in os.listdir(class_path) if f.endswith("_overlay.png")]
-                    resultado[tipo][classe].update([f.split("_overlay.png")[0] for f in arquivos])
-        return resultado
+                    arquivos = [f for f in os.listdir(class_path) if f.lower().endswith(".png")]
+                    totais_arquivos[tipo][classe] += len(arquivos)
+                    for f in arquivos:
+                        m = padrao_chave.match(f)
+                        if m:
+                            chave = m.group(1)  # p.ex. "id_365_overlay41"
+                            resultado[tipo][classe].add(chave)
+
+        return resultado, totais_arquivos
 
 
-    exp1 = coletar_ids(exp1_base, exp1_modelo)
-    exp2 = coletar_ids(exp2_base, exp2_modelo)
+    exp1, exp1_totais = coletar_ids(exp1_base, exp1_modelo)
+    exp2, exp2_totais = coletar_ids(exp2_base, exp2_modelo)
 
     #pasta de saída
     os.makedirs(output_dir, exist_ok=True)
     relatorio_path = os.path.join(output_dir, "relatorio_comparacao.txt")
     
-    # caso queira escrever uma mensagem no título diferente
     if mensagem == "mensagem_comparacao:":
         with open(relatorio_path, "w") as f:
             f.write(f"Comparando o modelo {exp1_modelo} com {exp2_modelo}\n")
@@ -1914,7 +1925,7 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
             report.write(f"Total de imagens saudáveis/acertos (modelo 2): {len(exp2_ac)}\n" if classe=="Health" else f"Total de imagens doentes/acertos (modelo 2): {len(exp2_ac)}\n")
             report.write(f"Total de imagens saudáveis/erros (modelo 2): {len(exp2_er)}\n" if classe=="Health" else f"Total de imagens doentes/erros (modelo 2): {len(exp2_er)}\n")
             report.write(f"\n------------------------------------------------------------------------------\n")
-            
+
             
             # Categorias
             melhorou = exp1_er & exp2_ac      # Erro -> Acerto
@@ -1941,17 +1952,20 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
             for nome, ids_set in categorias.items():
                 destino = os.path.join(output_dir, nome, classe)
                 os.makedirs(destino, exist_ok=True)
+                
                 for img_id in ids_set:
-                    candidatos = [
-                        os.path.join(exp1_base, "Acertos", exp1_modelo, classe, img_id + "_overlay.png"),
-                        os.path.join(exp1_base, "Erros", exp1_modelo, classe, img_id + "_overlay.png"),
-                        os.path.join(exp2_base, "Acertos", exp2_modelo, classe, img_id + "_overlay.png"),
-                        os.path.join(exp2_base, "Erros", exp2_modelo, classe, img_id + "_overlay.png"),
-                    ]
-                    for src in candidatos:
-                        if os.path.exists(src):
-                            shutil.copy(src, os.path.join(destino, os.path.basename(src)))
-                            break
+                    # Procurar em todas as pastas possíveis
+                    for tipo, base, modelo in [
+                        ("Acertos", exp1_base, exp1_modelo),
+                        ("Erros", exp1_base, exp1_modelo),
+                        ("Acertos", exp2_base, exp2_modelo),
+                        ("Erros", exp2_base, exp2_modelo)
+                    ]:
+                        class_path = os.path.join(base, tipo, modelo, classe)
+                        if os.path.exists(class_path):
+                            for f in os.listdir(class_path):
+                                if f.lower().startswith(img_id.lower()) and f.lower().endswith(".png"):  
+                                    shutil.copy(os.path.join(class_path, f), os.path.join(destino, f))
 
     print(f"Comparação concluída!")
     print(f"Relatório: {relatorio_path}")
@@ -2553,163 +2567,233 @@ def analise_completa_comparacoes():
     
     return metricas_globais
 
+import os, re, shutil
+from collections import defaultdict
+
+def comparar_modelos_por_id_com_consistencia(
+    exp1_base, exp1_modelo,
+    exp2_base, exp2_modelo,
+    mensagem="mensagem_comparacao:",
+    output_dir="Comparacao"
+):
+    """
+    Lógica solicitada:
+      1) Para cada classe (Health/Sick) e para cada experimento, agrupar arquivos por ID (id_###).
+      2) Verificar se há >1 arquivo para o mesmo ID:
+         - Se sim, checar se TODOS pertencem ao MESMO grupo (Acertos ou Erros) no experimento.
+           * Se sim: marcar como CONSISTENTE e usar esse grupo (Acertos/Erros) na comparação.
+           * Se não: anotar no relatório como 'revisão manual' (misto dentro do próprio experimento).
+         - Se não (>1 arquivo): comparar normalmente.
+      3) Só comparar IDs que são CONSISTENTES em AMBOS os experimentos.
+         Categorias:
+           - Erro -> Acerto (melhorou)
+           - Acerto -> Erro (piorou)
+           - Manteve_Acerto
+           - Manteve_Erro
+      4) IDs inconsistentes (mistos) em qualquer um dos experimentos vão para a seção
+         'Revisão manual', com o detalhamento de quantos arquivos caíram em cada grupo.
+    Estrutura assumida:
+      CAM_results/
+        Acertos/<modelo>/Health
+        Acertos/<modelo>/Sick
+        Erros/<modelo>/Health
+        Erros/<modelo>/Sick
+    """
+
+    def ensure_dir(p):
+        os.makedirs(p, exist_ok=True)
+
+    def only_id(name: str) -> str:
+        """Extrai 'id_###' do basename."""
+        m = re.search(r"(id_\d+)", name, flags=re.IGNORECASE)
+        return m.group(1) if m else name
+
+    def listar_pngs(path):
+        return [f for f in os.listdir(path) if f.lower().endswith(".png")]
+
+    def coletar_por_experimento(exp_base: str, modelo: str):
+        """
+        Retorna, para cada classe:
+          - por_id: dict[id] = {"Acertos": set(nomes_arquivos), "Erros": set(nomes_arquivos)}
+          - totais_arquivos: contagem bruta de arquivos por grupo (Acertos/Erros)
+        """
+        por_id = { "Health": defaultdict(lambda: {"Acertos": set(), "Erros": set()}),
+                   "Sick":   defaultdict(lambda: {"Acertos": set(), "Erros": set()}) }
+        totais_arquivos = { "Health": {"Acertos": 0, "Erros": 0},
+                            "Sick":   {"Acertos": 0, "Erros": 0} }
+
+        for classe in ["Health", "Sick"]:
+            for grupo in ["Acertos", "Erros"]:
+                class_path = os.path.join(exp_base, grupo, modelo, classe)
+                if not os.path.exists(class_path):
+                    continue
+                arquivos = listar_pngs(class_path)
+                totais_arquivos[classe][grupo] += len(arquivos)
+
+                for fname in arquivos:
+                    _id = only_id(fname)
+                    por_id[classe][_id][grupo].add(fname)
+
+        return por_id, totais_arquivos
+
+    # Coleta dos dois experimentos
+    exp1_por_id, exp1_totais = coletar_por_experimento(exp1_base, exp1_modelo)
+    exp2_por_id, exp2_totais = coletar_por_experimento(exp2_base, exp2_modelo)
+
+    # Arquivo de relatório
+    ensure_dir(output_dir)
+    relatorio_path = os.path.join(output_dir, "relatorio_comparacao.txt")
+    with open(relatorio_path, "w", encoding="utf-8") as f:
+        if mensagem == "mensagem_comparacao:":
+            f.write(f"Comparando o modelo {exp1_modelo} com {exp2_modelo}\n")
+        else:
+            f.write(mensagem.strip() + "\n")
+
+    # Função para decidir consistência de um ID dentro de UM experimento
+    def rotular_consistencia(entry: dict):
+        """
+        entry: {"Acertos": set(files), "Erros": set(files)}
+        Retorna:
+          - status: "CONSISTENTE" | "MISTO" | "AUSENTE"
+          - grupo:  "Acertos" | "Erros" | None  (quando CONSISTENTE indica o grupo)
+          - contagem: {"Acertos": n, "Erros": n}
+          - total_arquivos: n_total
+        Regras:
+          - Se ambos vazios -> AUSENTE
+          - Se ambos não vazios -> MISTO
+          - Se apenas um não vazio -> CONSISTENTE, grupo = esse
+        """
+        ca = len(entry["Acertos"])
+        ce = len(entry["Erros"])
+        total = ca + ce
+        if total == 0:
+            return "AUSENTE", None, {"Acertos": ca, "Erros": ce}, total
+        if ca > 0 and ce > 0:
+            return "MISTO", None, {"Acertos": ca, "Erros": ce}, total
+        if ca > 0:
+            return "CONSISTENTE", "Acertos", {"Acertos": ca, "Erros": ce}, total
+        return "CONSISTENTE", "Erros", {"Acertos": ca, "Erros": ce}, total
+
+    # Loop por classe para montar o relatório
+    with open(relatorio_path, "a", encoding="utf-8") as report:
+        for classe in ["Health", "Sick"]:
+            report.write(f"\n============================================= {classe} =============================================\n")
+
+            # Totais brutos por ARQUIVO (só como referência inicial)
+            if classe == "Health":
+                report.write("\n---------------------------- Quantitativo total (por ARQUIVO) ----------------------------\n")
+                report.write(f"Modelo 1 - Acertos: {exp1_totais['Health']['Acertos']} | Erros: {exp1_totais['Health']['Erros']}\n")
+                report.write(f"Modelo 2 - Acertos: {exp2_totais['Health']['Acertos']} | Erros: {exp2_totais['Health']['Erros']}\n")
+            else:
+                report.write("\n---------------------------- Quantitativo total (por ARQUIVO) ----------------------------\n")
+                report.write(f"Modelo 1 - Acertos: {exp1_totais['Sick']['Acertos']} | Erros: {exp1_totais['Sick']['Erros']}\n")
+                report.write(f"Modelo 2 - Acertos: {exp2_totais['Sick']['Acertos']} | Erros: {exp2_totais['Sick']['Erros']}\n")
+
+            # Conjuntos de IDs possíveis (união dos dois experimentos para a classe)
+            ids_classe = set(exp1_por_id[classe].keys()) | set(exp2_por_id[classe].keys())
+
+            # Buckets de comparação (apenas IDs consistentes em ambos os experimentos)
+            melhorou = []      # Erros (exp1) -> Acertos (exp2)
+            piorou = []        # Acertos (exp1) -> Erros (exp2)
+            manteve_ac = []    # Acertos -> Acertos
+            manteve_er = []    # Erros -> Erros
+
+            # IDs para revisão manual (mistos em algum experimento)
+            revisao_manual = []  # (id, detalhe_exp1, detalhe_exp2)
+
+            # IDs ausentes em algum experimento (presentes só em um)
+            ausentes = []  # (id, status_exp1, status_exp2)
+
+            for _id in sorted(ids_classe, key=lambda x: (int(re.search(r"\d+", x).group()), x) if re.search(r"\d+", x) else (10**9, x)):
+                e1_entry = exp1_por_id[classe].get(_id, {"Acertos": set(), "Erros": set()})
+                e2_entry = exp2_por_id[classe].get(_id, {"Acertos": set(), "Erros": set()})
+
+                s1, g1, c1, t1 = rotular_consistencia(e1_entry)
+                s2, g2, c2, t2 = rotular_consistencia(e2_entry)
+
+                # Se algum é AUSENTE, não dá para comparar -> registrar
+                if s1 == "AUSENTE" or s2 == "AUSENTE":
+                    ausentes.append((_id, s1, s2, c1, c2))
+                    continue
+
+                # Se algum é MISTO, mandar para revisão manual
+                if s1 == "MISTO" or s2 == "MISTO":
+                    detalhe_exp1 = f"exp1: Acertos={c1['Acertos']}, Erros={c1['Erros']}"
+                    detalhe_exp2 = f"exp2: Acertos={c2['Acertos']}, Erros={c2['Erros']}"
+                    revisao_manual.append((_id, detalhe_exp1, detalhe_exp2))
+                    continue
+
+                # Aqui ambos CONSISTENTES -> comparar grupos
+                if g1 == "Erros" and g2 == "Acertos":
+                    melhorou.append(_id)
+                elif g1 == "Acertos" and g2 == "Erros":
+                    piorou.append(_id)
+                elif g1 == "Acertos" and g2 == "Acertos":
+                    manteve_ac.append(_id)
+                elif g1 == "Erros" and g2 == "Erros":
+                    manteve_er.append(_id)
+
+            # ---- Relatório: resultados de comparação (apenas IDs consistentes) ----
+            report.write("\n---------------------------- Comparação (apenas IDs CONSISTENTES em ambos) ----------------------------\n")
+            report.write(f"Erro -> Acerto (melhorou): {len(melhorou)} IDs\n")
+            report.write(f"Acerto -> Erro (piorou):   {len(piorou)} IDs\n")
+            report.write(f"Manteve_Acerto:            {len(manteve_ac)} IDs\n")
+            report.write(f"Manteve_Erro:              {len(manteve_er)} IDs\n\n")
+
+            def listar(titulo, items):
+                report.write(f"--- {titulo} ---\n")
+                for x in items:
+                    report.write(f"{x}\n")
+                report.write("\n")
+
+            listar("Erro -> Acerto (melhorou)", melhorou)
+            listar("Acerto -> Erro (piorou)", piorou)
+            listar("Manteve_Acerto", manteve_ac)
+            listar("Manteve_Erro", manteve_er)
+
+            # ---- Relatório: revisão manual (IDs MISTOS em algum experimento) ----
+            report.write("---------------------------- IDs para REVISÃO MANUAL (mistos em algum experimento) ----------------------------\n")
+            report.write(f"Total: {len(revisao_manual)} IDs\n")
+            for _id, d1, d2 in revisao_manual:
+                report.write(f"{_id} | {d1} | {d2}\n")
+            report.write("\n")
+
+            # ---- Relatório: ausentes (sem contrapartida em algum experimento) ----
+            report.write("---------------------------- IDs AUSENTES (presentes em apenas 1 experimento) ----------------------------\n")
+            report.write(f"Total: {len(ausentes)} IDs\n")
+            for _id, s1, s2, c1, c2 in ausentes:
+                report.write(f"{_id} | exp1={s1} (A={c1['Acertos']},E={c1['Erros']}) | exp2={s2} (A={c2['Acertos']},E={c2['Erros']})\n")
+            report.write("\n")
+
+    print("Comparação concluída!")
+    print(f"Relatório: {relatorio_path}")
+    print(f"Pasta de saída: {output_dir}")
+
 if __name__ == "__main__":
     
-    # ----------------------- CRIANDO A PASTA COM OS MODELOS -----------------------
-    # move_folder("ComparacaoVggF0", "Análises")
-    # move_folder("ComparacaoVggF1", "Análises")
-    # move_folder("ComparacaoVggF2", "Análises")
-    # move_folder("ComparacaoVggF3", "Análises")
-    # move_folder("ComparacaoVggF4", "Análises")
-
-    # move_folder("Comparacoes/ComparacaoVgg_yolon_F0", "Análises")
-    # move_folder("Comparacoes/ComparacaoVgg_yolon_F1", "Análises")
-    # move_folder("Comparacoes/ComparacaoVgg_yolon_F2", "Análises")
-    # move_folder("Comparacoes/ComparacaoVgg_yolon_F3", "Análises")
-    # move_folder("Comparacoes/ComparacaoVgg_yolon_F4", "Análises")
-
-    # rename_folder("Análises/ComparacaoVggF0", "Análises/ComparacaoVgg_F0")
-    # rename_folder("Análises/ComparacaoVggF1", "Análises/ComparacaoVgg_F1")
-    # rename_folder("Análises/ComparacaoVggF2", "Análises/ComparacaoVgg_F2")
-    # rename_folder("Análises/ComparacaoVggF3", "Análises/ComparacaoVgg_F3")
-    # rename_folder("Análises/ComparacaoVggF4", "Análises/ComparacaoVgg_F4")
-
-    # ----------------------- CHAMANDO AS COMPARAÇÕES -----------------------
-    analisar_comparacoes_cruzadas(
-        base_dir="Análises", 
-        output_dir="Resultados_Finais_VGG_Yolon"
-    )
-
-
     SEMENTE = 13388
 
+    for i in range(5):
+        comparar_modelos_por_id_com_consistencia(
+                exp1_base=f"Resultados_corrigidos_12_10_25/CAM_results",
+                exp1_modelo=f"Vgg_AUG_CV_BlackPadding_13_09_25_F{i}",
+                exp2_base=f"Resultados_corrigidos_12_10_25/CAM_results",
+                exp2_modelo=f"VGG16_AUG_UFF_BlackPadding_NO_PAD_F{i}",
+                output_dir=f"relatorio_normal_VS_normalNoPad/F{i}",
+            )
+        comparar_modelos_por_id_com_consistencia(
+            exp1_base=f"Resultados_corrigidos_12_10_25/CAM_results",
+            exp1_modelo=f"Vgg_AUG_CV_BlackPadding_13_09_25_F{i}",
+            exp2_base=f"Resultados_corrigidos_12_10_25/CAM_results",
+            exp2_modelo=f"Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F{i}",
+            output_dir=f"relatorio_normal_VS_Seg_normal/F{i}",
+        )
+
+
     
-    # MODEL_DIRS = {
-    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
-    # "resnet": "modelos/ResNet34"
-    # }
 
-    CONF_BASE  = "Resultados_corrigidos_12_10_25"     # pasta-raiz onde deseja guardar as figuras
-    CLASSES    = ("Healthy", "Sick")    # rótulos das classes
-    RAW_ROOT   = "recovered_data" # pasta com os exames originais
-    ANGLE      = "Frontal"              # visão utilizada nos treinos
 
-    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
-    X, y , patient_ids = load_raw_images(
-        f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
-    # --------------------------------------------------
-    # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
-    # --------------------------------------------------
-    experiments = [
-        
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "Vgg_AUG_CV_BlackPadding_13_09_25",
-        #     "segment": "none",
-        #     "segmenter_path": "",
-        # },
-        {
-            "resize_method": "BlackPadding",
-            "message": "VGG16_AUG_UFF_BlackPadding_NO_PAD",
-            "segment": "none",
-            "segmenter_path": "",
-        },
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "Vgg_yolon_AUG_CV_BlackPadding_13_09_25",
-        #     "segment": "yolo",
-        #     "segmenter_path": "runs/segment/train31/weights/best.pt",
-        # },
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
-        #     "segment": "yolo",
-        #     "segmenter_path": "runs/segment/train36/weights/best.pt",
-        # }
-    ]
-
-    # # --------------------------------------------------
-    # # --- LOOP PRINCIPAL -------------------------------
-    # # --------------------------------------------------
-    # for exp in experiments:
-
-    #     rsz           = exp["resize_method"]
-    #     msg           = exp["message"]
-    #     segment       = exp["segment"]
-    #     segmenter_path= exp["segmenter_path"]
-
-    #     # Identifica qual backbone para escolher a pasta correta
-    #     backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
-    #     model_dir    = MODEL_DIRS[backbone_key]
-
-    #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
-    #     out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
-    #     out_dir_cm.mkdir(parents=True, exist_ok=True)
-
-    #     for i in range(5):                                   # k-fold = 5
-    #         # ---- Caminhos de entrada ---------------------
-    #         model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-    #         split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
-
-    #         # ---- Nome para salvar arquivos/figura --------
-    #         cm_message = f"{msg}_F{i}"
-
-    #         # ---- Avaliação -------------------------------
-    #         y_pred = evaluate_model_cm(
-    #             model_path   = model_path_cm,
-    #             output_path  = str(out_dir_cm),
-    #             split_json   = split_path_cm,
-    #             raw_root     = RAW_ROOT,
-    #             message      = cm_message,
-    #             angle        = ANGLE,
-    #             classes      = CLASSES,
-    #             rgb          = False,
-    #             resize_method= rsz,
-    #             resize       = True,
-    #             resize_to    = 224,
-    #             segmenter= segment,
-    #             seg_model_path = segmenter_path
-    #         )
-
-    #         split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
-
-    #         X_test, y_test, ids_test = ppeprocessEigenCam(
-    #             X, y, patient_ids,
-    #             split_json_hm,
-    #             segment=segment,
-    #             segmenter_path=segmenter_path,
-    #             resize_method= rsz  # ou "BlackPadding", "GrayPadding"
-    #         )
-
-    #         hits = y_pred == y_test 
-    #         miss = y_pred != y_test
-
-    #         # ---------- EigenCAM ----------
-    #         model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
-    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-    #         run_eigencam(
-    #             imgs       = X_test[hits],
-    #             labels     = y_test[hits],
-    #             ids        = ids_test[hits],
-    #             model_path = model_path_hm,
-    #             out_dir    = out_dir_hm,
-    #         )
-
-    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
-    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-    #         run_eigencam(
-    #             imgs       = X_test[miss],
-    #             labels     = y_test[miss],
-    #             ids        = ids_test[miss],
-    #             model_path = model_path_hm,
-    #             out_dir    = out_dir_hm,
-    #         )
-
-            print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
-
+    
 
 
 
