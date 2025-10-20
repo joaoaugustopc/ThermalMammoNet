@@ -2,13 +2,13 @@
 
 Estratégias identificadas: ComparacaoVgg, ComparacaoVgg_yolon
 
-📊 RESUMO GERAL COMPLETO:
+  RESUMO GERAL COMPLETO:
 categoria            acertos_modelo1  erros_modelo1  acertos_modelo2  erros_modelo2  melhorou  piorou  manteve_acerto  manteve_erro
 estrategia                                                                                                                         
 ComparacaoVgg                   21.4            1.7             19.0            4.3       0.8     3.4            18.3           1.0
 ComparacaoVgg_yolon             19.3            3.8             19.0            4.3       1.6     2.0            17.5           2.3
 
-📈 ANÁLISE DETALHADA DAS MELHORIAS:
+ ANÁLISE DETALHADA DAS MELHORIAS:
 
 🔬 CLASSE: Health
    ComparacaoVgg:
@@ -19,7 +19,7 @@ ComparacaoVgg_yolon             19.3            3.8             19.0            
       Melhorias: 1.8 ± 1.6
       Pioras: 1.6 ± 1.5
       Razão M/P: 1.12
-   📊 Teste t ComparacaoVgg vs ComparacaoVgg_yolon: t=-0.640, p=0.540
+     Teste t ComparacaoVgg vs ComparacaoVgg_yolon: t=-0.640, p=0.540
 
 🔬 CLASSE: Sick
    ComparacaoVgg:
@@ -30,12 +30,12 @@ ComparacaoVgg_yolon             19.3            3.8             19.0            
       Melhorias: 1.4 ± 2.1
       Pioras: 2.4 ± 1.8
       Razão M/P: 0.58
-   📊 Teste t ComparacaoVgg vs ComparacaoVgg_yolon: t=-1.043, p=0.328
+     Teste t ComparacaoVgg vs ComparacaoVgg_yolon: t=-1.043, p=0.328
 
 📋 DADOS DETALHADOS POR FOLD:
 ================================================================================
 
-🎯 FOLD 0:
+  FOLD 0:
    ComparacaoVgg:
       Health:
          acertos_modelo1: 27
@@ -75,7 +75,7 @@ ComparacaoVgg_yolon             19.3            3.8             19.0            
          manteve_acerto: 9
          manteve_erro: 2
 
-🎯 FOLD 1:
+  FOLD 1:
    ComparacaoVgg:
       Health:
          acertos_modelo1: 32
@@ -115,7 +115,7 @@ ComparacaoVgg_yolon             19.3            3.8             19.0            
          manteve_acerto: 10
          manteve_erro: 2
 
-🎯 FOLD 2:
+  FOLD 2:
    ComparacaoVgg:
       Health:
          acertos_modelo1: 26
@@ -155,7 +155,7 @@ ComparacaoVgg_yolon             19.3            3.8             19.0            
          manteve_acerto: 9
          manteve_erro: 3
 
-🎯 FOLD 3:
+  FOLD 3:
    ComparacaoVgg:
       Health:
          acertos_modelo1: 29
@@ -195,7 +195,7 @@ ComparacaoVgg_yolon             19.3            3.8             19.0            
          manteve_acerto: 12
          manteve_erro: 2
 
-🎯 FOLD 4:
+  FOLD 4:
    ComparacaoVgg:
       Health:
          acertos_modelo1: 29

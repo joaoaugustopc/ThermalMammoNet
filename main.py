@@ -1871,26 +1871,44 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
     """
 
     def coletar_ids(exp_base, modelo):
+
         resultado = {"Acertos": {"Health": set(), "Sick": set()},
-                     "Erros": {"Health": set(), "Sick": set()}}
+                    "Erros": {"Health": set(), "Sick": set()}}
+        
+        padrao_id = re.compile(r"(id_\d+)")  # captura id_ seguido de números
+        
         for tipo in ["Acertos", "Erros"]:
             for classe in ["Health", "Sick"]:
                 class_path = os.path.join(exp_base, tipo, modelo, classe)
-                print(class_path)
                 if os.path.exists(class_path):
-                    arquivos = [f for f in os.listdir(class_path) if f.endswith("_overlay.png")]
-                    resultado[tipo][classe].update([f.split("_overlay.png")[0] for f in arquivos])
+                    arquivos = [f for f in os.listdir(class_path) if f.endswith(".png")]
+                    for f in arquivos:
+                        m = padrao_id.search(f)
+                        if m:
+                            resultado[tipo][classe].add(m.group(1))  # adiciona só id_XXX
         return resultado
 
 
     exp1 = coletar_ids(exp1_base, exp1_modelo)
     exp2 = coletar_ids(exp2_base, exp2_modelo)
 
+    # --------------verificando se tá certos os ids -> teste
+    # ids_set1 = exp1["Acertos"]["Health"]
+    # ids_set2 = exp2["Acertos"]["Health"]
+
+    # # IDs que estão em ids_set2 mas não estão em ids_set1
+    # diferenca = ids_set1 - ids_set2
+
+    # # ordenar numericamente
+    # diferenca_ordenada = sorted(diferenca, key=lambda x: int(x.split("_")[1]))
+
+    # print(diferenca_ordenada)
+    # -----------------------------------------------
+
     #pasta de saída
     os.makedirs(output_dir, exist_ok=True)
     relatorio_path = os.path.join(output_dir, "relatorio_comparacao.txt")
     
-    # caso queira escrever uma mensagem no título diferente
     if mensagem == "mensagem_comparacao:":
         with open(relatorio_path, "w") as f:
             f.write(f"Comparando o modelo {exp1_modelo} com {exp2_modelo}\n")
@@ -1941,22 +1959,27 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
             for nome, ids_set in categorias.items():
                 destino = os.path.join(output_dir, nome, classe)
                 os.makedirs(destino, exist_ok=True)
+                
                 for img_id in ids_set:
-                    candidatos = [
-                        os.path.join(exp1_base, "Acertos", exp1_modelo, classe, img_id + "_overlay.png"),
-                        os.path.join(exp1_base, "Erros", exp1_modelo, classe, img_id + "_overlay.png"),
-                        os.path.join(exp2_base, "Acertos", exp2_modelo, classe, img_id + "_overlay.png"),
-                        os.path.join(exp2_base, "Erros", exp2_modelo, classe, img_id + "_overlay.png"),
-                    ]
-                    for src in candidatos:
-                        if os.path.exists(src):
-                            shutil.copy(src, os.path.join(destino, os.path.basename(src)))
-                            break
+                    # Procurar em todas as pastas possíveis
+                    for tipo, base, modelo in [
+                        ("Acertos", exp1_base, exp1_modelo),
+                        ("Erros", exp1_base, exp1_modelo),
+                        ("Acertos", exp2_base, exp2_modelo),
+                        ("Erros", exp2_base, exp2_modelo)
+                    ]:
+                        class_path = os.path.join(base, tipo, modelo, classe)
+                        if os.path.exists(class_path):
+                            for f in os.listdir(class_path):
+                                if f.startswith(img_id) and f.endswith(".png"):  
+                                    shutil.copy(os.path.join(class_path, f), os.path.join(destino, f))
+                                
+
 
     print(f"Comparação concluída!")
     print(f"Relatório: {relatorio_path}")
     print(f"Imagens copiadas para: {output_dir}")
-
+ 
 import os
 import cv2
 
@@ -2060,7 +2083,9 @@ def analisar_comparacoes_cruzadas(base_dir="comparacoes", output_dir="Analise_Gl
     
     # Análises
     analisar_estrategias(metricas_globais, output_dir)
-    analisar_consistencia_folds(metricas_globais, output_dir)
+    # analisar_consistencia_folds(metricas_globais, output_dir)
+    plotar_acertos_erros_por_fold(metricas_globais, output_dir)
+
     
     return metricas_globais
 
@@ -2386,38 +2411,66 @@ def analisar_estrategias(metricas_globais, output_dir):
                     
                     for _, row in dados_classe.iterrows():
                         f.write(f"         {row['categoria']}: {row['quantidade']}\n")
-
 def analisar_consistencia_folds(metricas_globais, output_dir):
     """Analisa a consistência entre os folds com visualização completa"""
-    
+    print("analise consistencia")
     df = metricas_globais['df']
     
     # Configurar o estilo dos gráficos
     plt.style.use('seaborn-v0_8')
     fig = plt.figure(figsize=(20, 15))
     
+    estrategias = df['estrategia'].unique()
+    metricas_principais = ['melhorou', 'piorou', 'manteve_acerto', 'manteve_erro']
+    
+    # 🎨 CORES DINÂMICAS - Gera automaticamente para qualquer estratégia
+    cores_disponiveis = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                         '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    cores_estrategias = {estrategia: cores_disponiveis[i % len(cores_disponiveis)] 
+                        for i, estrategia in enumerate(estrategias)}
+    
+    # 🎨 ESTILOS DE LINHA POR MÉTRICA
+    estilos_metricas = {
+        'melhorou': '-',           # Linha sólida
+        'piorou': '--',            # Linha tracejada
+        'manteve_acerto': '-.',    # Linha ponto-traço
+        'manteve_erro': ':'        # Linha pontilhada
+    }
+    
+    # 🎨 MARCADORES POR MÉTRICA
+    marcadores_metricas = {
+        'melhorou': 'o',      # Círculo
+        'piorou': 's',        # Quadrado  
+        'manteve_acerto': '^', # Triângulo
+        'manteve_erro': 'D'   # Diamante
+    }
+    
     # Gráfico 1: Todas as métricas por fold
     ax1 = plt.subplot(2, 3, 1)
     
-    metricas_principais = ['melhorou', 'piorou', 'manteve_acerto', 'manteve_erro']
-    cores = ['green', 'red', 'blue', 'orange']
-    
-    for i, metrica in enumerate(metricas_principais):
-        if metrica in df['categoria'].unique():
-            dados_metrica = df[df['categoria'] == metrica]
-            
-            for estrategia in dados_metrica['estrategia'].unique():
-                subset = dados_metrica[dados_metrica['estrategia'] == estrategia]
+    for estrategia in estrategias:
+        for metrica in metricas_principais:
+            if metrica in df['categoria'].unique():
+                subset = df[
+                    (df['estrategia'] == estrategia) & 
+                    (df['categoria'] == metrica)
+                ]
+                
                 if not subset.empty:
+                    cor = cores_estrategias[estrategia]
+                    estilo = estilos_metricas[metrica]
+                    marcador = marcadores_metricas[metrica]
+                    
                     plt.plot(subset['fold'], subset['quantidade'], 
-                            marker='o', linewidth=2, markersize=6,
+                            marker=marcador, linestyle=estilo, linewidth=2, markersize=6,
                             label=f'{estrategia} - {metrica}',
-                            color=cores[i], alpha=0.7)
+                            color=cor, alpha=0.8, 
+                            markeredgecolor='white', markeredgewidth=1)
     
     plt.xlabel('Fold')
     plt.ylabel('Quantidade')
-    plt.title('TODAS AS MÉTRICAS POR FOLD')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.title('TODAS AS MÉTRICAS POR FOLD\n(Cores: Estratégias, Estilos: Métricas)')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
     plt.grid(True, alpha=0.3)
     
     # Gráfico 2: Heatmap das métricas
@@ -2553,32 +2606,502 @@ def analise_completa_comparacoes():
     
     return metricas_globais
 
+def plotar_acertos_erros_por_fold(metricas_globais, output_dir):
+    """
+    Gera gráficos mostrando acertos e erros por fold para cada estratégia (modelo).
+    """
+    print("Gerando gráficos de acertos e erros por fold...")
+    df = metricas_globais['df']
+    
+    # Filtrar apenas métricas de interesse
+    metricas_plot = ['acertos_modelo1', 'erros_modelo1', 'acertos_modelo2', 'erros_modelo2']
+    df_plot = df[df['categoria'].isin(metricas_plot)]
+    
+    estrategias = df_plot['estrategia'].unique()
+    
+    for estrategia in estrategias:
+        df_estrat = df_plot[df_plot['estrategia'] == estrategia]
+        
+        # Pivotar para ter as métricas como colunas
+        tabela = df_estrat.pivot_table(
+            index=['fold', 'classe'],
+            columns='categoria',
+            values='quantidade',
+            aggfunc='mean'
+        ).fillna(0)
+        
+        # Reordenar colunas
+        colunas_ordem = [c for c in metricas_plot if c in tabela.columns]
+        tabela = tabela[colunas_ordem]
+        
+        # Plotar um gráfico para cada classe
+        for classe in ['Health', 'Sick']:
+            subset = tabela.loc[(slice(None), classe), :]
+            subset.index = subset.index.droplevel(1)  # remove a coluna 'classe' do índice
+            
+            subset.plot(
+                kind='bar',
+                figsize=(10,6),
+                title=f"{estrategia} - {classe} (Acertos e Erros por Fold)",
+                color=['#4CAF50', '#F44336', '#2196F3', '#FFC107']
+            )
+            
+            plt.xlabel("Fold")
+            plt.ylabel("Quantidade de imagens")
+            plt.xticks(rotation=0)
+            plt.grid(axis='y', linestyle='--', alpha=0.4)
+            plt.tight_layout()
+            
+            save_path = os.path.join(output_dir, f"{estrategia}_{classe}_acertos_erros.png")
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            print(f"   → Gráfico salvo: {save_path}")
+
+
+import os
+import numpy as np
+import pandas as pd
+
+def verificando_temperatura_marcadores(fold_origem="marcadores_segmentados", fold_destino="marcadores_segmentados_txt"):
+    """
+    Converte imagens de fold_origem → fold_destino com recuperar_img,
+    depois lê todas as matrizes .txt da pasta fold_destino e calcula:
+      - a média de temperatura de cada imagem
+      - a diferença média entre os pixels da própria imagem
+    """
+
+
+    def recuperar_img_marcador(input_folder, output_folder):
+        """
+        Converte imagens PNG 16-bit de volta para matrizes de temperatura,
+        usando os limites salvos em limites.json.
+        
+        O nome da imagem tem o formato: T0036.1.1.S.2012-09-29.00.png
+        O arquivo JSON tem chaves como: 36_img_Static-Frontal_2012-10-08.txt
+        """
+        
+        os.makedirs(output_folder, exist_ok=True)
+
+        json_path = os.path.join(input_folder, "limites.json")
+        if not os.path.isfile(json_path):
+            raise FileNotFoundError(f"JSON de limites não encontrado em: {json_path}")
+
+        with open(json_path, "r") as f:
+            limites = json.load(f)
+
+        for fname in os.listdir(input_folder):
+            if not fname.lower().endswith(".png"):
+                continue
+
+            path = os.path.join(input_folder, fname)
+            img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+
+            if img is None:
+                print(f"Aviso: não foi possível ler {fname}. Pulando.")
+                continue
+
+            if img.ndim == 3:
+                img = img[:, :, 0]
+
+            # Extrair o ID do nome da imagem (ex: T0036 → 36)
+            match = re.search(r"T0*([0-9]+)", fname)
+            if not match:
+                print(f"AVISO: não foi possível extrair ID de {fname}. Pulando.")
+                continue
+            
+            id_str = match.group(1)  # "36"
+
+            #  Buscar chave correspondente no JSON
+            chave_json = next((k for k in limites.keys() if k.startswith(f"{id_str}_")), None)
+
+            if chave_json is None:
+                print(f"AVISO: não encontrei chave com ID {id_str} no JSON para {fname}")
+                continue
+
+            temp_min = limites[chave_json]["min"]
+            temp_max = limites[chave_json]["max"]
+
+            # Converter de volta para escala de temperatura
+            
+            # Pegar apenas pixels ≠ 0 (região da máscara)
+            mascara_valida = img > 0
+            valores_raw = img[mascara_valida].astype(np.float32)
+
+            # converter somente os pixels válidos para escala de temperatura
+            valores_temp = valores_raw / 65535.0 * (temp_max - temp_min) + temp_min
+
+            out_name = os.path.splitext(fname)[0] + ".txt"
+            out_path = os.path.join(output_folder, out_name)
+
+            np.savetxt(out_path, valores_temp, fmt="%.6f")
+
+            print(f"Arquivo recuperado: {out_name} ({len(valores_temp)} pontos válidos, id={id_str})")
+    # ---------------------------------------------------------------------------------------------------------------
+    
+    # Converter as imagens originais em .txt (temperaturas)
+    recuperar_img_marcador(fold_origem, fold_destino)
+    
+    if not os.path.exists(fold_destino):
+        print(f"Pasta não encontrada: {fold_destino}")
+        return
+    
+    # Carregar todas as imagens como matrizes numpy
+    imagens = {}
+    for fname in sorted(os.listdir(fold_destino)):
+        if fname.endswith(".txt"):
+            path = os.path.join(fold_destino, fname)
+            try:
+                matriz = np.loadtxt(path)
+                imagens[fname] = matriz
+            except Exception as e:
+                print(f"Erro ao ler {fname}: {e}")
+    
+    if not imagens:
+        print("Nenhum arquivo .txt válido encontrado.")
+        return
+    
+    print(f"{len(imagens)} imagens carregadas.")
+    
+    # 1️⃣ Média e diferença média por imagem
+    resultados = []
+    for fname, matriz in imagens.items():
+        media_temp = float(np.mean(matriz))
+        diff_media = float(np.mean(np.abs(matriz - media_temp)))
+        
+        resultados.append({
+            "Imagem": fname,
+            "Média_Temperatura": media_temp,
+            "Diferença_Média_Pixels": diff_media
+        })
+    
+    # 2️⃣ Salvar resultados
+    df = pd.DataFrame(resultados)
+    df.to_csv(f"{fold_destino}/analise_temperatura_marcadores.csv", index=False)
+    
+    print(f"\nResultados salvos em: {fold_destino}_analise_temperatura_marcadores.csv")
+    print(df.round(3))
+        
+def comparar_modelos_por_id_com_consistencia_certo(
+    exp1_base, exp1_modelo,
+    exp2_base, exp2_modelo,
+    mensagem="mensagem_comparacao:",
+    output_dir="Comparacao"
+):
+    """
+    Lógica solicitada:
+      1) Para cada classe (Health/Sick) e para cada experimento, agrupar arquivos por ID (id_###).
+      2) Verificar se há >1 arquivo para o mesmo ID:
+         - Se sim, checar se TODOS pertencem ao MESMO grupo (Acertos ou Erros) no experimento.
+           * Se sim: marcar como CONSISTENTE e usar esse grupo (Acertos/Erros) na comparação.
+           * Se não: anotar no relatório como 'revisão manual' (misto dentro do próprio experimento).
+         - Se não (>1 arquivo): comparar normalmente.
+      3) Só comparar IDs que são CONSISTENTES em AMBOS os experimentos.
+         Categorias:
+           - Erro -> Acerto (melhorou)
+           - Acerto -> Erro (piorou)
+           - Manteve_Acerto
+           - Manteve_Erro
+      4) IDs inconsistentes (mistos) em qualquer um dos experimentos vão para a seção
+         'Revisão manual', com o detalhamento de quantos arquivos caíram em cada grupo.
+    Estrutura assumida:
+      CAM_results/
+        Acertos/<modelo>/Health
+        Acertos/<modelo>/Sick
+        Erros/<modelo>/Health
+        Erros/<modelo>/Sick
+    """
+
+    def ensure_dir(p):
+        os.makedirs(p, exist_ok=True)
+
+    def only_id(name: str) -> str:
+        """Extrai 'id_###' do basename."""
+        m = re.search(r"(id_\d+)", name, flags=re.IGNORECASE)
+        return m.group(1) if m else name
+
+    def listar_pngs(path):
+        return [f for f in os.listdir(path) if f.lower().endswith(".png")]
+
+    def coletar_por_experimento(exp_base: str, modelo: str):
+        """
+        Retorna, para cada classe:
+          - por_id: dict[id] = {"Acertos": set(nomes_arquivos), "Erros": set(nomes_arquivos)}
+          - totais_arquivos: contagem bruta de arquivos por grupo (Acertos/Erros)
+        """
+        por_id = { "Health": defaultdict(lambda: {"Acertos": set(), "Erros": set()}),
+                   "Sick":   defaultdict(lambda: {"Acertos": set(), "Erros": set()}) }
+        totais_arquivos = { "Health": {"Acertos": 0, "Erros": 0},
+                            "Sick":   {"Acertos": 0, "Erros": 0} }
+
+        for classe in ["Health", "Sick"]:
+            for grupo in ["Acertos", "Erros"]:
+                class_path = os.path.join(exp_base, grupo, modelo, classe)
+                if not os.path.exists(class_path):
+                    continue
+                arquivos = listar_pngs(class_path)
+                totais_arquivos[classe][grupo] += len(arquivos)
+
+                for fname in arquivos:
+                    _id = only_id(fname)
+                    por_id[classe][_id][grupo].add(fname)
+
+        return por_id, totais_arquivos
+
+    # Coleta dos dois experimentos
+    exp1_por_id, exp1_totais = coletar_por_experimento(exp1_base, exp1_modelo)
+    exp2_por_id, exp2_totais = coletar_por_experimento(exp2_base, exp2_modelo)
+
+    # Arquivo de relatório
+    ensure_dir(output_dir)
+    relatorio_path = os.path.join(output_dir, "relatorio_comparacao.txt")
+    with open(relatorio_path, "w", encoding="utf-8") as f:
+        if mensagem == "mensagem_comparacao:":
+            f.write(f"Comparando o modelo {exp1_modelo} com {exp2_modelo}\n")
+        else:
+            f.write(mensagem.strip() + "\n")
+
+    # Função para decidir consistência de um ID dentro de UM experimento
+    def rotular_consistencia(entry: dict):
+        """
+        entry: {"Acertos": set(files), "Erros": set(files)}
+        Retorna:
+          - status: "CONSISTENTE" | "MISTO" | "AUSENTE"
+          - grupo:  "Acertos" | "Erros" | None  (quando CONSISTENTE indica o grupo)
+          - contagem: {"Acertos": n, "Erros": n}
+          - total_arquivos: n_total
+        Regras:
+          - Se ambos vazios -> AUSENTE
+          - Se ambos não vazios -> MISTO
+          - Se apenas um não vazio -> CONSISTENTE, grupo = esse
+        """
+        ca = len(entry["Acertos"])
+        ce = len(entry["Erros"])
+        total = ca + ce
+        if total == 0:
+            return "AUSENTE", None, {"Acertos": ca, "Erros": ce}, total
+        if ca > 0 and ce > 0:
+            return "MISTO", None, {"Acertos": ca, "Erros": ce}, total
+        if ca > 0:
+            return "CONSISTENTE", "Acertos", {"Acertos": ca, "Erros": ce}, total
+        return "CONSISTENTE", "Erros", {"Acertos": ca, "Erros": ce}, total
+
+    # Loop por classe para montar o relatório
+    with open(relatorio_path, "a", encoding="utf-8") as report:
+        for classe in ["Health", "Sick"]:
+            report.write(f"\n============================================= {classe} =============================================\n")
+
+            # Totais brutos por ARQUIVO (só como referência inicial)
+            if classe == "Health":
+                report.write("\n---------------------------- Quantitativo total (por ARQUIVO) ----------------------------\n")
+                report.write(f"Modelo 1 - Acertos: {exp1_totais['Health']['Acertos']} | Erros: {exp1_totais['Health']['Erros']}\n")
+                report.write(f"Modelo 2 - Acertos: {exp2_totais['Health']['Acertos']} | Erros: {exp2_totais['Health']['Erros']}\n")
+            else:
+                report.write("\n---------------------------- Quantitativo total (por ARQUIVO) ----------------------------\n")
+                report.write(f"Modelo 1 - Acertos: {exp1_totais['Sick']['Acertos']} | Erros: {exp1_totais['Sick']['Erros']}\n")
+                report.write(f"Modelo 2 - Acertos: {exp2_totais['Sick']['Acertos']} | Erros: {exp2_totais['Sick']['Erros']}\n")
+
+            # Conjuntos de IDs possíveis (união dos dois experimentos para a classe)
+            ids_classe = set(exp1_por_id[classe].keys()) | set(exp2_por_id[classe].keys())
+
+            # Buckets de comparação (apenas IDs consistentes em ambos os experimentos)
+            melhorou = []      # Erros (exp1) -> Acertos (exp2)
+            piorou = []        # Acertos (exp1) -> Erros (exp2)
+            manteve_ac = []    # Acertos -> Acertos
+            manteve_er = []    # Erros -> Erros
+
+            # IDs para revisão manual (mistos em algum experimento)
+            revisao_manual = []  # (id, detalhe_exp1, detalhe_exp2)
+
+            # IDs ausentes em algum experimento (presentes só em um)
+            ausentes = []  # (id, status_exp1, status_exp2)
+
+            for _id in sorted(ids_classe, key=lambda x: (int(re.search(r"\d+", x).group()), x) if re.search(r"\d+", x) else (10**9, x)):
+                e1_entry = exp1_por_id[classe].get(_id, {"Acertos": set(), "Erros": set()})
+                e2_entry = exp2_por_id[classe].get(_id, {"Acertos": set(), "Erros": set()})
+
+                s1, g1, c1, t1 = rotular_consistencia(e1_entry)
+                s2, g2, c2, t2 = rotular_consistencia(e2_entry)
+
+                # Se algum é AUSENTE, não dá para comparar -> registrar
+                if s1 == "AUSENTE" or s2 == "AUSENTE":
+                    ausentes.append((_id, s1, s2, c1, c2))
+                    continue
+
+                # Se algum é MISTO, mandar para revisão manual
+                if s1 == "MISTO" or s2 == "MISTO":
+                    detalhe_exp1 = f"exp1: Acertos={c1['Acertos']}, Erros={c1['Erros']}"
+                    detalhe_exp2 = f"exp2: Acertos={c2['Acertos']}, Erros={c2['Erros']}"
+                    revisao_manual.append((_id, detalhe_exp1, detalhe_exp2))
+                    continue
+
+                # Aqui ambos CONSISTENTES -> comparar grupos
+                if g1 == "Erros" and g2 == "Acertos":
+                    melhorou.append(_id)
+                elif g1 == "Acertos" and g2 == "Erros":
+                    piorou.append(_id)
+                elif g1 == "Acertos" and g2 == "Acertos":
+                    manteve_ac.append(_id)
+                elif g1 == "Erros" and g2 == "Erros":
+                    manteve_er.append(_id)
+
+            # ---- Relatório: resultados de comparação (apenas IDs consistentes) ----
+            report.write("\n---------------------------- Comparação (apenas IDs CONSISTENTES em ambos) ----------------------------\n")
+            report.write(f"Erro -> Acerto (melhorou): {len(melhorou)} IDs\n")
+            report.write(f"Acerto -> Erro (piorou):   {len(piorou)} IDs\n")
+            report.write(f"Manteve_Acerto:            {len(manteve_ac)} IDs\n")
+            report.write(f"Manteve_Erro:              {len(manteve_er)} IDs\n\n")
+
+            def listar(titulo, items):
+                report.write(f"--- {titulo} ---\n")
+                for x in items:
+                    report.write(f"{x}\n")
+                report.write("\n")
+
+            listar("Erro -> Acerto (melhorou)", melhorou)
+            listar("Acerto -> Erro (piorou)", piorou)
+            listar("Manteve_Acerto", manteve_ac)
+            listar("Manteve_Erro", manteve_er)
+
+            # ---- Relatório: revisão manual (IDs MISTOS em algum experimento) ----
+            report.write("---------------------------- IDs para REVISÃO MANUAL (mistos em algum experimento) ----------------------------\n")
+            report.write(f"Total: {len(revisao_manual)} IDs\n")
+            for _id, d1, d2 in revisao_manual:
+                report.write(f"{_id} | {d1} | {d2}\n")
+            report.write("\n")
+
+            # ---- Relatório: ausentes (sem contrapartida em algum experimento) ----
+            report.write("---------------------------- IDs AUSENTES (presentes em apenas 1 experimento) ----------------------------\n")
+            report.write(f"Total: {len(ausentes)} IDs\n")
+            for _id, s1, s2, c1, c2 in ausentes:
+                report.write(f"{_id} | exp1={s1} (A={c1['Acertos']},E={c1['Erros']}) | exp2={s2} (A={c2['Acertos']},E={c2['Erros']})\n")
+            report.write("\n")
+
+    print("Comparação concluída!")
+    print(f"Relatório: {relatorio_path}")
+    print(f"Pasta de saída: {output_dir}")
+
 if __name__ == "__main__":
     
-    # ----------------------- CRIANDO A PASTA COM OS MODELOS -----------------------
-    # move_folder("ComparacaoVggF0", "Análises")
-    # move_folder("ComparacaoVggF1", "Análises")
-    # move_folder("ComparacaoVggF2", "Análises")
-    # move_folder("ComparacaoVggF3", "Análises")
-    # move_folder("ComparacaoVggF4", "Análises")
-
-    # move_folder("Comparacoes/ComparacaoVgg_yolon_F0", "Análises")
-    # move_folder("Comparacoes/ComparacaoVgg_yolon_F1", "Análises")
-    # move_folder("Comparacoes/ComparacaoVgg_yolon_F2", "Análises")
-    # move_folder("Comparacoes/ComparacaoVgg_yolon_F3", "Análises")
-    # move_folder("Comparacoes/ComparacaoVgg_yolon_F4", "Análises")
-
-    # rename_folder("Análises/ComparacaoVggF0", "Análises/ComparacaoVgg_F0")
-    # rename_folder("Análises/ComparacaoVggF1", "Análises/ComparacaoVgg_F1")
-    # rename_folder("Análises/ComparacaoVggF2", "Análises/ComparacaoVgg_F2")
-    # rename_folder("Análises/ComparacaoVggF3", "Análises/ComparacaoVgg_F3")
-    # rename_folder("Análises/ComparacaoVggF4", "Análises/ComparacaoVgg_F4")
-
-    # ----------------------- CHAMANDO AS COMPARAÇÕES -----------------------
-    analisar_comparacoes_cruzadas(
-        base_dir="Análises", 
-        output_dir="Resultados_Finais_VGG_Yolon"
+    delete_folder("ComparacaoVGGFULL&YoloMARCADOR")
+    create_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
+    
+    comparar_modelos_por_id_com_consistencia_certo(
+        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F0",
+        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F0",
+        output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF0"
     )
+    
+    comparar_modelos_por_id_com_consistencia_certo(
+        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F1",
+        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F1",
+        output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF1",
+    )
+    
+    comparar_modelos_por_id_com_consistencia_certo(
+        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F2",
+        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F2",
+        output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF2",
+    )
+    
+    comparar_modelos_por_id_com_consistencia_certo(
+        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F3",
+        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F3",
+        output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF3",
+    )
+    
+    comparar_modelos_por_id_com_consistencia_certo(
+        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F4",
+        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F4",
+        output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF4",
+    )
+    
+    
+    delete_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
+    create_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
+    
+    comparar_modelos_por_id_com_consistencia_certo(
+        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F0",
+        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F0",
+        output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF0",
+    )
+   
+    comparar_modelos_por_id_com_consistencia_certo(
+        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F1",
+        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F1",
+        output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF1",
+    )
+    
+    comparar_modelos_por_id_com_consistencia_certo(
+        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F2",
+        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F2",
+        output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF2",
+    )
+    
+    comparar_modelos_por_id_com_consistencia_certo(
+        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F3",
+        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F3",
+        output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF3",
+    )
+    
+    comparar_modelos_por_id_com_consistencia_certo(
+        exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F4",
+        exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
+        exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F4",
+        output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF4",
+    )
+    
+
+
+
+    
+    # ----------------------- CRIANDO A PASTA COM OS MODELOS -----------------------
+    # create_folder("Vgg")
+    
+    # move_folder("Análises/ComparacaoVgg_F0", "Vgg")
+    # move_folder("Análises/ComparacaoVgg_F1", "Vgg")
+    # move_folder("Análises/ComparacaoVgg_F2", "Vgg")
+    # move_folder("Análises/ComparacaoVgg_F3", "Vgg")
+    # move_folder("Análises/ComparacaoVgg_F4", "Vgg")
+
+    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F0", "Análises2")
+    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F1", "Análises2")
+    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F2", "Análises2")
+    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F3", "Análises2")
+    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F4", "Análises2")
+
+    # # rename_folder("Análises/ComparacaoVggF0", "Análises/ComparacaoVgg_F0")
+    # # rename_folder("Análises/ComparacaoVggF1", "Análises/ComparacaoVgg_F1")
+    # # rename_folder("Análises/ComparacaoVggF2", "Análises/ComparacaoVgg_F2")
+    # # rename_folder("Análises/ComparacaoVggF3", "Análises/ComparacaoVgg_F3")
+    # # rename_folder("Análises/ComparacaoVggF4", "Análises/ComparacaoVgg_F4")
+
+    # # ----------------------- CHAMANDO AS COMPARAÇÕES -----------------------
+    # analisar_comparacoes_cruzadas(
+    #     base_dir="Análises", 
+    #     output_dir="Resultados_Finais_VGG_yolon"
+    # )
+
+    # def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_modelo, mensagem="mensagem_comparacao:", output_dir="Comparacao"):
+
 
 
     SEMENTE = 13388
@@ -2756,7 +3279,7 @@ if __name__ == "__main__":
 
 
 
-    # ------------------ Primeira abordagem testada para incluir os marcadores na segmentação --------------
+    # -------------- Primeira abordagem testada para incluir os marcadores na segmentação --------------
 
     # resize_imgs_two_masks_dataset(
     #     img_dir="Termografias_Dataset_Segmentação/images",
