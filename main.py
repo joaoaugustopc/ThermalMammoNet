@@ -466,79 +466,59 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             
 
             if model == "yolo":
-                save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
-                save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
-                save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
+                # save_split_to_png(X_tr, y_tr, "train", root=f"Yolos_Cls_Seg/dataset_fold_{fold+1}")                     #AQUI
+                # save_split_to_png(X_val, y_val, "val",   root=f"Yolos_Cls_Seg/dataset_fold_{fold+1}")                   #AQUI
+                # save_split_to_png(X_test, y_test, "test", root=f"Yolos_Cls_Seg/dataset_fold_{fold+1}")                  #AQUI
+
+
+                # ATENÇÃO
 
                 print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
 
-                # Treinamento YOLO
-                model_f = YOLO('yolov8s-cls.pt')
-                start_time = time.time() 
+                # # Treinamento YOLO
+                # model_f = YOLO('yolov8n-cls.pt')
+                # start_time = time.time() 
 
-                model_f.train(
-                    data=f"dataset_fold_{fold+1}",
-                    epochs=100,
-                    patience=50,
-                    batch=16,
-                    #lr0=0.0005,
-                    optimizer='AdamW',
-                    #weight_decay=0.0005,
-                    #hsv_h=0.1,
-                    #hsv_s=0.2,
-                    #flipud=0.3,
-                    #mosaic=0.1,
-                    #mixup=0.1,
-                    workers=0,
-                    pretrained=False,
-                    amp=False,
-                    deterministic=True,
-                    seed=seed,
-                    project="runs/classify",
-                    name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
-                )
+                # model_f.train(
+                #     data=f"Yolos_Cls_Seg/dataset_fold_{fold+1}",                                    #AQUI
+                #     epochs=100,
+                #     patience=100,
+                #     batch=8,
+                #     #lr0=0.0005,
+                #     optimizer='AdamW',
+                #     #weight_decay=0.0005,
+                #     #hsv_h=0.1,
+                #     #hsv_s=0.2,
+                #     #flipud=0.3,
+                #     #mosaic=0.1,
+                #     #mixup=0.1,
+                #     workers=0,
+                #     pretrained=False,
+                #     amp=False,
+                #     deterministic=True,
+                #     seed=seed,
+                #     project="runs/classify/Yolos_Cls_Seg",                                         #AQUI 
+                #     name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
+                # )
                 
                 end_time = time.time()
 
+                best_model_path = f"runs/classify/Yolos_Cls_Seg/YOLOv8_cls_fold_{fold+1}_seed_{seed}/weights/best.pt"       #Aqui
+                modelYV = YOLO(best_model_path) 
+
                 # Validação
-                metrics = model_f.val(
-                    data=f"dataset_fold_{fold+1}",
-                    project="runs/classify/val",
+                metrics = modelYV.val(
+                    data=f"Yolos_Cls_Seg/dataset_fold_{fold+1}",                                                #AQUI
+                    split="test", 
+                    project="runs/classify/val/Yolos_Cls_Seg",                       #AQUI
                     name=f"fold_{fold+1}_seed_{seed}",
-                    save_json=True
+                    save_json=True,
+                    batch=8,  # ← REDUZIR BATCH SIZE (padrão é 16)
+                    workers=0
                 )
 
-                # Dados para salvar
-                results_to_save = {
-                    'top1_accuracy': metrics.top1,
-                    'top5_accuracy': metrics.top5,
-                    'fitness': metrics.fitness,
-                    'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
-                    'all_metrics': metrics.results_dict,
-                    'speed': metrics.speed
-                }
 
-                # Salvar em JSON
-                with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
-                    json_module.dump(results_to_save, f, indent=4)
-
-                """
-                # Extraindo métricas
-                accuracy = metrics.results_dict['accuracy_top1']
-                precision = metrics.results_dict['precision']
-                recall = metrics.results_dict['recall']
-                f1 = metrics.results_dict['f1']
-
-                # Salvando no mesmo arquivo de log dos outros modelos
-                with open(log_txt, "a") as f:
-                    f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
-                    f.write(f"Accuracy: {accuracy:.4f}\n")
-                    f.write(f"Precision: {precision:.4f}\n")
-                    f.write(f"Recall: {recall:.4f}\n")
-                    f.write(f"F1-Score: {f1:.4f}\n")
-                    f.write("-"*50 + "\n")  # Separador visual
-
-                """
+                # # ATENÇÃO
 
             else:
 
@@ -2014,6 +1994,48 @@ if __name__ == "__main__":
 
     SEMENTE = 13388
 
+    # Transformar TXT para PNG
+    # input_folder = "filtered_raw_dataset/Frontal/sick"
+    # output_folder = "processed_images/sick"
+    
+    # transform_temp_img(input_folder, output_folder)
+    # print(f"Imagens transformadas salvas em: {output_folder}")
+    
+    # Testar recuperação (opcional)
+    # output_recovered = "recovered_data/sick"
+    # recuperar_img(output_folder, output_recovered)
+    # print(f"Dados recuperados salvos em: {output_recovered}")
+
+
+    # delete_folder("Yolos_Cls_SegPAD")
+    # delete_folder("Yolos_Cls")
+    # delete_folder("heatmaps")
+    # delete_folder("runs/classify/Yolos_Cls_UFF_NO_PAD")
+
+    # SEMENTE = 13388
+
+    train_model_cv("yolo",
+                    raw_root="recovered_data",
+                    #raw_root="uff_no_pad",
+                    angle="Frontal",
+                    k=5,                 
+                    resize_to=224,
+                    n_aug=2,             
+                    batch=8,
+                    seed= SEMENTE,
+                    segmenter="yolo",
+                    message="Yolos_Cls_Seg",
+                    resize_method="BlackPadding",
+                    seg_model_path="runs/segment/train21/weights/best.pt")
+    
+ 
+    # process_heatmaps_for_dataset("Yolos_Cls_SegPAD/dataset_fold_1/test", "runs/classify/Yolos_Cls_UFF_NO_PAD/YOLOv8_cls_fold_1_seed_13388/weights/best.pt", "heatmaps/Yolos_Cls_UFF_NO_PAD/dataset_fold_1")
+    # process_heatmaps_for_dataset("Yolos_Cls_SegPAD/dataset_fold_2/test", "runs/classify/Yolos_Cls_UFF_NO_PAD/YOLOv8_cls_fold_2_seed_13388/weights/best.pt", "heatmaps/Yolos_Cls_UFF_NO_PAD/dataset_fold_2")
+    # process_heatmaps_for_dataset("Yolos_Cls_SegPAD/dataset_fold_3/test", "runs/classify/Yolos_Cls_UFF_NO_PAD/YOLOv8_cls_fold_3_seed_13388/weights/best.pt", "heatmaps/Yolos_Cls_UFF_NO_PAD/dataset_fold_3")
+    # process_heatmaps_for_dataset("Yolos_Cls_SegPAD/dataset_fold_4/test", "runs/classify/Yolos_Cls_UFF_NO_PAD/YOLOv8_cls_fold_4_seed_13388/weights/best.pt", "heatmaps/Yolos_Cls_UFF_NO_PAD/dataset_fold_4")
+    # process_heatmaps_for_dataset("Yolos_Cls_SegPAD/dataset_fold_5/test", "runs/classify/Yolos_Cls_UFF_NO_PAD/YOLOv8_cls_fold_5_seed_13388/weights/best.pt", "heatmaps/Yolos_Cls_UFF_NO_PAD/dataset_fold_5")
+
+
     # Foi adicionado algumas funções para lidar com as imagens .png em uint16 no processo de criação do dataset no formato esperado pela yolo.
 
 
@@ -2086,6 +2108,168 @@ if __name__ == "__main__":
     #         "message": "Vgg_yolon_AUG_CV_BlackPadding_28_09_25",
     #         "segment": "yolo",
     #         "segmenter_path": "runs/segment/train35/weights/best.pt",
+    #     },
+    #     # {
+    #     #     "resize_method": "BlackPadding",
+    #     #     "message": "ResNet34_unet_AUG_CV_BlackPadding_13_09_25",
+    #     #     "segment": "unet",
+    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
+    #     # },
+    #     # {
+    #     #     "resize_method": "BlackPadding",
+    #     #     "message": "ResNet34_yolon_AUG_CV_BlackPadding_13_09_25",
+    #     #     "segment": "yolo",
+    #     #     "segmenter_path": "runs/segment/train31/weights/best.pt",
+    #     # },
+
+
+    # ]
+
+    # # --------------------------------------------------
+    # # # --- LOOP PRINCIPAL -------------------------------
+    # # # --------------------------------------------------
+    # # for exp in experiments:
+
+    # #     rsz           = exp["resize_method"]
+    # #     msg           = exp["message"]
+    # #     segment       = exp["segment"]
+    # #     segmenter_path= exp["segmenter_path"]
+
+    # #     # Identifica qual backbone para escolher a pasta correta
+    # #     backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
+    # #     model_dir    = MODEL_DIRS[backbone_key]
+
+    # #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+    # #     out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
+    # #     out_dir_cm.mkdir(parents=True, exist_ok=True)
+
+    # #     for i in range(5):                                   # k-fold = 5
+    # #         # ---- Caminhos de entrada ---------------------
+    # #         model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    # #         split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
+
+    # #         # ---- Nome para salvar arquivos/figura --------
+    # #         cm_message = f"{msg}_F{i}"
+
+    # #         # ---- Avaliação -------------------------------
+    # #         y_pred = evaluate_model_cm(
+    # #             model_path   = model_path_cm,
+    # #             output_path  = str(out_dir_cm),
+    # #             split_json   = split_path_cm,
+    # #             raw_root     = RAW_ROOT,
+    # #             message      = cm_message,
+    # #             angle        = ANGLE,
+    # #             classes      = CLASSES,
+    # #             rgb          = False,
+    # #             resize_method= rsz,
+    # #             resize       = True,
+    # #             resize_to    = 224,
+    # #             segmenter= segment,
+    # #             seg_model_path = segmenter_path
+    # #         )
+
+    # #         split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
+
+    # #         X_test, y_test, ids_test = ppeprocessEigenCam(
+    # #             X, y, patient_ids,
+    # #             split_json_hm,
+    # #             segment=segment,
+    # #             segmenter_path=segmenter_path,
+    # #             resize_method= rsz  # ou "BlackPadding", "GrayPadding"
+    # #         )
+
+    # #         hits = y_pred == y_test 
+    # #         miss = y_pred != y_test
+
+    # #         # ---------- EigenCAM ----------
+    # #         model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    # #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
+    # #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+
+    # #         run_eigencam(
+    # #             imgs       = X_test[hits],
+    # #             labels     = y_test[hits],
+    # #             ids        = ids_test[hits],
+    # #             model_path = model_path_hm,
+    # #             out_dir    = out_dir_hm,
+    # #         )
+
+    # #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
+    # #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+
+    # #         run_eigencam(
+    # #             imgs       = X_test[miss],
+    # #             labels     = y_test[miss],
+    # #             ids        = ids_test[miss],
+    # #             model_path = model_path_hm,
+    # #             out_dir    = out_dir_hm,
+    # #         )
+
+    # #         print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
+
+
+
+    # # ------------------ Primeira abordagem testada para incluir os marcadores na segmentação --------------
+
+    # resize_imgs_two_masks_dataset(
+    #     img_dir="Termografias_Dataset_Segmentação/images",
+    #     mask_breast_dir="Termografias_Dataset_Segmentação/masks",
+    #     mask_marker_dir = "Termografias_Dataset_Segmentação_Marcadores/masks",
+    #     output_base="Yolo_dataset_marcadores_two_classes",
+    #     target=224,          # mesmo tamanho definido no YAML da YOLO,
+    #     resize_method="BlackPadding"
+    # )
+
+
+    # yolo_data_2_classes("Frontal", "Yolo_dataset_marcadores_two_classes/images", "Yolo_dataset_marcadores_two_classes/masks_breast", "Yolo_dataset_marcadores_two_classes/masks_marker", "dataset_two_classes_yolo", True)
+    # # train36
+    # train_yolo_seg("n", 500, "dataset_yolo_two_classes.yaml", seed=SEMENTE)
+
+
+    # train_model_cv(Vgg_16,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                segmenter= "yolo",
+    #                message="Vgg_yolon_AUG_CV_BlackPadding_04_10_25", seg_model_path="runs/segment/train36/weights/best.pt",
+    #                resize_method="BlackPadding")
+
+
+
+    
+    
+    # MODEL_DIRS = {
+    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    # "resnet": "modelos/ResNet34"
+    # }
+
+    # CONF_BASE  = "Resultados_Retreinamento_seg_pad_two_classes"     # pasta-raiz onde deseja guardar as figuras
+    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    # ANGLE      = "Frontal"              # visão utilizada nos treinos
+
+    # exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
+    # X, y , patient_ids = load_raw_images(
+    #     f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
+    # # --------------------------------------------------
+    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # # --------------------------------------------------
+    # experiments = [
+    #     # {
+    #     #     "resize_method": "BlackPadding",
+    #     #     "message": "Vgg_unet_AUG_CV_BlackPadding_13_09_25",
+    #     #     "segment": "unet",
+    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
+    #     # },
+    #     {
+    #         "resize_method": "BlackPadding",
+    #         "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
+    #         "segment": "yolo",
+    #         "segmenter_path": "runs/segment/train36/weights/best.pt",
     #     },
     #     # {
     #     #     "resize_method": "BlackPadding",
@@ -2184,168 +2368,6 @@ if __name__ == "__main__":
     #         )
 
     #         print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
-
-
-
-    # ------------------ Primeira abordagem testada para incluir os marcadores na segmentação --------------
-
-    resize_imgs_two_masks_dataset(
-        img_dir="Termografias_Dataset_Segmentação/images",
-        mask_breast_dir="Termografias_Dataset_Segmentação/masks",
-        mask_marker_dir = "Termografias_Dataset_Segmentação_Marcadores/masks",
-        output_base="Yolo_dataset_marcadores_two_classes",
-        target=224,          # mesmo tamanho definido no YAML da YOLO,
-        resize_method="BlackPadding"
-    )
-
-
-    yolo_data_2_classes("Frontal", "Yolo_dataset_marcadores_two_classes/images", "Yolo_dataset_marcadores_two_classes/masks_breast", "Yolo_dataset_marcadores_two_classes/masks_marker", "dataset_two_classes_yolo", True)
-    # train36
-    train_yolo_seg("n", 500, "dataset_yolo_two_classes.yaml", seed=SEMENTE)
-
-
-    train_model_cv(Vgg_16,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   segmenter= "yolo",
-                   message="Vgg_yolon_AUG_CV_BlackPadding_04_10_25", seg_model_path="runs/segment/train36/weights/best.pt",
-                   resize_method="BlackPadding")
-
-
-
-    
-    
-    MODEL_DIRS = {
-    "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
-    "resnet": "modelos/ResNet34"
-    }
-
-    CONF_BASE  = "Resultados_Retreinamento_seg_pad_two_classes"     # pasta-raiz onde deseja guardar as figuras
-    CLASSES    = ("Healthy", "Sick")    # rótulos das classes
-    RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
-    ANGLE      = "Frontal"              # visão utilizada nos treinos
-
-    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
-    X, y , patient_ids = load_raw_images(
-        f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
-    # --------------------------------------------------
-    # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
-    # --------------------------------------------------
-    experiments = [
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "Vgg_unet_AUG_CV_BlackPadding_13_09_25",
-        #     "segment": "unet",
-        #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-        # },
-        {
-            "resize_method": "BlackPadding",
-            "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
-            "segment": "yolo",
-            "segmenter_path": "runs/segment/train36/weights/best.pt",
-        },
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "ResNet34_unet_AUG_CV_BlackPadding_13_09_25",
-        #     "segment": "unet",
-        #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-        # },
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "ResNet34_yolon_AUG_CV_BlackPadding_13_09_25",
-        #     "segment": "yolo",
-        #     "segmenter_path": "runs/segment/train31/weights/best.pt",
-        # },
-
-
-    ]
-
-    # --------------------------------------------------
-    # --- LOOP PRINCIPAL -------------------------------
-    # --------------------------------------------------
-    for exp in experiments:
-
-        rsz           = exp["resize_method"]
-        msg           = exp["message"]
-        segment       = exp["segment"]
-        segmenter_path= exp["segmenter_path"]
-
-        # Identifica qual backbone para escolher a pasta correta
-        backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
-        model_dir    = MODEL_DIRS[backbone_key]
-
-        # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
-        out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
-        out_dir_cm.mkdir(parents=True, exist_ok=True)
-
-        for i in range(5):                                   # k-fold = 5
-            # ---- Caminhos de entrada ---------------------
-            model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-            split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
-
-            # ---- Nome para salvar arquivos/figura --------
-            cm_message = f"{msg}_F{i}"
-
-            # ---- Avaliação -------------------------------
-            y_pred = evaluate_model_cm(
-                model_path   = model_path_cm,
-                output_path  = str(out_dir_cm),
-                split_json   = split_path_cm,
-                raw_root     = RAW_ROOT,
-                message      = cm_message,
-                angle        = ANGLE,
-                classes      = CLASSES,
-                rgb          = False,
-                resize_method= rsz,
-                resize       = True,
-                resize_to    = 224,
-                segmenter= segment,
-                seg_model_path = segmenter_path
-            )
-
-            split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
-
-            X_test, y_test, ids_test = ppeprocessEigenCam(
-                X, y, patient_ids,
-                split_json_hm,
-                segment=segment,
-                segmenter_path=segmenter_path,
-                resize_method= rsz  # ou "BlackPadding", "GrayPadding"
-            )
-
-            hits = y_pred == y_test 
-            miss = y_pred != y_test
-
-            # ---------- EigenCAM ----------
-            model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-            out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
-            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-            run_eigencam(
-                imgs       = X_test[hits],
-                labels     = y_test[hits],
-                ids        = ids_test[hits],
-                model_path = model_path_hm,
-                out_dir    = out_dir_hm,
-            )
-
-            out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
-            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-            run_eigencam(
-                imgs       = X_test[miss],
-                labels     = y_test[miss],
-                ids        = ids_test[miss],
-                model_path = model_path_hm,
-                out_dir    = out_dir_hm,
-            )
-
-            print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
 
 
 
