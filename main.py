@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes
+from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes, make_tvt_splits_marker_aware, verificar_splits_marker_aware
 from utils.files_manipulation import move_files_within_folder, create_folder, move_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model, unet_model_retangular
@@ -282,44 +282,165 @@ def visualize_processed_images(images, labels, title, save_path=None):
         print(f"Imagem salva em: {save_path}")
     else:
         plt.show()
+        
+def salvar_amostras_split_combined_paths(nomes_com, nomes_sem,
+                                         tr_sem_idx, tr_com_idx,
+                                         va_sem_idx, va_com_idx,
+                                         te_sem_idx,
+                                         fold, out_dir="amostras_split", n_amostras=5):
+    """
+    Salva apenas os caminhos das amostras (não as imagens) para conferência.
+    
+    tr_sem_idx, tr_com_idx, va_sem_idx, va_com_idx, te_sem_idx: índices dentro de X_sem/X_com
+    nomes_com, nomes_sem: arrays numpy de strings com nomes dos arquivos
+    """
+    import os
+    os.makedirs(os.path.join(out_dir, f"fold{fold}"), exist_ok=True)
 
+    base_dir = os.path.join(out_dir, f"fold{fold}")
+    dirs = {
+        "train_com": tr_com_idx,
+        "train_sem": tr_sem_idx,
+        "val_com": va_com_idx,
+        "val_sem": va_sem_idx,
+        "test_sem": te_sem_idx
+    }
 
+    for d, idxs in dirs.items():
+        path_file = os.path.join(base_dir, f"{d}_paths.txt")
+        with open(path_file, "w") as f:
+            nomes = nomes_com if "com" in d else nomes_sem
+            if len(idxs) == 0:
+                continue
+            sel = idxs if len(idxs) <= n_amostras else np.random.choice(idxs, n_amostras, replace=False)
+            for i in sel:
+                f.write(f"{nomes[i]}\n")
+
+    print(f"Amostras salvas em: {base_dir}")
+    print(f"Counts -> "
+          f"train_com={len(tr_com_idx)}, train_sem={len(tr_sem_idx)}, "
+          f"val_com={len(va_com_idx)}, val_sem={len(va_sem_idx)}, "
+          f"test_sem={len(te_sem_idx)}")
+
+def salvar_caminhos_reais_split(nomes_com, nomes_sem, com_marcador_dir, sem_marcador_dir,
+                               tr_sem_idx, tr_com_idx, va_sem_idx, va_com_idx, te_sem_idx,
+                               fold, out_dir="caminhos_split"):
+    """
+    Salva os caminhos completos das imagens usadas em cada split
+    """
+    import os
+    os.makedirs(os.path.join(out_dir, f"fold{fold}"), exist_ok=True)
+    
+    base_dir = os.path.join(out_dir, f"fold{fold}")
+    
+    # Dicionário com os splits
+    splits = {
+        "train_sem": (tr_sem_idx, nomes_sem, sem_marcador_dir),
+        "train_com": (tr_com_idx, nomes_com, com_marcador_dir),
+        "val_sem": (va_sem_idx, nomes_sem, sem_marcador_dir),
+        "val_com": (va_com_idx, nomes_com, com_marcador_dir),
+        "test_sem": (te_sem_idx, nomes_sem, sem_marcador_dir)
+    }
+    
+    for split_name, (indices, nomes, base_path) in splits.items():
+        caminhos_file = os.path.join(base_dir, f"{split_name}_caminhos.txt")
+        
+        with open(caminhos_file, "w") as f:
+            f.write(f"# Split: {split_name}\n")
+            f.write(f"# Total de imagens: {len(indices)}\n")
+            f.write(f"# Diretório base: {base_path}\n")
+            f.write("-" * 50 + "\n")
+            
+            for idx in indices:
+                nome_arquivo = nomes[idx]
+                # Determinar se é saudável ou doente baseado no nome ou caminho
+                if "healthy" in base_path or "saudavel" in base_path:
+                    classe = "saudavel"
+                else:
+                    classe = "doente"
+                
+                caminho_completo = os.path.join(base_path, "Frontal", classe, nome_arquivo)
+                f.write(f"{caminho_completo}\n")
+    
+    print(f"Caminhos salvos em: {base_dir}")
+
+    # Também salvar um resumo
+    resumo_file = os.path.join(base_dir, "resumo_split.txt")
+    with open(resumo_file, "w") as f:
+        f.write("RESUMO DO SPLIT - FOLD {fold}\n")
+        f.write("=" * 50 + "\n")
+        f.write(f"Treino SEM marcador: {len(tr_sem_idx)} imagens\n")
+        f.write(f"Treino COM marcador: {len(tr_com_idx)} imagens\n")
+        f.write(f"Validação SEM marcador: {len(va_sem_idx)} imagens\n")
+        f.write(f"Validação COM marcador: {len(va_com_idx)} imagens\n")
+        f.write(f"Teste SEM marcador: {len(te_sem_idx)} imagens\n")
+        f.write("=" * 50 + "\n")
+        f.write(f"Total Treino: {len(tr_sem_idx) + len(tr_com_idx)}\n")
+        f.write(f"Total Validação: {len(va_sem_idx) + len(va_com_idx)}\n")
+        f.write(f"Total Teste: {len(te_sem_idx)}\n")
+        
 """
-FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
+FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS -> ALTERADA PARA FAZER TREINO DE IMAGENS COM MARCADOR E SEM
 """
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
                   resize=True, resize_method = "BlackPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
-                  segmenter="none", seg_model_path="",channel_method ="MapaCalor"):
+                  segmenter="none", seg_model_path="",channel_method ="MapaCalor", raw_root_no_pad=""):
     
     # DEBUG: vendo o nome do modeloo
     #print(model.__name__)
     
-    
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
-    
-    if "ufpe" in raw_root:
-        X, y, patient_ids = load_raw_images_ufpe(
-            os.path.join(raw_root, angle), exclude=False)
-        print(f"Carregando imagens da UFPE: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+
+    # ======================================================
+    # Carrega o dataset (ou os dois, se raw_root_no_pad != "")
+    # ======================================================
+    def load_dataset(root): #alterando funcao para pegar nomes dos arquivos
+        if "ufpe" in root:
+            X, y, patient_ids = load_raw_images_ufpe(
+                os.path.join(root, angle), exclude=False)
+            print(f"Carregando imagens da UFPE: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+            root_names = []
+            
+        else:
+            X, y, patient_ids, root_names = load_raw_images(
+                os.path.join(root, angle), exclude=True, exclude_set=exclude_set)
+            print(f"Carregando imagens: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+        return X, y, patient_ids, root_names
+
+    if raw_root_no_pad == "":
+        X, y, patient_ids, nomes = load_dataset(raw_root)
+        split_generator = make_tvt_splits(X, y, patient_ids, k=k, val_size=0.25, seed=seed)
     else:
-        X, y, patient_ids = load_raw_images(
-            os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
-        print(f"Carregando imagens: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+        print(f"Usando modo marker-aware: raw_root={raw_root}, raw_root_no_pad={raw_root_no_pad}")
+        # Carrega os datasets marker-aware
+        X_com, y_com, patient_ids_com, nomes_com = load_dataset(raw_root)
+        X_sem, y_sem, patient_ids_sem, nomes_sem = load_dataset(raw_root_no_pad)
 
-    print(f"Saudavéis: {np.sum(y==0)}, Doentes: {np.sum(y==1)}")
 
-    
+        # CONVERTER PARA NUMPY AQUI MESMO, fora do loop
+        nomes_com = np.array(nomes_com)
+        nomes_sem = np.array(nomes_sem)
+
+
+        # Agora nomes_com e nomes_sem podem ser indexados com arrays NumPy
+
+
+        assert np.array_equal(y_com, y_sem), "As labels entre as duas bases não coincidem!"
+        assert np.array_equal(patient_ids_com, patient_ids_sem), "Os IDs de paciente não coincidem!"
+
+        X, y, patient_ids = X_sem, y_sem, patient_ids_sem
+        split_generator = make_tvt_splits_marker_aware(X_com, X_sem, y, patient_ids, k=k, val_size=0.25, seed=seed)
+
+
+    print(f"Saudáveis: {np.sum(y==0)}, Doentes: {np.sum(y==1)}")
+
+    os.makedirs("modelos", exist_ok=True)
     with open("modelos/random_seed.txt", "a") as f:
-        f.write(f"{message}\n"
-                f"SEMENTE: {seed}\n")
+        f.write(f"{message}\nSEMENTE: {seed}\n")
 
-    for fold, (tr_idx, va_idx, te_idx) in enumerate(
-                    make_tvt_splits(X, y, patient_ids,
-                                   k=k, val_size=0.25, seed=seed)):
-        
+    for fold, (tr_idx, va_idx, te_idx) in enumerate(split_generator):
         def run_fold():
-        
-            # salva índices para reuso posterior
+            # Salva índices para reuso posterior
             split_file = f"splits/{message}_{angle}_F{fold}.json"
             os.makedirs("splits", exist_ok=True)
             with open(split_file, "w") as f:
@@ -329,25 +450,109 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                     "test_idx": te_idx.tolist()
                 }, f)
 
-            # ------ prepara dados -----------
-            X_tr, y_tr = X[tr_idx], y[tr_idx]
-            X_val,    y_val = X[va_idx], y[va_idx]
+            if raw_root_no_pad != "":
+                # Marker-aware: combina datasets
+                X_all = np.concatenate([X_sem, X_com])
+                y_all = np.concatenate([y_sem, y_com])
+                nomes_sem_np = np.array(nomes_sem)
+                nomes_com_np = np.array(nomes_com)
+                nomes_all = np.concatenate([nomes_sem_np, nomes_com_np])
 
-            X_test,   y_test= X[te_idx], y[te_idx]
+                # No train_model_cv, dentro do if raw_root_no_pad != "":
 
-            print(f"Shape de treinamento fold {fold} antes do aumento de dados: {X_tr.shape}")
+# No train_model_cv, dentro do if raw_root_no_pad != "":
+
+                n_sem = len(X_sem)
+                n_total = n_sem + len(X_com)
+
+                # VERIFICAÇÃO DOS SPLITS
+                verificar_splits_marker_aware(tr_idx, va_idx, te_idx, n_sem, fold)
+
+                # Separar índices sem/com marcador para treino, validação e teste
+                tr_sem_mask = tr_idx < n_sem
+                tr_com_mask = (tr_idx >= n_sem) & (tr_idx < n_total)
+                va_sem_mask = va_idx < n_sem
+                va_com_mask = (va_idx >= n_sem) & (va_idx < n_total)
+                te_sem_mask = te_idx < n_sem  # teste só sem marcador
+
+                tr_sem_idx = tr_idx[tr_sem_mask]
+                tr_com_idx = tr_idx[tr_com_mask] - n_sem  # Subtrai n_sem para obter índice dentro de X_com
+                va_sem_idx = va_idx[va_sem_mask]
+                va_com_idx = va_idx[va_com_mask] - n_sem  # Subtrai n_sem para obter índice dentro de X_com
+                te_sem_idx = te_idx[te_sem_mask]
+
+                print(f"Índices processados - tr_sem: {len(tr_sem_idx)}, tr_com: {len(tr_com_idx)}")
+
+                # Verificar se são as mesmas imagens
+                if len(tr_sem_idx) > 0 and len(tr_com_idx) > 0:
+                    print(f"São as mesmas imagens? {np.array_equal(tr_sem_idx, tr_com_idx)}")
+
+                # Treino e validação combinados
+                X_tr = np.concatenate([X_sem[tr_sem_idx], X_com[tr_com_idx]])
+                y_tr = np.concatenate([y_sem[tr_sem_idx], y_com[tr_com_idx]])
+
+                X_val = np.concatenate([X_sem[va_sem_idx], X_com[va_com_idx]])
+                y_val = np.concatenate([y_sem[va_sem_idx], y_com[va_com_idx]])
+
+                # Teste só sem marcador
+                X_test, y_test = X_sem[te_sem_idx], y_sem[te_sem_idx]                # Contagem
+                train_sem_count, train_com_count = len(tr_sem_idx), len(tr_com_idx)
+                val_sem_count, val_com_count = len(va_sem_idx), len(va_com_idx)
+                test_sem_count = len(te_sem_idx)
+
+                # Salvar amostras
+                try:
+                    salvar_amostras_split_combined_paths(
+                        nomes_com=nomes_com_np,
+                        nomes_sem=nomes_sem_np,
+                        tr_sem_idx=tr_sem_idx,
+                        tr_com_idx=tr_com_idx,
+                        va_sem_idx=va_sem_idx,
+                        va_com_idx=va_com_idx,
+                        te_sem_idx=te_sem_idx,
+                        fold=fold
+                    )
+                    
+                        # Ou para salvar em arquivo:
+                    salvar_caminhos_reais_split(
+                        nomes_com=nomes_com_np,
+                        nomes_sem=nomes_sem_np,
+                        com_marcador_dir=raw_root,
+                        sem_marcador_dir=raw_root_no_pad,
+                        tr_sem_idx=tr_sem_idx,
+                        tr_com_idx=tr_com_idx,
+                        va_sem_idx=va_sem_idx,
+                        va_com_idx=va_com_idx,
+                        te_sem_idx=te_sem_idx,
+                        fold=fold
+                    )
+                except Exception as e:
+                    print(f"[AVISO] Falha ao salvar amostras do fold {fold}: {e}")
+
+            else:
+                # Caso normal: apenas um dataset
+                X_tr, y_tr = X_all[tr_idx], y_all[tr_idx]
+                X_val, y_val = X_all[va_idx], y_all[va_idx]
+                X_test, y_test = X_all[te_idx], y_all[te_idx]
+
+                train_sem_count, train_com_count = len(tr_idx), 0
+                val_sem_count, val_com_count = len(va_idx), 0
+                test_sem_count = len(te_idx)
+
+            print(f"Shape de treinamento fold {fold}: {X_tr.shape}")
             print(f"Shape de validação fold {fold}: {X_val.shape}")
             print(f"Shape de teste fold {fold}: {X_test.shape}")
+            print(f"Counts -> train_com={train_com_count}, train_sem={train_sem_count}, "
+                f"val_com={val_com_count}, val_sem={val_sem_count}, test_sem={test_sem_count}")
 
-            
 
             # min/max APENAS dos originais
             mn, mx = X_tr.min(), X_tr.max()
 
             # normaliza
             X_tr = normalize(X_tr, mn, mx)
-            X_val= normalize(X_val,    mn, mx)
-            X_test=normalize(X_test,   mn, mx)
+            X_val= normalize(X_val, mn, mx)
+            X_test=normalize(X_test, mn, mx)
 
                 
 
@@ -466,79 +671,59 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             
 
             if model == "yolo":
-                save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
-                save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
-                save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
+                # save_split_to_png(X_tr, y_tr, "train", root=f"Yolos_Cls_Seg/dataset_fold_{fold+1}")                     #AQUI
+                # save_split_to_png(X_val, y_val, "val",   root=f"Yolos_Cls_Seg/dataset_fold_{fold+1}")                   #AQUI
+                # save_split_to_png(X_test, y_test, "test", root=f"Yolos_Cls_Seg/dataset_fold_{fold+1}")                  #AQUI
+
+
+                # ATENÇÃO
 
                 print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
 
-                # Treinamento YOLO
-                model_f = YOLO('yolov8s-cls.pt')
-                start_time = time.time() 
+                # # Treinamento YOLO
+                # model_f = YOLO('yolov8n-cls.pt')
+                # start_time = time.time() 
 
-                model_f.train(
-                    data=f"dataset_fold_{fold+1}",
-                    epochs=100,
-                    patience=50,
-                    batch=16,
-                    #lr0=0.0005,
-                    optimizer='AdamW',
-                    #weight_decay=0.0005,
-                    #hsv_h=0.1,
-                    #hsv_s=0.2,
-                    #flipud=0.3,
-                    #mosaic=0.1,
-                    #mixup=0.1,
-                    workers=0,
-                    pretrained=False,
-                    amp=False,
-                    deterministic=True,
-                    seed=seed,
-                    project="runs/classify",
-                    name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
-                )
+                # model_f.train(
+                #     data=f"Yolos_Cls_Seg/dataset_fold_{fold+1}",                                    #AQUI
+                #     epochs=100,
+                #     patience=100,
+                #     batch=8,
+                #     #lr0=0.0005,
+                #     optimizer='AdamW',
+                #     #weight_decay=0.0005,
+                #     #hsv_h=0.1,
+                #     #hsv_s=0.2,
+                #     #flipud=0.3,
+                #     #mosaic=0.1,
+                #     #mixup=0.1,
+                #     workers=0,
+                #     pretrained=False,
+                #     amp=False,
+                #     deterministic=True,
+                #     seed=seed,
+                #     project="runs/classify/Yolos_Cls_Seg",                                         #AQUI 
+                #     name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
+                # )
                 
                 end_time = time.time()
 
+                best_model_path = f"runs/classify/Yolos_Cls_Seg/YOLOv8_cls_fold_{fold+1}_seed_{seed}/weights/best.pt"       #Aqui
+                modelYV = YOLO(best_model_path) 
+
                 # Validação
-                metrics = model_f.val(
-                    data=f"dataset_fold_{fold+1}",
-                    project="runs/classify/val",
+                metrics = modelYV.val(
+                    data=f"Yolos_Cls_Seg/dataset_fold_{fold+1}",                                                #AQUI
+                    split="test", 
+                    project="runs/classify/val/Yolos_Cls_Seg",                       #AQUI
                     name=f"fold_{fold+1}_seed_{seed}",
-                    save_json=True
+                    save_json=True,
+                    batch=8,  # ← REDUZIR BATCH SIZE (padrão é 16)
+                    workers=0
                 )
 
-                # Dados para salvar
-                results_to_save = {
-                    'top1_accuracy': metrics.top1,
-                    'top5_accuracy': metrics.top5,
-                    'fitness': metrics.fitness,
-                    'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
-                    'all_metrics': metrics.results_dict,
-                    'speed': metrics.speed
-                }
 
-                # Salvar em JSON
-                with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
-                    json_module.dump(results_to_save, f, indent=4)
-
-                """
-                # Extraindo métricas
-                accuracy = metrics.results_dict['accuracy_top1']
-                precision = metrics.results_dict['precision']
-                recall = metrics.results_dict['recall']
-                f1 = metrics.results_dict['f1']
-
-                # Salvando no mesmo arquivo de log dos outros modelos
-                with open(log_txt, "a") as f:
-                    f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
-                    f.write(f"Accuracy: {accuracy:.4f}\n")
-                    f.write(f"Precision: {precision:.4f}\n")
-                    f.write(f"Recall: {recall:.4f}\n")
-                    f.write(f"F1-Score: {f1:.4f}\n")
-                    f.write("-"*50 + "\n")  # Separador visual
-
-                """
+                # # ATENÇÃO
 
             else:
 
@@ -1872,6 +2057,7 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
 
     def coletar_ids(exp_base, modelo):
 
+
         resultado = {"Acertos": {"Health": set(), "Sick": set()},
                     "Erros": {"Health": set(), "Sick": set()}}
         
@@ -1953,6 +2139,7 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
                 destino = os.path.join(output_dir, nome, classe)
                 os.makedirs(destino, exist_ok=True)
                 
+                
                 for img_id in ids_set:
                     # Procurar em todas as pastas possíveis
                     for tipo, base, modelo in [
@@ -1970,7 +2157,7 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
     print(f"Comparação concluída!")
     print(f"Relatório: {relatorio_path}")
     print(f"Imagens copiadas para: {output_dir}")
-
+ 
 import os
 import cv2
 
@@ -2074,7 +2261,9 @@ def analisar_comparacoes_cruzadas(base_dir="comparacoes", output_dir="Analise_Gl
     
     # Análises
     analisar_estrategias(metricas_globais, output_dir)
-    analisar_consistencia_folds(metricas_globais, output_dir)
+    # analisar_consistencia_folds(metricas_globais, output_dir)
+    plotar_acertos_erros_por_fold(metricas_globais, output_dir)
+
     
     return metricas_globais
 
@@ -2400,38 +2589,66 @@ def analisar_estrategias(metricas_globais, output_dir):
                     
                     for _, row in dados_classe.iterrows():
                         f.write(f"         {row['categoria']}: {row['quantidade']}\n")
-
 def analisar_consistencia_folds(metricas_globais, output_dir):
     """Analisa a consistência entre os folds com visualização completa"""
-    
+    print("analise consistencia")
     df = metricas_globais['df']
     
     # Configurar o estilo dos gráficos
     plt.style.use('seaborn-v0_8')
     fig = plt.figure(figsize=(20, 15))
     
+    estrategias = df['estrategia'].unique()
+    metricas_principais = ['melhorou', 'piorou', 'manteve_acerto', 'manteve_erro']
+    
+    # 🎨 CORES DINÂMICAS - Gera automaticamente para qualquer estratégia
+    cores_disponiveis = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                         '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    cores_estrategias = {estrategia: cores_disponiveis[i % len(cores_disponiveis)] 
+                        for i, estrategia in enumerate(estrategias)}
+    
+    # 🎨 ESTILOS DE LINHA POR MÉTRICA
+    estilos_metricas = {
+        'melhorou': '-',           # Linha sólida
+        'piorou': '--',            # Linha tracejada
+        'manteve_acerto': '-.',    # Linha ponto-traço
+        'manteve_erro': ':'        # Linha pontilhada
+    }
+    
+    # 🎨 MARCADORES POR MÉTRICA
+    marcadores_metricas = {
+        'melhorou': 'o',      # Círculo
+        'piorou': 's',        # Quadrado  
+        'manteve_acerto': '^', # Triângulo
+        'manteve_erro': 'D'   # Diamante
+    }
+    
     # Gráfico 1: Todas as métricas por fold
     ax1 = plt.subplot(2, 3, 1)
     
-    metricas_principais = ['melhorou', 'piorou', 'manteve_acerto', 'manteve_erro']
-    cores = ['green', 'red', 'blue', 'orange']
-    
-    for i, metrica in enumerate(metricas_principais):
-        if metrica in df['categoria'].unique():
-            dados_metrica = df[df['categoria'] == metrica]
-            
-            for estrategia in dados_metrica['estrategia'].unique():
-                subset = dados_metrica[dados_metrica['estrategia'] == estrategia]
+    for estrategia in estrategias:
+        for metrica in metricas_principais:
+            if metrica in df['categoria'].unique():
+                subset = df[
+                    (df['estrategia'] == estrategia) & 
+                    (df['categoria'] == metrica)
+                ]
+                
                 if not subset.empty:
+                    cor = cores_estrategias[estrategia]
+                    estilo = estilos_metricas[metrica]
+                    marcador = marcadores_metricas[metrica]
+                    
                     plt.plot(subset['fold'], subset['quantidade'], 
-                            marker='o', linewidth=2, markersize=6,
+                            marker=marcador, linestyle=estilo, linewidth=2, markersize=6,
                             label=f'{estrategia} - {metrica}',
-                            color=cores[i], alpha=0.7)
+                            color=cor, alpha=0.8, 
+                            markeredgecolor='white', markeredgewidth=1)
     
     plt.xlabel('Fold')
     plt.ylabel('Quantidade')
-    plt.title('TODAS AS MÉTRICAS POR FOLD')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.title('TODAS AS MÉTRICAS POR FOLD\n(Cores: Estratégias, Estilos: Métricas)')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
     plt.grid(True, alpha=0.3)
     
     # Gráfico 2: Heatmap das métricas
