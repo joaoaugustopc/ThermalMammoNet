@@ -1830,3 +1830,70 @@ def verificar_splits_marker_aware(tr_idx, va_idx, te_idx, n_sem, fold):
         print("❌ ERRO: Teste contém imagens COM marcador!")
     else:
         print("✅ Teste contém apenas imagens SEM marcador")
+
+def balance_marker_within_train(X: np.ndarray,
+                                marker_flags: np.ndarray,
+                                ids: np.ndarray,
+                                train_idx: np.ndarray,
+                                rec_paths_map: dict,
+                                keep_orig_markerless: set,
+                                target_ratio: float = 0.50,
+                                seed: int = 42):
+    """
+    Substitui, *somente* dentro de X[train_idx], algumas imagens que CONTÊM
+    marcador pela respectiva versão limpa (indicada em rec_paths_map),
+    até que a fração de amostras **sem** marcador no treino atinja
+    `target_ratio` (padrão = 50 %).
+
+    Parâmetros
+    ----------
+    X  : ndarray           Imagens completas já carregadas (H×W ou H×W×C).
+    marker_flags : ndarray Bool alinhado a X – True  → tem marcador.
+    ids : ndarray          Mesmo alinhamento – id numérico do exame.
+    train_idx : ndarray    Índices do conjunto de treino deste fold.
+    rec_paths_map : dict   { id : caminho_da_imagem_limpa }.
+    keep_orig_markerless : set  IDs que nunca tiveram marcador.
+    target_ratio : float   Proporção desejada de *sem* marcador no treino.
+    seed : int             Semente da amostragem.
+
+    Retorna
+    -------
+    X_bal      : ndarray   Cópia de X com trocas aplicadas.
+    flags_bal  : ndarray   Cópia de marker_flags atualizada.
+    """
+    rng = random.Random(seed)
+
+    # --- 1) separa índices internos ao treino ---------------------------
+    idx_with    = [i for i in train_idx if marker_flags[i]]
+    idx_without = [i for i in train_idx if not marker_flags[i]]
+
+    n_train          = len(train_idx)
+    desired_without  = int(round(n_train * target_ratio))
+    swaps_needed     = max(0, desired_without - len(idx_without))
+
+    # --- 2) elegíveis à troca (têm versão limpa disponível) -------------
+    swap_candidates = [i for i in idx_with
+                       if (ids[i] not in keep_orig_markerless)  # não são “sem” nativos
+                       and (ids[i] in rec_paths_map)]            # existe Photoshop
+
+    swaps_needed = min(swaps_needed, len(swap_candidates))
+    chosen       = rng.sample(swap_candidates, swaps_needed)
+
+    # --- 3) aplica as substituições -------------------------------------
+    X_bal      = X.copy()
+    flags_bal  = marker_flags.copy()
+
+    for i in chosen:
+        clean_path   = rec_paths_map[ids[i]]
+        with open(clean_path, 'r') as f:
+                    delim = ';' if ';' in f.readline() else ' '
+                    f.seek(0)
+        X_bal[i]     = np.loadtxt(clean_path, delimiter=delim, dtype=np.float32)
+        flags_bal[i] = False                                # agora é “sem”
+
+    # --- 4) log rápido ---------------------------------------------------
+    final_without = len(idx_without) + swaps_needed
+    print(f"[balance_marker] Treino: {final_without}/{n_train} "
+          f"sem marcador ({final_without / n_train:.1%})")
+
+    return X_bal, flags_bal
