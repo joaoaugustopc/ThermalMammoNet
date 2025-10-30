@@ -1314,23 +1314,57 @@ def save_split_to_png(images, labels, split_name, root="dataset_fold"):
 
 
 
-def ppeprocessEigenCam(X, y, ids, splits_path, resize_method = "BlackPadding", segment = None, segmenter_path ="" ):
+def ppeprocessEigenCam(X, y, ids, splits_path, resize_method = "BlackPadding", segment = None, segmenter_path ="", marcadores = 0, seed = 13388):
     
     
     with open (splits_path, "r") as f:
         splits = json.load(f)
 
-
-    
     train_idx = splits["train_idx"]
     val_idx = splits["val_idx"]
     test_idx = splits["test_idx"]
 
-    X_test = X[test_idx]
+    if marcadores != 0:
+        marker_flags = np.array([has_marker_in_original(int(i.split('_')[0])) for i in filenames])
+
+        rec_paths_map = {}
+        for label in ['healthy', 'sick']:
+            dir_rec = os.path.join('recovered_data', "Frontal", label)
+            for f in os.listdir(dir_rec):
+                img_id = int(f.split('_')[0])
+                rec_paths_map[img_id] = os.path.join(dir_rec, f)
+
+        X_bal, marker_flags_bal = balance_marker_within_train(
+                                        X = X,
+                                        marker_flags= marker_flags,
+                                        ids = patient_ids,
+                                        train_idx= train_idx,
+                                        rec_paths_map= rec_paths_map,
+                                        keep_orig_markerless= ORIG_WITHOUTMARKS_IDS,
+                                        target_ratio= 0.5,
+                                        seed = seed
+                                    )
+        
+        if marcadores == 1:
+            X_train, X_test = X_bal[train_idx], X[test_idx]
+        else:
+            X_rec = X.copy()
+            for i in test_idx:
+                path = rec_paths_map[patient_ids[i]]
+                with open(path, 'r') as f:
+                        delim = ';' if ';' in f.readline() else ' '
+                        f.seek(0)
+                X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
+
+            X_train, X_test = X_bal[train_idx], X_rec[test_idx]
+    else:
+        X_train, X_test = X[train_idx], X[test_idx]
+
+    # X_test = X[test_idx]
     y_test = y[test_idx]
     ids_test = ids[test_idx]
 
-    X_train = X[train_idx]
+    # X_train = X[train_idx]
     y_train = y[train_idx]
 
     X_val = X[val_idx]
@@ -1395,7 +1429,7 @@ def ppeprocessEigenCam(X, y, ids, splits_path, resize_method = "BlackPadding", s
 
 def prep_test_data(raw_root, angle, split_json, 
                     resize = True, resize_method = "GrayPadding", resize_to = 224,
-                    segmenter = "none", seg_model_path="", rgb=False, channel_method = "MapaCalor"):
+                    segmenter = "none", seg_model_path="", rgb=False, channel_method = "MapaCalor", seed = 13388, marcadores = 0):
     
     """
     Função para preparar as imagens de teste para gerar as matrizes de confusão.
@@ -1404,14 +1438,52 @@ def prep_test_data(raw_root, angle, split_json,
 
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
     
-    X, y, patient_ids = load_raw_images(
+    X, y, patient_ids, filenames = load_raw_images(
             os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
+    
+    
     with open(split_json, "r") as f:
         split = json.load(f)
     tr_idx, te_idx = np.array(split["train_idx"]), np.array(split["test_idx"])
-    
-    X_tr, X_test = X[tr_idx], X[te_idx]
-    y_test       = y[te_idx]
+
+
+    if marcadores != 0:
+        marker_flags = np.array([has_marker_in_original(int(i.split('_')[0])) for i in filenames])
+
+        rec_paths_map = {}
+        for label in ['healthy', 'sick']:
+            dir_rec = os.path.join('recovered_data', angle, label)
+            for f in os.listdir(dir_rec):
+                img_id = int(f.split('_')[0])
+                rec_paths_map[img_id] = os.path.join(dir_rec, f)
+
+        X_bal, marker_flags_bal = balance_marker_within_train(
+                                        X = X,
+                                        marker_flags= marker_flags,
+                                        ids = patient_ids,
+                                        train_idx= tr_idx,
+                                        rec_paths_map= rec_paths_map,
+                                        keep_orig_markerless= ORIG_WITHOUTMARKS_IDS,
+                                        target_ratio= 0.5,
+                                        seed = seed
+                                    )
+        if marcadores == 1: 
+            X_tr, X_test = X_bal[tr_idx], X[te_idx]
+        else:       
+            X_rec = X.copy()
+            for i in te_idx:
+                path = rec_paths_map[patient_ids[i]]
+                with open(path, 'r') as f:
+                        delim = ';' if ';' in f.readline() else ' '
+                        f.seek(0)
+                X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
+
+            X_tr, X_test = X_bal[tr_idx], X_rec[te_idx]
+    else:
+        X_tr, X_test = X[tr_idx], X[te_idx]
+        
+
+    y_test = y[te_idx]
 
     mn, mx = X_tr.min(), X_tr.max()
 
@@ -1484,7 +1556,7 @@ def evaluate_model_cm(model_path,
                       resize_method="BlackPadding",
                       segmenter="none",
                       seg_model_path="",
-                      classes=("Healthy", "Sick"), rgb=False, channel_method="MapaCalor"):
+                      classes=("Healthy", "Sick"), rgb=False, channel_method="MapaCalor", marcadores = 0):
     """
     Avalia o modelo salvo no fold especificado e gera matriz de confusão.
     """
@@ -1492,13 +1564,15 @@ def evaluate_model_cm(model_path,
 
     X_test, y_test = prep_test_data(raw_root, angle, split_json,
                                      resize,resize_method, resize_to,
-                                     segmenter, seg_model_path,  rgb=rgb, channel_method=channel_method)
+                                     segmenter, seg_model_path,  rgb=rgb, channel_method=channel_method, marcadores= marcadores)
 
     
     
-    with custom_object_scope({'ResidualUnit': ResidualUnit}):
-        model = tf.keras.models.load_model(model_path, compile=False)
+    # with custom_object_scope({'ResidualUnit': ResidualUnit}):
+    #     model = tf.keras.models.load_model(model_path, compile=False)
 
+
+    model = tf.keras.models.load_model(model_path, compile=False)
 
 
     if model.__class__.__name__ == "Vgg_16_pre_trained":
@@ -1507,8 +1581,8 @@ def evaluate_model_cm(model_path,
     
 
 
-    y_pred_prob = model.predict(X_test, verbose=0).ravel()
-    y_pred = (y_pred_prob > 0.5).astype(int)
+    y_pred_prob = model.predict(X_test)
+    y_pred = (y_pred_prob > 0.5).astype(int).ravel()
 
     
 
@@ -1523,8 +1597,6 @@ def evaluate_model_cm(model_path,
                       f"Confusion Matrix – {message}",
                       out_png = out_png)
     
-
-    y_pred = (model.predict(X_test) > 0.5).astype(int).ravel()
 
     acc = accuracy_score(y_test, y_pred)
     prec, rec, f1, _ = precision_recall_fscore_support(
@@ -2934,16 +3006,147 @@ if __name__ == "__main__":
     
     SEMENTE = 13388
 
-    train_model_cv(Vgg_16,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10",
-                   resize_method="BlackPadding")
+    # train_model_cv(Vgg_16,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= SEMENTE,
+    #                message="Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10",
+    #                resize_method="BlackPadding")
+
+    MODEL_DIRS = {
+    "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    "resnet": "modelos/ResNet34"
+    }
+
+    CONF_BASE  = "Resultados_balanceamento_marcadores_teste_orig_29/10"     # pasta-raiz onde deseja guardar as figuras
+    CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    ANGLE      = "Frontal"              # visão utilizada nos treinos
+
+    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
+    X, y , patient_ids, filenames = load_raw_images(
+        f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
+    # --------------------------------------------------
+    # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # --------------------------------------------------
+    experiments = [
+        
+        # {
+        #     "resize_method": "BlackPadding",
+        #     "message": "Vgg_AUG_CV_BlackPadding_13_09_25",
+        #     "segment": "none",
+        #     "segmenter_path": "",
+        # },
+        {
+            "resize_method": "BlackPadding",
+            "message": "Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10",
+            "segment": "none",
+            "segmenter_path": "",
+        },
+        # {
+        #     "resize_method": "BlackPadding",
+        #     "message": "Vgg_yolon_AUG_CV_BlackPadding_13_09_25",
+        #     "segment": "yolo",
+        #     "segmenter_path": "runs/segment/train31/weights/best.pt",
+        # },
+        # {
+        #     "resize_method": "BlackPadding",
+        #     "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
+        #     "segment": "yolo",
+        #     "segmenter_path": "runs/segment/train36/weights/best.pt",
+        # }
+    ]
+
+    # --------------------------------------------------
+    # --- LOOP PRINCIPAL -------------------------------
+    # --------------------------------------------------
+    for exp in experiments:
+
+        rsz           = exp["resize_method"]
+        msg           = exp["message"]
+        segment       = exp["segment"]
+        segmenter_path= exp["segmenter_path"]
+
+        # Identifica qual backbone para escolher a pasta correta
+        backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
+        model_dir    = MODEL_DIRS[backbone_key]
+
+        # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+        out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
+        out_dir_cm.mkdir(parents=True, exist_ok=True)
+
+        for i in range(5):                                   # k-fold = 5
+            # ---- Caminhos de entrada ---------------------
+            model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+            split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
+
+            # ---- Nome para salvar arquivos/figura --------
+            cm_message = f"{msg}_F{i}"
+
+            MARCADORES = 1
+
+            # ---- Avaliação -------------------------------
+            y_pred = evaluate_model_cm(
+                model_path   = model_path_cm,
+                output_path  = str(out_dir_cm),
+                split_json   = split_path_cm,
+                raw_root     = RAW_ROOT,
+                message      = cm_message,
+                angle        = ANGLE,
+                classes      = CLASSES,
+                rgb          = False,
+                resize_method= rsz,
+                resize       = True,
+                resize_to    = 224,
+                segmenter= segment,
+                seg_model_path = segmenter_path,
+                marcadores = MARCADORES
+            )
+
+            split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
+
+            X_test, y_test, ids_test = ppeprocessEigenCam(
+                X, y, patient_ids,
+                split_json_hm,
+                segment=segment,
+                segmenter_path=segmenter_path,
+                resize_method= rsz,  # ou "BlackPadding", "GrayPadding"
+                marcadores = MARCADORES
+            )
+
+            hits = y_pred == y_test 
+            miss = y_pred != y_test
+
+            # ---------- EigenCAM ----------
+            model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+            out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
+            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+
+            run_eigencam(
+                imgs       = X_test[hits],
+                labels     = y_test[hits],
+                ids        = ids_test[hits],
+                model_path = model_path_hm,
+                out_dir    = out_dir_hm,
+            )
+
+            out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
+            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+
+            run_eigencam(
+                imgs       = X_test[miss],
+                labels     = y_test[miss],
+                ids        = ids_test[miss],
+                model_path = model_path_hm,
+                out_dir    = out_dir_hm,
+            )
+
+            print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
+
 
 
     
