@@ -322,6 +322,7 @@ def salvar_amostras_split_combined_paths(nomes_com, nomes_sem,
           f"val_com={len(va_com_idx)}, val_sem={len(va_sem_idx)}, "
           f"test_sem={len(te_sem_idx)}")
 
+
 def salvar_caminhos_reais_split(nomes_com, nomes_sem, com_marcador_dir, sem_marcador_dir,
                                tr_sem_idx, tr_com_idx, va_sem_idx, va_com_idx, te_sem_idx,
                                fold, out_dir="caminhos_split"):
@@ -355,9 +356,9 @@ def salvar_caminhos_reais_split(nomes_com, nomes_sem, com_marcador_dir, sem_marc
                 nome_arquivo = nomes[idx]
                 # Determinar se é saudável ou doente baseado no nome ou caminho
                 if "healthy" in base_path or "saudavel" in base_path:
-                    classe = "saudavel"
+                    classe = "healthy"
                 else:
-                    classe = "doente"
+                    classe = "sick"
                 
                 caminho_completo = os.path.join(base_path, "Frontal", classe, nome_arquivo)
                 f.write(f"{caminho_completo}\n")
@@ -671,21 +672,22 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             
 
             if model == "yolo":
-                # save_split_to_png(X_tr, y_tr, "train", root=f"Yolos_Cls_Seg/dataset_fold_{fold+1}")                     #AQUI
-                # save_split_to_png(X_val, y_val, "val",   root=f"Yolos_Cls_Seg/dataset_fold_{fold+1}")                   #AQUI
-                # save_split_to_png(X_test, y_test, "test", root=f"Yolos_Cls_Seg/dataset_fold_{fold+1}")                  #AQUI
+
+                # save_split_to_png(X_tr, y_tr, "train", root=f"Yolos_Cls_metade_marcador/dataset_fold_{fold+1}")                     #AQUIY
+                # save_split_to_png(X_val, y_val, "val",   root=f"Yolos_Cls_metade_marcador/dataset_fold_{fold+1}")                   #AQUIY
+                # save_split_to_png(X_test, y_test, "test", root=f"Yolos_Cls_metade_marcador/dataset_fold_{fold+1}")                  #AQUIY
 
 
                 # ATENÇÃO
 
-                print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
+                # print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
 
                 # # Treinamento YOLO
                 # model_f = YOLO('yolov8n-cls.pt')
                 # start_time = time.time() 
 
                 # model_f.train(
-                #     data=f"Yolos_Cls_Seg/dataset_fold_{fold+1}",                                    #AQUI
+                #     data=f"Yolos_Cls_metade_marcador/dataset_fold_{fold+1}",                                    #AQUIY
                 #     epochs=100,
                 #     patience=100,
                 #     batch=8,
@@ -702,20 +704,20 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                 #     amp=False,
                 #     deterministic=True,
                 #     seed=seed,
-                #     project="runs/classify/Yolos_Cls_Seg",                                         #AQUI 
+                #     project="runs/classify/Yolos_Cls_metade_marcador",                                         #AQUIY
                 #     name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
                 # )
                 
-                end_time = time.time()
+                # end_time = time.time()
 
-                best_model_path = f"runs/classify/Yolos_Cls_Seg/YOLOv8_cls_fold_{fold+1}_seed_{seed}/weights/best.pt"       #Aqui
+                best_model_path = f"runs/classify/Yolos_Cls_metade_marcador/YOLOv8_cls_fold_{fold+1}_seed_{seed}/weights/best.pt"       #AquiY
                 modelYV = YOLO(best_model_path) 
 
                 # Validação
                 metrics = modelYV.val(
-                    data=f"Yolos_Cls_Seg/dataset_fold_{fold+1}",                                                #AQUI
+                    data=f"Yolos_Cls_metade_marcador/dataset_fold_{fold+1}",                                                #AQUIY
                     split="test", 
-                    project="runs/classify/val/Yolos_Cls_Seg",                       #AQUI
+                    project="runs/classify/val/Yolos_Cls_metade_marcador",                       #AQUIY
                     name=f"fold_{fold+1}_seed_{seed}",
                     save_json=True,
                     batch=8,  # ← REDUZIR BATCH SIZE (padrão é 16)
@@ -3170,18 +3172,37 @@ if __name__ == "__main__":
 # TREINANDO MODELO DE IMAGENS COM MARCADOR E SEM
     SEMENTE = 13388
 
-    train_model_cv(Vgg_16,
+    # delete_folder("runs/classify/Yolos_Cls_metade_marcador")
+    # delete_folder("Yolos_Cls_metade_marcador")
+
+    train_model_cv("yolo",
                    raw_root="filtered_raw_dataset",
-                   raw_root_no_pad="recovered_data",
+                   raw_root_no_pad="recovered_data_no_pad",
                    angle="Frontal",
                    k=5,                 
                    resize_to=224,
                    n_aug=2,             
                    batch=8,
                    seed= SEMENTE,
-                   message="Vgg_metade_marcador_19_10_25",
+                   message="Yolos_Cls_metade_marcador",
                    resize_method="BlackPadding")
 
+    
+
+
+    # train_model_cv("yolo",
+    #                 raw_root="recovered_data",
+    #                 #raw_root="uff_no_pad",
+    #                 angle="Frontal",
+    #                 k=5,                 
+    #                 resize_to=224,
+    #                 n_aug=2,             
+    #                 batch=8,
+    #                 seed= SEMENTE,
+    #                 segmenter="yolo",
+    #                 message="Yolos_Cls_Seg",
+    #                 resize_method="BlackPadding",
+    #                 seg_model_path="runs/segment/train21/weights/best.pt")
 
 
     
