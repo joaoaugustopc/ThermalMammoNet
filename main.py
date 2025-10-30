@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes, make_tvt_splits_marker_aware, verificar_splits_marker_aware
+from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes, make_tvt_splits_marker_aware, verificar_splits_marker_aware, balance_marker_within_train
 from utils.files_manipulation import move_files_within_folder, create_folder, move_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model, unet_model_retangular
@@ -379,172 +379,96 @@ def salvar_caminhos_reais_split(nomes_com, nomes_sem, com_marcador_dir, sem_marc
         f.write(f"Total Treino: {len(tr_sem_idx) + len(tr_com_idx)}\n")
         f.write(f"Total Validação: {len(va_sem_idx) + len(va_com_idx)}\n")
         f.write(f"Total Teste: {len(te_sem_idx)}\n")
+
+
+ORIG_WITHOUTMARKS_IDS = {1, 2, 3, 194, 202, 337, 338, 342,
+                       365, 366, 373, 401, 422}
+
+def has_marker_in_original(img_id: int) -> bool:
+    """True se a imagem do raw_dataset contém marcador."""
+    return img_id not in ORIG_WITHOUTMARKS_IDS
         
 """
-FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS -> ALTERADA PARA FAZER TREINO DE IMAGENS COM MARCADOR E SEM
+FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
 """
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
                   resize=True, resize_method = "BlackPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
-                  segmenter="none", seg_model_path="",channel_method ="MapaCalor", raw_root_no_pad=""):
+                  segmenter="none", seg_model_path="",channel_method ="MapaCalor"):
     
     # DEBUG: vendo o nome do modeloo
     #print(model.__name__)
     
+    
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
-
-    # ======================================================
-    # Carrega o dataset (ou os dois, se raw_root_no_pad != "")
-    # ======================================================
-    def load_dataset(root): #alterando funcao para pegar nomes dos arquivos
-        if "ufpe" in root:
-            X, y, patient_ids = load_raw_images_ufpe(
-                os.path.join(root, angle), exclude=False)
-            print(f"Carregando imagens da UFPE: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
-            root_names = []
-            
-        else:
-            X, y, patient_ids, root_names = load_raw_images(
-                os.path.join(root, angle), exclude=True, exclude_set=exclude_set)
-            print(f"Carregando imagens: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
-        return X, y, patient_ids, root_names
-
-    if raw_root_no_pad == "":
-        X, y, patient_ids, nomes = load_dataset(raw_root)
-        split_generator = make_tvt_splits(X, y, patient_ids, k=k, val_size=0.25, seed=seed)
+    
+    if "ufpe" in raw_root:
+        X, y, patient_ids = load_raw_images_ufpe(
+            os.path.join(raw_root, angle), exclude=False)
+        print(f"Carregando imagens da UFPE: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
     else:
-        print(f"Usando modo marker-aware: raw_root={raw_root}, raw_root_no_pad={raw_root_no_pad}")
-        # Carrega os datasets marker-aware
-        X_com, y_com, patient_ids_com, nomes_com = load_dataset(raw_root)
-        X_sem, y_sem, patient_ids_sem, nomes_sem = load_dataset(raw_root_no_pad)
+        X, y, patient_ids, filenames = load_raw_images(
+            os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
+        print(f"Carregando imagens: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
+
+    print(f"Saudavéis: {np.sum(y==0)}, Doentes: {np.sum(y==1)}")
+
+    marker_flags = np.array([has_marker_in_original(int(i.split('_')[0])) for i in filenames])
+
+    #ids_marer_True = patient_ids[marker_flags == False]
+
+    
+    rec_paths_map = {}
+    for label in ['healthy', 'sick']:
+        dir_rec = os.path.join('recovered_data', angle, label)
+        for f in os.listdir(dir_rec):
+            img_id = int(f.split('_')[0])
+            rec_paths_map[img_id] = os.path.join(dir_rec, f)
 
 
-        # CONVERTER PARA NUMPY AQUI MESMO, fora do loop
-        nomes_com = np.array(nomes_com)
-        nomes_sem = np.array(nomes_sem)
-
-
-        # Agora nomes_com e nomes_sem podem ser indexados com arrays NumPy
-
-
-        assert np.array_equal(y_com, y_sem), "As labels entre as duas bases não coincidem!"
-        assert np.array_equal(patient_ids_com, patient_ids_sem), "Os IDs de paciente não coincidem!"
-
-        X, y, patient_ids = X_sem, y_sem, patient_ids_sem
-        split_generator = make_tvt_splits_marker_aware(X_com, X_sem, y, patient_ids, k=k, val_size=0.25, seed=seed)
-
-
-    print(f"Saudáveis: {np.sum(y==0)}, Doentes: {np.sum(y==1)}")
-
-    os.makedirs("modelos", exist_ok=True)
+    
     with open("modelos/random_seed.txt", "a") as f:
-        f.write(f"{message}\nSEMENTE: {seed}\n")
+        f.write(f"{message}\n"
+                f"SEMENTE: {seed}\n")
 
-    for fold, (tr_idx, va_idx, te_idx) in enumerate(split_generator):
+    for fold, (tr_idx, va_idx, te_idx) in enumerate(
+                    make_tvt_splits(X, y, patient_ids,
+                                   k=k, val_size=0.25, seed=seed)):
+        
         def run_fold():
-            # Salva índices para reuso posterior
+        
+            # salva índices para reuso posterior
             split_file = f"splits/{message}_{angle}_F{fold}.json"
             os.makedirs("splits", exist_ok=True)
             with open(split_file, "w") as f:
                 json.dump({
                     "train_idx": tr_idx.tolist(),
                     "val_idx": va_idx.tolist(),
-                    "test_idx": te_idx.tolist()
+                    "test_idx": te_idx.tolist(),
+                    "train_ids": patient_ids[tr_idx].tolist(),
+                    "val_ids": patient_ids[va_idx].tolist(),
+                    "test_ids": patient_ids[te_idx].tolist()
                 }, f)
 
-            if raw_root_no_pad != "":
-                # Marker-aware: combina datasets
-                X_all = np.concatenate([X_sem, X_com])
-                y_all = np.concatenate([y_sem, y_com])
-                nomes_sem_np = np.array(nomes_sem)
-                nomes_com_np = np.array(nomes_com)
-                nomes_all = np.concatenate([nomes_sem_np, nomes_com_np])
+            X_bal, marker_flags_bal = balance_marker_within_train(
+                                        X = X,
+                                        marker_flags= marker_flags,
+                                        ids = patient_ids,
+                                        train_idx= tr_idx,
+                                        rec_paths_map= rec_paths_map,
+                                        keep_orig_markerless= ORIG_WITHOUTMARKS_IDS,
+                                        target_ratio= 0.5,
+                                        seed = seed
+                                    )
 
-                # No train_model_cv, dentro do if raw_root_no_pad != "":
+            # ------ prepara dados -----------
+            X_tr, y_tr = X_bal[tr_idx], y[tr_idx]
+            X_val,    y_val = X[va_idx], y[va_idx]
 
-# No train_model_cv, dentro do if raw_root_no_pad != "":
+            X_test,   y_test= X[te_idx], y[te_idx]
 
-                n_sem = len(X_sem)
-                n_total = n_sem + len(X_com)
-
-                # VERIFICAÇÃO DOS SPLITS
-                verificar_splits_marker_aware(tr_idx, va_idx, te_idx, n_sem, fold)
-
-                # Separar índices sem/com marcador para treino, validação e teste
-                tr_sem_mask = tr_idx < n_sem
-                tr_com_mask = (tr_idx >= n_sem) & (tr_idx < n_total)
-                va_sem_mask = va_idx < n_sem
-                va_com_mask = (va_idx >= n_sem) & (va_idx < n_total)
-                te_sem_mask = te_idx < n_sem  # teste só sem marcador
-
-                tr_sem_idx = tr_idx[tr_sem_mask]
-                tr_com_idx = tr_idx[tr_com_mask] - n_sem  # Subtrai n_sem para obter índice dentro de X_com
-                va_sem_idx = va_idx[va_sem_mask]
-                va_com_idx = va_idx[va_com_mask] - n_sem  # Subtrai n_sem para obter índice dentro de X_com
-                te_sem_idx = te_idx[te_sem_mask]
-
-                print(f"Índices processados - tr_sem: {len(tr_sem_idx)}, tr_com: {len(tr_com_idx)}")
-
-                # Verificar se são as mesmas imagens
-                if len(tr_sem_idx) > 0 and len(tr_com_idx) > 0:
-                    print(f"São as mesmas imagens? {np.array_equal(tr_sem_idx, tr_com_idx)}")
-
-                # Treino e validação combinados
-                X_tr = np.concatenate([X_sem[tr_sem_idx], X_com[tr_com_idx]])
-                y_tr = np.concatenate([y_sem[tr_sem_idx], y_com[tr_com_idx]])
-
-                X_val = np.concatenate([X_sem[va_sem_idx], X_com[va_com_idx]])
-                y_val = np.concatenate([y_sem[va_sem_idx], y_com[va_com_idx]])
-
-                # Teste só sem marcador
-                X_test, y_test = X_sem[te_sem_idx], y_sem[te_sem_idx]                # Contagem
-                train_sem_count, train_com_count = len(tr_sem_idx), len(tr_com_idx)
-                val_sem_count, val_com_count = len(va_sem_idx), len(va_com_idx)
-                test_sem_count = len(te_sem_idx)
-
-                # Salvar amostras
-                try:
-                    salvar_amostras_split_combined_paths(
-                        nomes_com=nomes_com_np,
-                        nomes_sem=nomes_sem_np,
-                        tr_sem_idx=tr_sem_idx,
-                        tr_com_idx=tr_com_idx,
-                        va_sem_idx=va_sem_idx,
-                        va_com_idx=va_com_idx,
-                        te_sem_idx=te_sem_idx,
-                        fold=fold
-                    )
-                    
-                        # Ou para salvar em arquivo:
-                    salvar_caminhos_reais_split(
-                        nomes_com=nomes_com_np,
-                        nomes_sem=nomes_sem_np,
-                        com_marcador_dir=raw_root,
-                        sem_marcador_dir=raw_root_no_pad,
-                        tr_sem_idx=tr_sem_idx,
-                        tr_com_idx=tr_com_idx,
-                        va_sem_idx=va_sem_idx,
-                        va_com_idx=va_com_idx,
-                        te_sem_idx=te_sem_idx,
-                        fold=fold
-                    )
-                except Exception as e:
-                    print(f"[AVISO] Falha ao salvar amostras do fold {fold}: {e}")
-
-            else:
-                # Caso normal: apenas um dataset
-                X_tr, y_tr = X_all[tr_idx], y_all[tr_idx]
-                X_val, y_val = X_all[va_idx], y_all[va_idx]
-                X_test, y_test = X_all[te_idx], y_all[te_idx]
-
-                train_sem_count, train_com_count = len(tr_idx), 0
-                val_sem_count, val_com_count = len(va_idx), 0
-                test_sem_count = len(te_idx)
-
-            print(f"Shape de treinamento fold {fold}: {X_tr.shape}")
+            print(f"Shape de treinamento fold {fold} antes do aumento de dados: {X_tr.shape}")
             print(f"Shape de validação fold {fold}: {X_val.shape}")
             print(f"Shape de teste fold {fold}: {X_test.shape}")
-            print(f"Counts -> train_com={train_com_count}, train_sem={train_sem_count}, "
-                f"val_com={val_com_count}, val_sem={val_sem_count}, test_sem={test_sem_count}")
 
 
             # min/max APENAS dos originais
@@ -552,8 +476,8 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
 
             # normaliza
             X_tr = normalize(X_tr, mn, mx)
-            X_val= normalize(X_val, mn, mx)
-            X_test=normalize(X_test, mn, mx)
+            X_val= normalize(X_val,    mn, mx)
+            X_test=normalize(X_test,   mn, mx)
 
                 
 
@@ -672,60 +596,79 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             
 
             if model == "yolo":
-
-                # save_split_to_png(X_tr, y_tr, "train", root=f"Yolos_Cls_metade_marcador/dataset_fold_{fold+1}")                     #AQUIY
-                # save_split_to_png(X_val, y_val, "val",   root=f"Yolos_Cls_metade_marcador/dataset_fold_{fold+1}")                   #AQUIY
-                # save_split_to_png(X_test, y_test, "test", root=f"Yolos_Cls_metade_marcador/dataset_fold_{fold+1}")                  #AQUIY
-
-
-                # ATENÇÃO
+                save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
+                save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
+                save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
 
                 # print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
 
-                # # Treinamento YOLO
-                # model_f = YOLO('yolov8n-cls.pt')
-                # start_time = time.time() 
+                # Treinamento YOLO
+                model_f = YOLO('yolov8s-cls.pt')
+                start_time = time.time() 
 
-                # model_f.train(
-                #     data=f"Yolos_Cls_metade_marcador/dataset_fold_{fold+1}",                                    #AQUIY
-                #     epochs=100,
-                #     patience=100,
-                #     batch=8,
-                #     #lr0=0.0005,
-                #     optimizer='AdamW',
-                #     #weight_decay=0.0005,
-                #     #hsv_h=0.1,
-                #     #hsv_s=0.2,
-                #     #flipud=0.3,
-                #     #mosaic=0.1,
-                #     #mixup=0.1,
-                #     workers=0,
-                #     pretrained=False,
-                #     amp=False,
-                #     deterministic=True,
-                #     seed=seed,
-                #     project="runs/classify/Yolos_Cls_metade_marcador",                                         #AQUIY
-                #     name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
-                # )
+                model_f.train(
+                    data=f"dataset_fold_{fold+1}",
+                    epochs=100,
+                    patience=50,
+                    batch=16,
+                    #lr0=0.0005,
+                    optimizer='AdamW',
+                    #weight_decay=0.0005,
+                    #hsv_h=0.1,
+                    #hsv_s=0.2,
+                    #flipud=0.3,
+                    #mosaic=0.1,
+                    #mixup=0.1,
+                    workers=0,
+                    pretrained=False,
+                    amp=False,
+                    deterministic=True,
+                    seed=seed,
+                    project="runs/classify",
+                    name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
+                )
                 
-                # end_time = time.time()
-
-                best_model_path = f"runs/classify/Yolos_Cls_metade_marcador/YOLOv8_cls_fold_{fold+1}_seed_{seed}/weights/best.pt"       #AquiY
-                modelYV = YOLO(best_model_path) 
+                end_time = time.time()
 
                 # Validação
-                metrics = modelYV.val(
-                    data=f"Yolos_Cls_metade_marcador/dataset_fold_{fold+1}",                                                #AQUIY
-                    split="test", 
-                    project="runs/classify/val/Yolos_Cls_metade_marcador",                       #AQUIY
+                metrics = model_f.val(
+                    data=f"dataset_fold_{fold+1}",
+                    project="runs/classify/val",
                     name=f"fold_{fold+1}_seed_{seed}",
-                    save_json=True,
-                    batch=8,  # ← REDUZIR BATCH SIZE (padrão é 16)
-                    workers=0
+                    save_json=True
                 )
 
+                # Dados para salvar
+                results_to_save = {
+                    'top1_accuracy': metrics.top1,
+                    'top5_accuracy': metrics.top5,
+                    'fitness': metrics.fitness,
+                    'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
+                    'all_metrics': metrics.results_dict,
+                    'speed': metrics.speed
+                }
 
-                # # ATENÇÃO
+                # Salvar em JSON
+                with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
+                    json_module.dump(results_to_save, f, indent=4)
+
+                """
+                # Extraindo métricas
+                accuracy = metrics.results_dict['accuracy_top1']
+                precision = metrics.results_dict['precision']
+                recall = metrics.results_dict['recall']
+                f1 = metrics.results_dict['f1']
+
+                # Salvando no mesmo arquivo de log dos outros modelos
+                with open(log_txt, "a") as f:
+                    f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
+                    f.write(f"Accuracy: {accuracy:.4f}\n")
+                    f.write(f"Precision: {precision:.4f}\n")
+                    f.write(f"Recall: {recall:.4f}\n")
+                    f.write(f"F1-Score: {f1:.4f}\n")
+                    f.write("-"*50 + "\n")  # Separador visual
+
+                """
 
             else:
 
@@ -1372,23 +1315,57 @@ def save_split_to_png(images, labels, split_name, root="dataset_fold"):
 
 
 
-def ppeprocessEigenCam(X, y, ids, splits_path, resize_method = "BlackPadding", segment = None, segmenter_path ="" ):
+def ppeprocessEigenCam(X, y, ids, splits_path, resize_method = "BlackPadding", segment = None, segmenter_path ="", marcadores = 0, seed = 13388):
     
     
     with open (splits_path, "r") as f:
         splits = json.load(f)
 
-
-    
     train_idx = splits["train_idx"]
     val_idx = splits["val_idx"]
     test_idx = splits["test_idx"]
 
-    X_test = X[test_idx]
+    if marcadores != 0:
+        marker_flags = np.array([has_marker_in_original(int(i.split('_')[0])) for i in filenames])
+
+        rec_paths_map = {}
+        for label in ['healthy', 'sick']:
+            dir_rec = os.path.join('recovered_data', "Frontal", label)
+            for f in os.listdir(dir_rec):
+                img_id = int(f.split('_')[0])
+                rec_paths_map[img_id] = os.path.join(dir_rec, f)
+
+        X_bal, marker_flags_bal = balance_marker_within_train(
+                                        X = X,
+                                        marker_flags= marker_flags,
+                                        ids = patient_ids,
+                                        train_idx= train_idx,
+                                        rec_paths_map= rec_paths_map,
+                                        keep_orig_markerless= ORIG_WITHOUTMARKS_IDS,
+                                        target_ratio= 0.5,
+                                        seed = seed
+                                    )
+        
+        if marcadores == 1:
+            X_train, X_test = X_bal[train_idx], X[test_idx]
+        else:
+            X_rec = X.copy()
+            for i in test_idx:
+                path = rec_paths_map[patient_ids[i]]
+                with open(path, 'r') as f:
+                        delim = ';' if ';' in f.readline() else ' '
+                        f.seek(0)
+                X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
+
+            X_train, X_test = X_bal[train_idx], X_rec[test_idx]
+    else:
+        X_train, X_test = X[train_idx], X[test_idx]
+
+    # X_test = X[test_idx]
     y_test = y[test_idx]
     ids_test = ids[test_idx]
 
-    X_train = X[train_idx]
+    # X_train = X[train_idx]
     y_train = y[train_idx]
 
     X_val = X[val_idx]
@@ -1453,7 +1430,7 @@ def ppeprocessEigenCam(X, y, ids, splits_path, resize_method = "BlackPadding", s
 
 def prep_test_data(raw_root, angle, split_json, 
                     resize = True, resize_method = "GrayPadding", resize_to = 224,
-                    segmenter = "none", seg_model_path="", rgb=False, channel_method = "MapaCalor"):
+                    segmenter = "none", seg_model_path="", rgb=False, channel_method = "MapaCalor", seed = 13388, marcadores = 0):
     
     """
     Função para preparar as imagens de teste para gerar as matrizes de confusão.
@@ -1462,14 +1439,52 @@ def prep_test_data(raw_root, angle, split_json,
 
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
     
-    X, y, patient_ids = load_raw_images(
+    X, y, patient_ids, filenames = load_raw_images(
             os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
+    
+    
     with open(split_json, "r") as f:
         split = json.load(f)
     tr_idx, te_idx = np.array(split["train_idx"]), np.array(split["test_idx"])
-    
-    X_tr, X_test = X[tr_idx], X[te_idx]
-    y_test       = y[te_idx]
+
+
+    if marcadores != 0:
+        marker_flags = np.array([has_marker_in_original(int(i.split('_')[0])) for i in filenames])
+
+        rec_paths_map = {}
+        for label in ['healthy', 'sick']:
+            dir_rec = os.path.join('recovered_data', angle, label)
+            for f in os.listdir(dir_rec):
+                img_id = int(f.split('_')[0])
+                rec_paths_map[img_id] = os.path.join(dir_rec, f)
+
+        X_bal, marker_flags_bal = balance_marker_within_train(
+                                        X = X,
+                                        marker_flags= marker_flags,
+                                        ids = patient_ids,
+                                        train_idx= tr_idx,
+                                        rec_paths_map= rec_paths_map,
+                                        keep_orig_markerless= ORIG_WITHOUTMARKS_IDS,
+                                        target_ratio= 0.5,
+                                        seed = seed
+                                    )
+        if marcadores == 1: 
+            X_tr, X_test = X_bal[tr_idx], X[te_idx]
+        else:       
+            X_rec = X.copy()
+            for i in te_idx:
+                path = rec_paths_map[patient_ids[i]]
+                with open(path, 'r') as f:
+                        delim = ';' if ';' in f.readline() else ' '
+                        f.seek(0)
+                X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
+
+            X_tr, X_test = X_bal[tr_idx], X_rec[te_idx]
+    else:
+        X_tr, X_test = X[tr_idx], X[te_idx]
+        
+
+    y_test = y[te_idx]
 
     mn, mx = X_tr.min(), X_tr.max()
 
@@ -1542,7 +1557,7 @@ def evaluate_model_cm(model_path,
                       resize_method="BlackPadding",
                       segmenter="none",
                       seg_model_path="",
-                      classes=("Healthy", "Sick"), rgb=False, channel_method="MapaCalor"):
+                      classes=("Healthy", "Sick"), rgb=False, channel_method="MapaCalor", marcadores = 0):
     """
     Avalia o modelo salvo no fold especificado e gera matriz de confusão.
     """
@@ -1550,13 +1565,15 @@ def evaluate_model_cm(model_path,
 
     X_test, y_test = prep_test_data(raw_root, angle, split_json,
                                      resize,resize_method, resize_to,
-                                     segmenter, seg_model_path,  rgb=rgb, channel_method=channel_method)
+                                     segmenter, seg_model_path,  rgb=rgb, channel_method=channel_method, marcadores= marcadores)
 
     
     
-    with custom_object_scope({'ResidualUnit': ResidualUnit}):
-        model = tf.keras.models.load_model(model_path, compile=False)
+    # with custom_object_scope({'ResidualUnit': ResidualUnit}):
+    #     model = tf.keras.models.load_model(model_path, compile=False)
 
+
+    model = tf.keras.models.load_model(model_path, compile=False)
 
 
     if model.__class__.__name__ == "Vgg_16_pre_trained":
@@ -1565,8 +1582,8 @@ def evaluate_model_cm(model_path,
     
 
 
-    y_pred_prob = model.predict(X_test, verbose=0).ravel()
-    y_pred = (y_pred_prob > 0.5).astype(int)
+    y_pred_prob = model.predict(X_test)
+    y_pred = (y_pred_prob > 0.5).astype(int).ravel()
 
     
 
@@ -1581,8 +1598,6 @@ def evaluate_model_cm(model_path,
                       f"Confusion Matrix – {message}",
                       out_png = out_png)
     
-
-    y_pred = (model.predict(X_test) > 0.5).astype(int).ravel()
 
     acc = accuracy_score(y_test, y_pred)
     prec, rec, f1, _ = precision_recall_fscore_support(
@@ -2059,38 +2074,32 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
 
     def coletar_ids(exp_base, modelo):
 
+
         resultado = {"Acertos": {"Health": set(), "Sick": set()},
                     "Erros": {"Health": set(), "Sick": set()}}
         
-        padrao_id = re.compile(r"(id_\d+)")  # captura id_ seguido de números
+        totais_arquivos = {"Acertos": {"Health": 0, "Sick": 0},
+                       "Erros":   {"Health": 0, "Sick": 0}}
         
+        padrao_chave = re.compile(r"^(id_\d+.*)\.png$", re.IGNORECASE)
+                
         for tipo in ["Acertos", "Erros"]:
             for classe in ["Health", "Sick"]:
                 class_path = os.path.join(exp_base, tipo, modelo, classe)
                 if os.path.exists(class_path):
-                    arquivos = [f for f in os.listdir(class_path) if f.endswith(".png")]
+                    arquivos = [f for f in os.listdir(class_path) if f.lower().endswith(".png")]
+                    totais_arquivos[tipo][classe] += len(arquivos)
                     for f in arquivos:
-                        m = padrao_id.search(f)
+                        m = padrao_chave.match(f)
                         if m:
-                            resultado[tipo][classe].add(m.group(1))  # adiciona só id_XXX
-        return resultado
+                            chave = m.group(1)  # p.ex. "id_365_overlay41"
+                            resultado[tipo][classe].add(chave)
+
+        return resultado, totais_arquivos
 
 
-    exp1 = coletar_ids(exp1_base, exp1_modelo)
-    exp2 = coletar_ids(exp2_base, exp2_modelo)
-
-    # --------------verificando se tá certos os ids -> teste
-    # ids_set1 = exp1["Acertos"]["Health"]
-    # ids_set2 = exp2["Acertos"]["Health"]
-
-    # # IDs que estão em ids_set2 mas não estão em ids_set1
-    # diferenca = ids_set1 - ids_set2
-
-    # # ordenar numericamente
-    # diferenca_ordenada = sorted(diferenca, key=lambda x: int(x.split("_")[1]))
-
-    # print(diferenca_ordenada)
-    # -----------------------------------------------
+    exp1, exp1_totais = coletar_ids(exp1_base, exp1_modelo)
+    exp2, exp2_totais = coletar_ids(exp2_base, exp2_modelo)
 
     #pasta de saída
     os.makedirs(output_dir, exist_ok=True)
@@ -2119,7 +2128,7 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
             report.write(f"Total de imagens saudáveis/acertos (modelo 2): {len(exp2_ac)}\n" if classe=="Health" else f"Total de imagens doentes/acertos (modelo 2): {len(exp2_ac)}\n")
             report.write(f"Total de imagens saudáveis/erros (modelo 2): {len(exp2_er)}\n" if classe=="Health" else f"Total de imagens doentes/erros (modelo 2): {len(exp2_er)}\n")
             report.write(f"\n------------------------------------------------------------------------------\n")
-            
+
             
             # Categorias
             melhorou = exp1_er & exp2_ac      # Erro -> Acerto
@@ -2147,6 +2156,7 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
                 destino = os.path.join(output_dir, nome, classe)
                 os.makedirs(destino, exist_ok=True)
                 
+                
                 for img_id in ids_set:
                     # Procurar em todas as pastas possíveis
                     for tipo, base, modelo in [
@@ -2158,10 +2168,8 @@ def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_
                         class_path = os.path.join(base, tipo, modelo, classe)
                         if os.path.exists(class_path):
                             for f in os.listdir(class_path):
-                                if f.startswith(img_id) and f.endswith(".png"):  
+                                if f.lower().startswith(img_id.lower()) and f.lower().endswith(".png"):  
                                     shutil.copy(os.path.join(class_path, f), os.path.join(destino, f))
-                                
-
 
     print(f"Comparação concluída!")
     print(f"Relatório: {relatorio_path}")
@@ -2793,182 +2801,10 @@ def analise_completa_comparacoes():
     
     return metricas_globais
 
-def plotar_acertos_erros_por_fold(metricas_globais, output_dir):
-    """
-    Gera gráficos mostrando acertos e erros por fold para cada estratégia (modelo).
-    """
-    print("Gerando gráficos de acertos e erros por fold...")
-    df = metricas_globais['df']
-    
-    # Filtrar apenas métricas de interesse
-    metricas_plot = ['acertos_modelo1', 'erros_modelo1', 'acertos_modelo2', 'erros_modelo2']
-    df_plot = df[df['categoria'].isin(metricas_plot)]
-    
-    estrategias = df_plot['estrategia'].unique()
-    
-    for estrategia in estrategias:
-        df_estrat = df_plot[df_plot['estrategia'] == estrategia]
-        
-        # Pivotar para ter as métricas como colunas
-        tabela = df_estrat.pivot_table(
-            index=['fold', 'classe'],
-            columns='categoria',
-            values='quantidade',
-            aggfunc='mean'
-        ).fillna(0)
-        
-        # Reordenar colunas
-        colunas_ordem = [c for c in metricas_plot if c in tabela.columns]
-        tabela = tabela[colunas_ordem]
-        
-        # Plotar um gráfico para cada classe
-        for classe in ['Health', 'Sick']:
-            subset = tabela.loc[(slice(None), classe), :]
-            subset.index = subset.index.droplevel(1)  # remove a coluna 'classe' do índice
-            
-            subset.plot(
-                kind='bar',
-                figsize=(10,6),
-                title=f"{estrategia} - {classe} (Acertos e Erros por Fold)",
-                color=['#4CAF50', '#F44336', '#2196F3', '#FFC107']
-            )
-            
-            plt.xlabel("Fold")
-            plt.ylabel("Quantidade de imagens")
-            plt.xticks(rotation=0)
-            plt.grid(axis='y', linestyle='--', alpha=0.4)
-            plt.tight_layout()
-            
-            save_path = os.path.join(output_dir, f"{estrategia}_{classe}_acertos_erros.png")
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            print(f"   → Gráfico salvo: {save_path}")
+import os, re, shutil
+from collections import defaultdict
 
-
-import os
-import numpy as np
-import pandas as pd
-
-def verificando_temperatura_marcadores(fold_origem="marcadores_segmentados", fold_destino="marcadores_segmentados_txt"):
-    """
-    Converte imagens de fold_origem → fold_destino com recuperar_img,
-    depois lê todas as matrizes .txt da pasta fold_destino e calcula:
-      - a média de temperatura de cada imagem
-      - a diferença média entre os pixels da própria imagem
-    """
-
-
-    def recuperar_img_marcador(input_folder, output_folder):
-        """
-        Converte imagens PNG 16-bit de volta para matrizes de temperatura,
-        usando os limites salvos em limites.json.
-        
-        O nome da imagem tem o formato: T0036.1.1.S.2012-09-29.00.png
-        O arquivo JSON tem chaves como: 36_img_Static-Frontal_2012-10-08.txt
-        """
-        
-        os.makedirs(output_folder, exist_ok=True)
-
-        json_path = os.path.join(input_folder, "limites.json")
-        if not os.path.isfile(json_path):
-            raise FileNotFoundError(f"JSON de limites não encontrado em: {json_path}")
-
-        with open(json_path, "r") as f:
-            limites = json.load(f)
-
-        for fname in os.listdir(input_folder):
-            if not fname.lower().endswith(".png"):
-                continue
-
-            path = os.path.join(input_folder, fname)
-            img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-
-            if img is None:
-                print(f"Aviso: não foi possível ler {fname}. Pulando.")
-                continue
-
-            if img.ndim == 3:
-                img = img[:, :, 0]
-
-            # Extrair o ID do nome da imagem (ex: T0036 → 36)
-            match = re.search(r"T0*([0-9]+)", fname)
-            if not match:
-                print(f"AVISO: não foi possível extrair ID de {fname}. Pulando.")
-                continue
-            
-            id_str = match.group(1)  # "36"
-
-            #  Buscar chave correspondente no JSON
-            chave_json = next((k for k in limites.keys() if k.startswith(f"{id_str}_")), None)
-
-            if chave_json is None:
-                print(f"AVISO: não encontrei chave com ID {id_str} no JSON para {fname}")
-                continue
-
-            temp_min = limites[chave_json]["min"]
-            temp_max = limites[chave_json]["max"]
-
-            # Converter de volta para escala de temperatura
-            
-            # Pegar apenas pixels ≠ 0 (região da máscara)
-            mascara_valida = img > 0
-            valores_raw = img[mascara_valida].astype(np.float32)
-
-            # converter somente os pixels válidos para escala de temperatura
-            valores_temp = valores_raw / 65535.0 * (temp_max - temp_min) + temp_min
-
-            out_name = os.path.splitext(fname)[0] + ".txt"
-            out_path = os.path.join(output_folder, out_name)
-
-            np.savetxt(out_path, valores_temp, fmt="%.6f")
-
-            print(f"Arquivo recuperado: {out_name} ({len(valores_temp)} pontos válidos, id={id_str})")
-    # ---------------------------------------------------------------------------------------------------------------
-    
-    # Converter as imagens originais em .txt (temperaturas)
-    recuperar_img_marcador(fold_origem, fold_destino)
-    
-    if not os.path.exists(fold_destino):
-        print(f"Pasta não encontrada: {fold_destino}")
-        return
-    
-    # Carregar todas as imagens como matrizes numpy
-    imagens = {}
-    for fname in sorted(os.listdir(fold_destino)):
-        if fname.endswith(".txt"):
-            path = os.path.join(fold_destino, fname)
-            try:
-                matriz = np.loadtxt(path)
-                imagens[fname] = matriz
-            except Exception as e:
-                print(f"Erro ao ler {fname}: {e}")
-    
-    if not imagens:
-        print("Nenhum arquivo .txt válido encontrado.")
-        return
-    
-    print(f"{len(imagens)} imagens carregadas.")
-    
-    # 1️⃣ Média e diferença média por imagem
-    resultados = []
-    for fname, matriz in imagens.items():
-        media_temp = float(np.mean(matriz))
-        diff_media = float(np.mean(np.abs(matriz - media_temp)))
-        
-        resultados.append({
-            "Imagem": fname,
-            "Média_Temperatura": media_temp,
-            "Diferença_Média_Pixels": diff_media
-        })
-    
-    # 2️⃣ Salvar resultados
-    df = pd.DataFrame(resultados)
-    df.to_csv(f"{fold_destino}/analise_temperatura_marcadores.csv", index=False)
-    
-    print(f"\nResultados salvos em: {fold_destino}_analise_temperatura_marcadores.csv")
-    print(df.round(3))
-        
-def comparar_modelos_por_id_com_consistencia_certo(
+def comparar_modelos_por_id_com_consistencia(
     exp1_base, exp1_modelo,
     exp2_base, exp2_modelo,
     mensagem="mensagem_comparacao:",
@@ -3169,195 +3005,8 @@ def comparar_modelos_por_id_com_consistencia_certo(
 
 if __name__ == "__main__":
     
-# TREINANDO MODELO DE IMAGENS COM MARCADOR E SEM
     SEMENTE = 13388
 
-    # delete_folder("runs/classify/Yolos_Cls_metade_marcador")
-    # delete_folder("Yolos_Cls_metade_marcador")
-
-    train_model_cv("yolo",
-                   raw_root="filtered_raw_dataset",
-                   raw_root_no_pad="recovered_data_no_pad",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="Yolos_Cls_metade_marcador",
-                   resize_method="BlackPadding")
-
-    
-
-
-    # train_model_cv("yolo",
-    #                 raw_root="recovered_data",
-    #                 #raw_root="uff_no_pad",
-    #                 angle="Frontal",
-    #                 k=5,                 
-    #                 resize_to=224,
-    #                 n_aug=2,             
-    #                 batch=8,
-    #                 seed= SEMENTE,
-    #                 segmenter="yolo",
-    #                 message="Yolos_Cls_Seg",
-    #                 resize_method="BlackPadding",
-    #                 seg_model_path="runs/segment/train21/weights/best.pt")
-
-
-    
-    # delete_folder("ComparacaoVGGFULL&YoloMARCADOR")
-    # create_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
-    
-    # comparar_modelos_por_id_com_consistencia_certo(
-    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F0",
-    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F0",
-    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF0"
-    # )
-    
-    # comparar_modelos_por_id_com_consistencia_certo(
-    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F1",
-    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F1",
-    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF1",
-    # )
-    
-    # comparar_modelos_por_id_com_consistencia_certo(
-    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F2",
-    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F2",
-    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF2",
-    # )
-    
-    # comparar_modelos_por_id_com_consistencia_certo(
-    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F3",
-    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F3",
-    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF3",
-    # )
-    
-    # comparar_modelos_por_id_com_consistencia_certo(
-    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp1_modelo="Vgg_AUG_CV_BlackPadding_13_09_25_F4",
-    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F4",
-    #     output_dir="ComparacaoVGGFULL&YoloMARCADOR/ComparacaoF4",
-    # )
-    
-    
-    # delete_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
-    # create_folder("ComparacaoYoloNORMAL&YoloMARCADOR")
-    
-    # comparar_modelos_por_id_com_consistencia_certo(
-    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F0",
-    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F0",
-    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF0",
-    # )
-   
-    # comparar_modelos_por_id_com_consistencia_certo(
-    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F1",
-    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F1",
-    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF1",
-    # )
-    
-    # comparar_modelos_por_id_com_consistencia_certo(
-    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F2",
-    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F2",
-    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF2",
-    # )
-    
-    # comparar_modelos_por_id_com_consistencia_certo(
-    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F3",
-    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F3",
-    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF3",
-    # )
-    
-    # comparar_modelos_por_id_com_consistencia_certo(
-    #     exp1_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp1_modelo="Vgg_yolon_AUG_CV_BlackPadding_13_09_25_F4",
-    #     exp2_base="Resultados_corrigidos_12_10_25/CAM_results",
-    #     exp2_modelo="Vgg_yolon_AUG_CV_BlackPadding_04_10_25_F4",
-    #     output_dir="ComparacaoYoloNORMAL&YoloMARCADOR/ComparacaoF4",
-    # )
-    
-
-
-
-    
-    # ----------------------- CRIANDO A PASTA COM OS MODELOS -----------------------
-    # create_folder("Vgg")
-    
-    # move_folder("Análises/ComparacaoVgg_F0", "Vgg")
-    # move_folder("Análises/ComparacaoVgg_F1", "Vgg")
-    # move_folder("Análises/ComparacaoVgg_F2", "Vgg")
-    # move_folder("Análises/ComparacaoVgg_F3", "Vgg")
-    # move_folder("Análises/ComparacaoVgg_F4", "Vgg")
-
-    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F0", "Análises2")
-    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F1", "Análises2")
-    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F2", "Análises2")
-    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F3", "Análises2")
-    # # move_folder("Comparacoes/ComparacaoVgg_full_unet_F4", "Análises2")
-
-    # # rename_folder("Análises/ComparacaoVggF0", "Análises/ComparacaoVgg_F0")
-    # # rename_folder("Análises/ComparacaoVggF1", "Análises/ComparacaoVgg_F1")
-    # # rename_folder("Análises/ComparacaoVggF2", "Análises/ComparacaoVgg_F2")
-    # # rename_folder("Análises/ComparacaoVggF3", "Análises/ComparacaoVgg_F3")
-    # # rename_folder("Análises/ComparacaoVggF4", "Análises/ComparacaoVgg_F4")
-
-    # # ----------------------- CHAMANDO AS COMPARAÇÕES -----------------------
-    # analisar_comparacoes_cruzadas(
-    #     base_dir="Análises", 
-    #     output_dir="Resultados_Finais_VGG_yolon"
-    # )
-
-    # def comparar_resultados_modelo_completo(exp1_base, exp1_modelo, exp2_base, exp2_modelo, mensagem="mensagem_comparacao:", output_dir="Comparacao"):
-
-
-
-
-    # Foi adicionado algumas funções para lidar com as imagens .png em uint16 no processo de criação do dataset no formato esperado pela yolo.
-
-
-    #------------------ Primeira abordagem testada para incluir os marcadores na segmentação --------------
-    
-    # juntando as mascaras
-    # unir_mascaras(
-    #     "Termografias_Dataset_Segmentação/masks",
-    #     "Termografias_Dataset_Segmentação_Marcadores/masks",
-    #     "Termografias_Dataset_Segmentação_Unidas/masks"
-    # )
-
-
-
-    # resize_imgs_masks_dataset(
-    #     img_dir="Termografias_Dataset_Segmentação/images",
-    #     mask_dir="Termografias_Dataset_Segmentação_Unidas/masks",
-    #     output_base="Yolo_dataset_marcadores",
-    #     target=224,          # mesmo tamanho definido no YAML da YOLO,
-    #     resize_method="BlackPadding"
-    # )
-
-
-    # yolo_data("Frontal", "Yolo_dataset_marcadores/images", "Yolo_dataset_marcadores/masks", "dataset_yolo_pads", True)
-
-    # # # ##Ultimo train34 Então: esse modelo vai ser salvo em train35
-    # train_yolo_seg("n", 500, "dataset_yolo_pads.yaml", seed=SEMENTE)
-    
-
     # train_model_cv(Vgg_16,
     #                raw_root="filtered_raw_dataset",
     #                angle="Frontal",
@@ -3366,463 +3015,146 @@ if __name__ == "__main__":
     #                n_aug=2,             
     #                batch=8,
     #                seed= SEMENTE,
-    #                segmenter= "yolo",
-    #                message="Vgg_yolon_AUG_CV_BlackPadding_28_09_25", seg_model_path="runs/segment/train35/weights/best.pt",
+    #                message="Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10",
     #                resize_method="BlackPadding")
 
+    MODEL_DIRS = {
+    "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    "resnet": "modelos/ResNet34"
+    }
 
+    CONF_BASE  = "Resultados_balanceamento_marcadores_teste_orig_29/10"     # pasta-raiz onde deseja guardar as figuras
+    CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    ANGLE      = "Frontal"              # visão utilizada nos treinos
 
-    
-    
-    # MODEL_DIRS = {
-    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
-    # "resnet": "modelos/ResNet34"
-    # }
-    # CONF_BASE  = "Resultados_Retreinamento_seg_pad"     # pasta-raiz onde deseja guardar as figuras
-    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
-    # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
-    # ANGLE      = "Frontal"              # visão utilizada nos treinos
+    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
+    X, y , patient_ids, filenames = load_raw_images(
+        f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
+    # --------------------------------------------------
+    # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # --------------------------------------------------
+    experiments = [
+        
+        # {
+        #     "resize_method": "BlackPadding",
+        #     "message": "Vgg_AUG_CV_BlackPadding_13_09_25",
+        #     "segment": "none",
+        #     "segmenter_path": "",
+        # },
+        {
+            "resize_method": "BlackPadding",
+            "message": "Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10",
+            "segment": "none",
+            "segmenter_path": "",
+        },
+        # {
+        #     "resize_method": "BlackPadding",
+        #     "message": "Vgg_yolon_AUG_CV_BlackPadding_13_09_25",
+        #     "segment": "yolo",
+        #     "segmenter_path": "runs/segment/train31/weights/best.pt",
+        # },
+        # {
+        #     "resize_method": "BlackPadding",
+        #     "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
+        #     "segment": "yolo",
+        #     "segmenter_path": "runs/segment/train36/weights/best.pt",
+        # }
+    ]
 
-    # exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
-    # X, y , patient_ids = load_raw_images(
-    #     f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
-    # # --------------------------------------------------
-    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
-    # # --------------------------------------------------
-    # experiments = [
-    #     # {
-    #     #     "resize_method": "BlackPadding",
-    #     #     "message": "Vgg_unet_AUG_CV_BlackPadding_13_09_25",
-    #     #     "segment": "unet",
-    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-    #     # },
-    #     {
-    #         "resize_method": "BlackPadding",
-    #         "message": "Vgg_yolon_AUG_CV_BlackPadding_28_09_25",
-    #         "segment": "yolo",
-    #         "segmenter_path": "runs/segment/train35/weights/best.pt",
-    #     },
-    #     # {
-    #     #     "resize_method": "BlackPadding",
-    #     #     "message": "ResNet34_unet_AUG_CV_BlackPadding_13_09_25",
-    #     #     "segment": "unet",
-    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-    #     # },
-    #     # {
-    #     #     "resize_method": "BlackPadding",
-    #     #     "message": "ResNet34_yolon_AUG_CV_BlackPadding_13_09_25",
-    #     #     "segment": "yolo",
-    #     #     "segmenter_path": "runs/segment/train31/weights/best.pt",
-    #     # },
+    # --------------------------------------------------
+    # --- LOOP PRINCIPAL -------------------------------
+    # --------------------------------------------------
+    for exp in experiments:
 
+        rsz           = exp["resize_method"]
+        msg           = exp["message"]
+        segment       = exp["segment"]
+        segmenter_path= exp["segmenter_path"]
 
-    # ]
+        # Identifica qual backbone para escolher a pasta correta
+        backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
+        model_dir    = MODEL_DIRS[backbone_key]
 
-    # # --------------------------------------------------
-    # # # --- LOOP PRINCIPAL -------------------------------
-    # # # --------------------------------------------------
-    # # for exp in experiments:
+        # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+        out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
+        out_dir_cm.mkdir(parents=True, exist_ok=True)
 
-    # #     rsz           = exp["resize_method"]
-    # #     msg           = exp["message"]
-    # #     segment       = exp["segment"]
-    # #     segmenter_path= exp["segmenter_path"]
+        for i in range(5):                                   # k-fold = 5
+            # ---- Caminhos de entrada ---------------------
+            model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+            split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
 
-    # #     # Identifica qual backbone para escolher a pasta correta
-    # #     backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
-    # #     model_dir    = MODEL_DIRS[backbone_key]
+            # ---- Nome para salvar arquivos/figura --------
+            cm_message = f"{msg}_F{i}"
 
-    # #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
-    # #     out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
-    # #     out_dir_cm.mkdir(parents=True, exist_ok=True)
+            MARCADORES = 1
 
-    # #     for i in range(5):                                   # k-fold = 5
-    # #         # ---- Caminhos de entrada ---------------------
-    # #         model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-    # #         split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
+            # ---- Avaliação -------------------------------
+            y_pred = evaluate_model_cm(
+                model_path   = model_path_cm,
+                output_path  = str(out_dir_cm),
+                split_json   = split_path_cm,
+                raw_root     = RAW_ROOT,
+                message      = cm_message,
+                angle        = ANGLE,
+                classes      = CLASSES,
+                rgb          = False,
+                resize_method= rsz,
+                resize       = True,
+                resize_to    = 224,
+                segmenter= segment,
+                seg_model_path = segmenter_path,
+                marcadores = MARCADORES
+            )
 
-    # #         # ---- Nome para salvar arquivos/figura --------
-    # #         cm_message = f"{msg}_F{i}"
+            split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
 
-    # #         # ---- Avaliação -------------------------------
-    # #         y_pred = evaluate_model_cm(
-    # #             model_path   = model_path_cm,
-    # #             output_path  = str(out_dir_cm),
-    # #             split_json   = split_path_cm,
-    # #             raw_root     = RAW_ROOT,
-    # #             message      = cm_message,
-    # #             angle        = ANGLE,
-    # #             classes      = CLASSES,
-    # #             rgb          = False,
-    # #             resize_method= rsz,
-    # #             resize       = True,
-    # #             resize_to    = 224,
-    # #             segmenter= segment,
-    # #             seg_model_path = segmenter_path
-    # #         )
+            X_test, y_test, ids_test = ppeprocessEigenCam(
+                X, y, patient_ids,
+                split_json_hm,
+                segment=segment,
+                segmenter_path=segmenter_path,
+                resize_method= rsz,  # ou "BlackPadding", "GrayPadding"
+                marcadores = MARCADORES
+            )
 
-    # #         split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
+            hits = y_pred == y_test 
+            miss = y_pred != y_test
 
-    # #         X_test, y_test, ids_test = ppeprocessEigenCam(
-    # #             X, y, patient_ids,
-    # #             split_json_hm,
-    # #             segment=segment,
-    # #             segmenter_path=segmenter_path,
-    # #             resize_method= rsz  # ou "BlackPadding", "GrayPadding"
-    # #         )
+            # ---------- EigenCAM ----------
+            model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+            out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
+            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
 
-    # #         hits = y_pred == y_test 
-    # #         miss = y_pred != y_test
+            run_eigencam(
+                imgs       = X_test[hits],
+                labels     = y_test[hits],
+                ids        = ids_test[hits],
+                model_path = model_path_hm,
+                out_dir    = out_dir_hm,
+            )
 
-    # #         # ---------- EigenCAM ----------
-    # #         model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-    # #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
-    # #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+            out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
+            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
 
-    # #         run_eigencam(
-    # #             imgs       = X_test[hits],
-    # #             labels     = y_test[hits],
-    # #             ids        = ids_test[hits],
-    # #             model_path = model_path_hm,
-    # #             out_dir    = out_dir_hm,
-    # #         )
+            run_eigencam(
+                imgs       = X_test[miss],
+                labels     = y_test[miss],
+                ids        = ids_test[miss],
+                model_path = model_path_hm,
+                out_dir    = out_dir_hm,
+            )
 
-    # #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
-    # #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-    # #         run_eigencam(
-    # #             imgs       = X_test[miss],
-    # #             labels     = y_test[miss],
-    # #             ids        = ids_test[miss],
-    # #             model_path = model_path_hm,
-    # #             out_dir    = out_dir_hm,
-    # #         )
-
-    # #         print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
-
-
-
-    # # ------------------ Primeira abordagem testada para incluir os marcadores na segmentação --------------
-
-    # resize_imgs_two_masks_dataset(
-    #     img_dir="Termografias_Dataset_Segmentação/images",
-    #     mask_breast_dir="Termografias_Dataset_Segmentação/masks",
-    #     mask_marker_dir = "Termografias_Dataset_Segmentação_Marcadores/masks",
-    #     output_base="Yolo_dataset_marcadores_two_classes",
-    #     target=224,          # mesmo tamanho definido no YAML da YOLO,
-    #     resize_method="BlackPadding"
-    # )
-
-
-    # yolo_data_2_classes("Frontal", "Yolo_dataset_marcadores_two_classes/images", "Yolo_dataset_marcadores_two_classes/masks_breast", "Yolo_dataset_marcadores_two_classes/masks_marker", "dataset_two_classes_yolo", True)
-    # # train36
-    # train_yolo_seg("n", 500, "dataset_yolo_two_classes.yaml", seed=SEMENTE)
-
-
-    # train_model_cv(Vgg_16,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                segmenter= "yolo",
-    #                message="Vgg_yolon_AUG_CV_BlackPadding_04_10_25", seg_model_path="runs/segment/train36/weights/best.pt",
-    #                resize_method="BlackPadding")
+            print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
 
 
 
     
-    
-    # MODEL_DIRS = {
-    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
-    # "resnet": "modelos/ResNet34"
-    # }
-
-    # CONF_BASE  = "Resultados_Retreinamento_seg_pad_two_classes"     # pasta-raiz onde deseja guardar as figuras
-    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
-    # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
-    # ANGLE      = "Frontal"              # visão utilizada nos treinos
-
-    # exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
-    # X, y , patient_ids = load_raw_images(
-    #     f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
-    # # --------------------------------------------------
-    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
-    # # --------------------------------------------------
-    # experiments = [
-    #     # {
-    #     #     "resize_method": "BlackPadding",
-    #     #     "message": "Vgg_unet_AUG_CV_BlackPadding_13_09_25",
-    #     #     "segment": "unet",
-    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-    #     # },
-    #     {
-    #         "resize_method": "BlackPadding",
-    #         "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
-    #         "segment": "yolo",
-    #         "segmenter_path": "runs/segment/train36/weights/best.pt",
-    #     },
-    #     # {
-    #     #     "resize_method": "BlackPadding",
-    #     #     "message": "ResNet34_unet_AUG_CV_BlackPadding_13_09_25",
-    #     #     "segment": "unet",
-    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-    #     # },
-    #     # {
-    #     #     "resize_method": "BlackPadding",
-    #     #     "message": "ResNet34_yolon_AUG_CV_BlackPadding_13_09_25",
-    #     #     "segment": "yolo",
-    #     #     "segmenter_path": "runs/segment/train31/weights/best.pt",
-    #     # },
-
-
-    # ]
-
-    # # --------------------------------------------------
-    # # --- LOOP PRINCIPAL -------------------------------
-    # # --------------------------------------------------
-    # for exp in experiments:
-
-    #     rsz           = exp["resize_method"]
-    #     msg           = exp["message"]
-    #     segment       = exp["segment"]
-    #     segmenter_path= exp["segmenter_path"]
-
-    #     # Identifica qual backbone para escolher a pasta correta
-    #     backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
-    #     model_dir    = MODEL_DIRS[backbone_key]
-
-    #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
-    #     out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
-    #     out_dir_cm.mkdir(parents=True, exist_ok=True)
-
-    #     for i in range(5):                                   # k-fold = 5
-    #         # ---- Caminhos de entrada ---------------------
-    #         model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-    #         split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
-
-    #         # ---- Nome para salvar arquivos/figura --------
-    #         cm_message = f"{msg}_F{i}"
-
-    #         # ---- Avaliação -------------------------------
-    #         y_pred = evaluate_model_cm(
-    #             model_path   = model_path_cm,
-    #             output_path  = str(out_dir_cm),
-    #             split_json   = split_path_cm,
-    #             raw_root     = RAW_ROOT,
-    #             message      = cm_message,
-    #             angle        = ANGLE,
-    #             classes      = CLASSES,
-    #             rgb          = False,
-    #             resize_method= rsz,
-    #             resize       = True,
-    #             resize_to    = 224,
-    #             segmenter= segment,
-    #             seg_model_path = segmenter_path
-    #         )
-
-    #         split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
-
-    #         X_test, y_test, ids_test = ppeprocessEigenCam(
-    #             X, y, patient_ids,
-    #             split_json_hm,
-    #             segment=segment,
-    #             segmenter_path=segmenter_path,
-    #             resize_method= rsz  # ou "BlackPadding", "GrayPadding"
-    #         )
-
-    #         hits = y_pred == y_test 
-    #         miss = y_pred != y_test
-
-    #         # ---------- EigenCAM ----------
-    #         model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
-    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-    #         run_eigencam(
-    #             imgs       = X_test[hits],
-    #             labels     = y_test[hits],
-    #             ids        = ids_test[hits],
-    #             model_path = model_path_hm,
-    #             out_dir    = out_dir_hm,
-    #         )
-
-    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
-    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-    #         run_eigencam(
-    #             imgs       = X_test[miss],
-    #             labels     = y_test[miss],
-    #             ids        = ids_test[miss],
-    #             model_path = model_path_hm,
-    #             out_dir    = out_dir_hm,
-    #         )
-
-    #         print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
-
-
-
-    # -------------- Primeira abordagem testada para incluir os marcadores na segmentação --------------
-
-    # resize_imgs_two_masks_dataset(
-    #     img_dir="Termografias_Dataset_Segmentação/images",
-    #     mask_breast_dir="Termografias_Dataset_Segmentação/masks",
-    #     mask_marker_dir = "Termografias_Dataset_Segmentação_Marcadores/masks",
-    #     output_base="Yolo_dataset_marcadores_two_classes",
-    #     target=224,          # mesmo tamanho definido no YAML da YOLO,
-    #     resize_method="BlackPadding"
-    # )
-
-
-    # yolo_data_2_classes("Frontal", "Yolo_dataset_marcadores_two_classes/images", "Yolo_dataset_marcadores_two_classes/masks_breast", "Yolo_dataset_marcadores_two_classes/masks_marker", "dataset_two_classes_yolo", True)
-    # # train36
-    # train_yolo_seg("n", 500, "dataset_yolo_two_classes.yaml", seed=SEMENTE)
-
-
-    # train_model_cv(Vgg_16,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= SEMENTE,
-    #                segmenter= "yolo",
-    #                message="Vgg_yolon_AUG_CV_BlackPadding_04_10_25", seg_model_path="runs/segment/train36/weights/best.pt",
-    #                resize_method="BlackPadding")
-
 
 
     
-    
-    # MODEL_DIRS = {
-    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
-    # "resnet": "modelos/ResNet34"
-    # }
 
-    # CONF_BASE  = "Resultados_Retreinamento_seg_pad_two_classes"     # pasta-raiz onde deseja guardar as figuras
-    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
-    # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
-    # ANGLE      = "Frontal"              # visão utilizada nos treinos
-
-    # exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
-    # X, y , patient_ids = load_raw_images(
-    #     f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
-    # # --------------------------------------------------
-    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
-    # # --------------------------------------------------
-    # experiments = [
-    #     # {
-    #     #     "resize_method": "BlackPadding",
-    #     #     "message": "Vgg_unet_AUG_CV_BlackPadding_13_09_25",
-    #     #     "segment": "unet",
-    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-    #     # },
-    #     {
-    #         "resize_method": "BlackPadding",
-    #         "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
-    #         "segment": "yolo",
-    #         "segmenter_path": "runs/segment/train36/weights/best.pt",
-    #     },
-    #     # {
-    #     #     "resize_method": "BlackPadding",
-    #     #     "message": "ResNet34_unet_AUG_CV_BlackPadding_13_09_25",
-    #     #     "segment": "unet",
-    #     #     "segmenter_path": "modelos/unet/Frontal_Unet_AUG_BlackPadding_13_09_25.h5",
-    #     # },
-    #     # {
-    #     #     "resize_method": "BlackPadding",
-    #     #     "message": "ResNet34_yolon_AUG_CV_BlackPadding_13_09_25",
-    #     #     "segment": "yolo",
-    #     #     "segmenter_path": "runs/segment/train31/weights/best.pt",
-    #     # },
-
-
-    # ]
-
-    # # --------------------------------------------------
-    # # --- LOOP PRINCIPAL -------------------------------
-    # # --------------------------------------------------
-    # for exp in experiments:
-
-    #     rsz           = exp["resize_method"]
-    #     msg           = exp["message"]
-    #     segment       = exp["segment"]
-    #     segmenter_path= exp["segmenter_path"]
-
-    #     # Identifica qual backbone para escolher a pasta correta
-    #     backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
-    #     model_dir    = MODEL_DIRS[backbone_key]
-
-    #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
-    #     out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
-    #     out_dir_cm.mkdir(parents=True, exist_ok=True)
-
-    #     for i in range(5):                                   # k-fold = 5
-    #         # ---- Caminhos de entrada ---------------------
-    #         model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-    #         split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
-
-    #         # ---- Nome para salvar arquivos/figura --------
-    #         cm_message = f"{msg}_F{i}"
-
-    #         # ---- Avaliação -------------------------------
-    #         y_pred = evaluate_model_cm(
-    #             model_path   = model_path_cm,
-    #             output_path  = str(out_dir_cm),
-    #             split_json   = split_path_cm,
-    #             raw_root     = RAW_ROOT,
-    #             message      = cm_message,
-    #             angle        = ANGLE,
-    #             classes      = CLASSES,
-    #             rgb          = False,
-    #             resize_method= rsz,
-    #             resize       = True,
-    #             resize_to    = 224,
-    #             segmenter= segment,
-    #             seg_model_path = segmenter_path
-    #         )
-
-    #         split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
-
-    #         X_test, y_test, ids_test = ppeprocessEigenCam(
-    #             X, y, patient_ids,
-    #             split_json_hm,
-    #             segment=segment,
-    #             segmenter_path=segmenter_path,
-    #             resize_method= rsz  # ou "BlackPadding", "GrayPadding"
-    #         )
-
-    #         hits = y_pred == y_test 
-    #         miss = y_pred != y_test
-
-    #         # ---------- EigenCAM ----------
-    #         model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
-    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-    #         run_eigencam(
-    #             imgs       = X_test[hits],
-    #             labels     = y_test[hits],
-    #             ids        = ids_test[hits],
-    #             model_path = model_path_hm,
-    #             out_dir    = out_dir_hm,
-    #         )
-
-    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
-    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-    #         run_eigencam(
-    #             imgs       = X_test[miss],
-    #             labels     = y_test[miss],
-    #             ids        = ids_test[miss],
-    #             model_path = model_path_hm,
-    #             out_dir    = out_dir_hm,
-    #         )
-
-    #         print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
 
 
 

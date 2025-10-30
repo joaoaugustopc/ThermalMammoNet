@@ -176,6 +176,11 @@ Yolo_dataset_marcadores/
 Yolo_dataset_marcadores_two_classes/
 dataset_two_classes_yolo/
 dataset_yolo_pads/
+Resultados_corrigidos_12_10_25/
+relatorio_normal_VS_normalNoPad/
+relatorio_normal_VS_Seg_normal/
+relatorio_normalXnormalNoPad/
+relatorio_normalXSeg_normal/
 
 marcadores_segmentados_txt/
 Resultados_Finais*
