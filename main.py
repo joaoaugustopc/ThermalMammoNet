@@ -322,6 +322,7 @@ def salvar_amostras_split_combined_paths(nomes_com, nomes_sem,
           f"val_com={len(va_com_idx)}, val_sem={len(va_sem_idx)}, "
           f"test_sem={len(te_sem_idx)}")
 
+
 def salvar_caminhos_reais_split(nomes_com, nomes_sem, com_marcador_dir, sem_marcador_dir,
                                tr_sem_idx, tr_com_idx, va_sem_idx, va_com_idx, te_sem_idx,
                                fold, out_dir="caminhos_split"):
@@ -355,9 +356,9 @@ def salvar_caminhos_reais_split(nomes_com, nomes_sem, com_marcador_dir, sem_marc
                 nome_arquivo = nomes[idx]
                 # Determinar se é saudável ou doente baseado no nome ou caminho
                 if "healthy" in base_path or "saudavel" in base_path:
-                    classe = "saudavel"
+                    classe = "healthy"
                 else:
-                    classe = "doente"
+                    classe = "sick"
                 
                 caminho_completo = os.path.join(base_path, "Frontal", classe, nome_arquivo)
                 f.write(f"{caminho_completo}\n")
@@ -601,7 +602,7 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                 save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
                 save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
 
-                print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
+                # print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
 
                 # Treinamento YOLO
                 model_f = YOLO('yolov8s-cls.pt')

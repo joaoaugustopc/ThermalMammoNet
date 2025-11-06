@@ -198,6 +198,13 @@ Yolos_Seg_Yolos_cls/
 heatmaps/
 recovered_data_no_pad/
 yolo_cam/
+dataset_mesclado_compativel/
+Yolos_Cls_metade_marcador/
+dataset_mesclado_compativel/
+caminhos_split/
+boxplots/
+amostras_split/
+Resultados_Finais_VGG_Yolon/
 
 temperatura_recuperada.txt
 yolov8n-cls.pt
