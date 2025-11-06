@@ -436,17 +436,6 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
         def run_fold():
         
             # salva índices para reuso posterior
-            split_file = f"splits/{message}_{angle}_F{fold}.json"
-            os.makedirs("splits", exist_ok=True)
-            with open(split_file, "w") as f:
-                json.dump({
-                    "train_idx": tr_idx.tolist(),
-                    "val_idx": va_idx.tolist(),
-                    "test_idx": te_idx.tolist(),
-                    "train_ids": patient_ids[tr_idx].tolist(),
-                    "val_ids": patient_ids[va_idx].tolist(),
-                    "test_ids": patient_ids[te_idx].tolist()
-                }, f)
 
             X_bal, marker_flags_bal = balance_marker_within_train(
                                         X = X,
@@ -473,6 +462,19 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             # min/max APENAS dos originais
             mn, mx = X_tr.min(), X_tr.max()
 
+            split_file = f"splits/{message}_{angle}_F{fold}.json"
+            os.makedirs("splits", exist_ok=True)
+            with open(split_file, "w") as f:
+                json.dump({
+                    "train_idx": tr_idx.tolist(),
+                    "val_idx": va_idx.tolist(),
+                    "test_idx": te_idx.tolist(),
+                    "train_ids": patient_ids[tr_idx].tolist(),
+                    "val_ids": patient_ids[va_idx].tolist(),
+                    "test_ids": patient_ids[te_idx].tolist(),
+                    "mn_train_pixel": mn,
+                    "mx_train_pixel": mx
+                }, f)
             # normaliza
             X_tr = normalize(X_tr, mn, mx)
             X_val= normalize(X_val,    mn, mx)
@@ -3006,6 +3008,22 @@ if __name__ == "__main__":
     
     SEMENTE = 13388
 
+    for i in range(5):
+        comparar_modelos_por_id_com_consistencia(
+                exp1_base=f"Resultados_corrigidos_12_10_25/CAM_results",
+                exp1_modelo=f"Vgg_AUG_CV_BlackPadding_13_09_25_F{i}",
+                exp2_base=f"Resultados_balanceamento_marcadores_29/10/CAM_results",
+                exp2_modelo=f"Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10_F{i}",
+                output_dir=f"relatorio_normal_VS_balanceamentoMarcadores/F{i}",
+            )
+        comparar_modelos_por_id_com_consistencia(
+            exp1_base=f"Resultados_corrigidos_12_10_25/CAM_results",
+            exp1_modelo=f"Vgg_AUG_CV_BlackPadding_13_09_25_F{i}",
+            exp2_base=f"Resultados_balanceamento_marcadores_teste_orig_29/10/CAM_results",
+            exp2_modelo=f"Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10_F{i}",
+            output_dir=f"relatorio_normal_VS_balanceamentoMarcadores_orig_test/F{i}",
+        )
+
     # train_model_cv(Vgg_16,
     #                raw_root="filtered_raw_dataset",
     #                angle="Frontal",
@@ -3017,136 +3035,118 @@ if __name__ == "__main__":
     #                message="Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10",
     #                resize_method="BlackPadding")
 
-    MODEL_DIRS = {
-    "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
-    "resnet": "modelos/ResNet34"
-    }
+    # MODEL_DIRS = {
+    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    # "resnet": "modelos/ResNet34"
+    # }
 
-    CONF_BASE  = "Resultados_balanceamento_marcadores_teste_orig_29/10"     # pasta-raiz onde deseja guardar as figuras
-    CLASSES    = ("Healthy", "Sick")    # rótulos das classes
-    RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
-    ANGLE      = "Frontal"              # visão utilizada nos treinos
+    # CONF_BASE  = "Resultados_balanceamento_marcadores_teste_orig_29/10"     # pasta-raiz onde deseja guardar as figuras
+    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
+    # ANGLE      = "Frontal"              # visão utilizada nos treinos
 
-    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
-    X, y , patient_ids, filenames = load_raw_images(
-        f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
-    # --------------------------------------------------
-    # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
-    # --------------------------------------------------
-    experiments = [
+    # exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
+    # X, y , patient_ids, filenames = load_raw_images(
+    #     f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
+    # # --------------------------------------------------
+    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # # --------------------------------------------------
+    # experiments = [
+
+    #     {
+    #         "resize_method": "BlackPadding",
+    #         "message": "Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10",
+    #         "segment": "none",
+    #         "segmenter_path": "",
+    #     }
         
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "Vgg_AUG_CV_BlackPadding_13_09_25",
-        #     "segment": "none",
-        #     "segmenter_path": "",
-        # },
-        {
-            "resize_method": "BlackPadding",
-            "message": "Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10",
-            "segment": "none",
-            "segmenter_path": "",
-        },
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "Vgg_yolon_AUG_CV_BlackPadding_13_09_25",
-        #     "segment": "yolo",
-        #     "segmenter_path": "runs/segment/train31/weights/best.pt",
-        # },
-        # {
-        #     "resize_method": "BlackPadding",
-        #     "message": "Vgg_yolon_AUG_CV_BlackPadding_04_10_25",
-        #     "segment": "yolo",
-        #     "segmenter_path": "runs/segment/train36/weights/best.pt",
-        # }
-    ]
+    # ]
 
-    # --------------------------------------------------
-    # --- LOOP PRINCIPAL -------------------------------
-    # --------------------------------------------------
-    for exp in experiments:
+    # # --------------------------------------------------
+    # # --- LOOP PRINCIPAL -------------------------------
+    # # --------------------------------------------------
+    # for exp in experiments:
 
-        rsz           = exp["resize_method"]
-        msg           = exp["message"]
-        segment       = exp["segment"]
-        segmenter_path= exp["segmenter_path"]
+    #     rsz           = exp["resize_method"]
+    #     msg           = exp["message"]
+    #     segment       = exp["segment"]
+    #     segmenter_path= exp["segmenter_path"]
 
-        # Identifica qual backbone para escolher a pasta correta
-        backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
-        model_dir    = MODEL_DIRS[backbone_key]
+    #     # Identifica qual backbone para escolher a pasta correta
+    #     backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
+    #     model_dir    = MODEL_DIRS[backbone_key]
 
-        # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
-        out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
-        out_dir_cm.mkdir(parents=True, exist_ok=True)
+    #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+    #     out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
+    #     out_dir_cm.mkdir(parents=True, exist_ok=True)
 
-        for i in range(5):                                   # k-fold = 5
-            # ---- Caminhos de entrada ---------------------
-            model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-            split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
+    #     for i in range(5):                                   # k-fold = 5
+    #         # ---- Caminhos de entrada ---------------------
+    #         model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    #         split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
 
-            # ---- Nome para salvar arquivos/figura --------
-            cm_message = f"{msg}_F{i}"
+    #         # ---- Nome para salvar arquivos/figura --------
+    #         cm_message = f"{msg}_F{i}"
 
-            MARCADORES = 1
+    #         MARCADORES = 1
 
-            # ---- Avaliação -------------------------------
-            y_pred = evaluate_model_cm(
-                model_path   = model_path_cm,
-                output_path  = str(out_dir_cm),
-                split_json   = split_path_cm,
-                raw_root     = RAW_ROOT,
-                message      = cm_message,
-                angle        = ANGLE,
-                classes      = CLASSES,
-                rgb          = False,
-                resize_method= rsz,
-                resize       = True,
-                resize_to    = 224,
-                segmenter= segment,
-                seg_model_path = segmenter_path,
-                marcadores = MARCADORES
-            )
+    #         # ---- Avaliação -------------------------------
+    #         y_pred = evaluate_model_cm(
+    #             model_path   = model_path_cm,
+    #             output_path  = str(out_dir_cm),
+    #             split_json   = split_path_cm,
+    #             raw_root     = RAW_ROOT,
+    #             message      = cm_message,
+    #             angle        = ANGLE,
+    #             classes      = CLASSES,
+    #             rgb          = False,
+    #             resize_method= rsz,
+    #             resize       = True,
+    #             resize_to    = 224,
+    #             segmenter= segment,
+    #             seg_model_path = segmenter_path,
+    #             marcadores = MARCADORES
+    #         )
 
-            split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
+    #         split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
 
-            X_test, y_test, ids_test = ppeprocessEigenCam(
-                X, y, patient_ids,
-                split_json_hm,
-                segment=segment,
-                segmenter_path=segmenter_path,
-                resize_method= rsz,  # ou "BlackPadding", "GrayPadding"
-                marcadores = MARCADORES
-            )
+    #         X_test, y_test, ids_test = ppeprocessEigenCam(
+    #             X, y, patient_ids,
+    #             split_json_hm,
+    #             segment=segment,
+    #             segmenter_path=segmenter_path,
+    #             resize_method= rsz,  # ou "BlackPadding", "GrayPadding"
+    #             marcadores = MARCADORES
+    #         )
 
-            hits = y_pred == y_test 
-            miss = y_pred != y_test
+    #         hits = y_pred == y_test 
+    #         miss = y_pred != y_test
 
-            # ---------- EigenCAM ----------
-            model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-            out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
-            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+    #         # ---------- EigenCAM ----------
+    #         model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
+    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
 
-            run_eigencam(
-                imgs       = X_test[hits],
-                labels     = y_test[hits],
-                ids        = ids_test[hits],
-                model_path = model_path_hm,
-                out_dir    = out_dir_hm,
-            )
+    #         run_eigencam(
+    #             imgs       = X_test[hits],
+    #             labels     = y_test[hits],
+    #             ids        = ids_test[hits],
+    #             model_path = model_path_hm,
+    #             out_dir    = out_dir_hm,
+    #         )
 
-            out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
-            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
+    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
 
-            run_eigencam(
-                imgs       = X_test[miss],
-                labels     = y_test[miss],
-                ids        = ids_test[miss],
-                model_path = model_path_hm,
-                out_dir    = out_dir_hm,
-            )
+    #         run_eigencam(
+    #             imgs       = X_test[miss],
+    #             labels     = y_test[miss],
+    #             ids        = ids_test[miss],
+    #             model_path = model_path_hm,
+    #             out_dir    = out_dir_hm,
+    #         )
 
-            print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
-
+    #         print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
 
 
     

@@ -201,3 +201,5 @@ yolo_cam/
 
 temperatura_recuperada.txt
 yolov8n-cls.pt
+relatorio_normal_VS_balanceamentoMarcadores/
+relatorio_normal_VS_balanceamentoMarcadores_orig_test/ 

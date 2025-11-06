@@ -1839,28 +1839,6 @@ def balance_marker_within_train(X: np.ndarray,
                                 keep_orig_markerless: set,
                                 target_ratio: float = 0.50,
                                 seed: int = 42):
-    """
-    Substitui, *somente* dentro de X[train_idx], algumas imagens que CONTÊM
-    marcador pela respectiva versão limpa (indicada em rec_paths_map),
-    até que a fração de amostras **sem** marcador no treino atinja
-    `target_ratio` (padrão = 50 %).
-
-    Parâmetros
-    ----------
-    X  : ndarray           Imagens completas já carregadas (H×W ou H×W×C).
-    marker_flags : ndarray Bool alinhado a X – True  → tem marcador.
-    ids : ndarray          Mesmo alinhamento – id numérico do exame.
-    train_idx : ndarray    Índices do conjunto de treino deste fold.
-    rec_paths_map : dict   { id : caminho_da_imagem_limpa }.
-    keep_orig_markerless : set  IDs que nunca tiveram marcador.
-    target_ratio : float   Proporção desejada de *sem* marcador no treino.
-    seed : int             Semente da amostragem.
-
-    Retorna
-    -------
-    X_bal      : ndarray   Cópia de X com trocas aplicadas.
-    flags_bal  : ndarray   Cópia de marker_flags atualizada.
-    """
     rng = random.Random(seed)
 
     # --- 1) separa índices internos ao treino ---------------------------
