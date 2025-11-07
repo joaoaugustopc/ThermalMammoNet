@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes, make_tvt_splits_marker_aware, verificar_splits_marker_aware, balance_marker_within_train
+from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes, make_tvt_splits_marker_aware, verificar_splits_marker_aware, balance_marker_within_train, extract_id_data
 from utils.files_manipulation import move_files_within_folder, create_folder, move_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model, unet_model_retangular
@@ -381,24 +381,26 @@ def salvar_caminhos_reais_split(nomes_com, nomes_sem, com_marcador_dir, sem_marc
         f.write(f"Total Teste: {len(te_sem_idx)}\n")
 
 
-ORIG_WITHOUTMARKS_IDS = {1, 2, 3, 194, 202, 337, 338, 342,
-                       365, 366, 373, 401, 422}
+ORIG_WITHOUTMARKS_IDS = {"1_2012-10-08", "2_2012-10-08", "3_2012-10-08", "194_2013-10-02", "202_2013-10-11", "337_2020-01-20", "338_2020-01-22", "342_2020-01-22", "365_2020-01-22", "366_2020-09-30","366_2020-01-22", "373_2019-06-26", "401_2019-10-23", "422_2020-01-22"}
 
-def has_marker_in_original(img_id: int) -> bool:
+def has_marker_in_original(img_id: str) -> bool:
     """True se a imagem do raw_dataset contém marcador."""
     return img_id not in ORIG_WITHOUTMARKS_IDS
         
 """
-FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS
+FUNÇÃO PRINCIPAL PARA TREINAR OS MODELOS (ATUALMENTE COM BALANCEAMENTO DE MARCADORES)
 """
 def train_model_cv(model, raw_root, message, angle="Frontal", k=5, 
                   resize=True, resize_method = "BlackPadding", resize_to=224, n_aug=0, batch=8, seed=42, 
-                  segmenter="none", seg_model_path="",channel_method ="MapaCalor"):
+                  segmenter="none", seg_model_path="",channel_method ="MapaCalor", test_type = 0):
     
     # DEBUG: vendo o nome do modeloo
     #print(model.__name__)
-    
-    
+
+    """
+    Aqui são recuperado os ids das imagens do dataset utilizado para treinar os modelos de segmentação para
+    serem excluídos do treinamento do modelo de classificação
+    """
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
     
     if "ufpe" in raw_root:
@@ -406,25 +408,21 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             os.path.join(raw_root, angle), exclude=False)
         print(f"Carregando imagens da UFPE: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
     else:
-        X, y, patient_ids, filenames = load_raw_images(
+        X, y, patient_ids, filenames, ids_data = load_raw_images(   
             os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
+        
         print(f"Carregando imagens: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
 
     print(f"Saudavéis: {np.sum(y==0)}, Doentes: {np.sum(y==1)}")
 
-    marker_flags = np.array([has_marker_in_original(int(i.split('_')[0])) for i in filenames])
+    marker_flags = np.array([has_marker_in_original(i) for i in ids_data])
 
-    #ids_marer_True = patient_ids[marker_flags == False]
-
-    
     rec_paths_map = {}
     for label in ['healthy', 'sick']:
         dir_rec = os.path.join('recovered_data', angle, label)
         for f in os.listdir(dir_rec):
-            img_id = int(f.split('_')[0])
-            rec_paths_map[img_id] = os.path.join(dir_rec, f)
-
-
+            _id, _data, _id_data = extract_id_data(f)
+            rec_paths_map[_id_data] = os.path.join(dir_rec, f)
     
     with open("modelos/random_seed.txt", "a") as f:
         f.write(f"{message}\n"
@@ -436,24 +434,42 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
         
         def run_fold():
         
-            # salva índices para reuso posterior
-
             X_bal, marker_flags_bal = balance_marker_within_train(
                                         X = X,
                                         marker_flags= marker_flags,
-                                        ids = patient_ids,
+                                        ids_data = ids_data,
                                         train_idx= tr_idx,
                                         rec_paths_map= rec_paths_map,
                                         keep_orig_markerless= ORIG_WITHOUTMARKS_IDS,
                                         target_ratio= 0.5,
                                         seed = seed
                                     )
+            
 
             # ------ prepara dados -----------
             X_tr, y_tr = X_bal[tr_idx], y[tr_idx]
-            X_val,    y_val = X[va_idx], y[va_idx]
+            if test_type == 0: #Garante que o teste é feito nos mesmo condições que foi utilizada para avaliar
+                X_val,    y_val = X[va_idx], y[va_idx]
+                X_test,   y_test= X[te_idx], y[te_idx]
+            else:
+                X_rec = X.copy()
 
-            X_test,   y_test= X[te_idx], y[te_idx]
+                for i in va_idx:
+                    path = rec_paths_map[ids_data[i]]
+                    with open(path, 'r') as f:
+                            delim = ';' if ';' in f.readline() else ' '
+                            f.seek(0)
+                    X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
+
+                for i in te_idx:
+                    path = rec_paths_map[ids_data[i]]
+                    with open(path, 'r') as f:
+                            delim = ';' if ';' in f.readline() else ' '
+                            f.seek(0)
+                    X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
+
+                    X_val, y_val = X_rec[va_idx],  y[va_idx]
+                    X_test, y_test = X_rec[te_idx], y[te_idx]
 
             print(f"Shape de treinamento fold {fold} antes do aumento de dados: {X_tr.shape}")
             print(f"Shape de validação fold {fold}: {X_val.shape}")
@@ -470,12 +486,13 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                     "train_idx": tr_idx.tolist(),
                     "val_idx": va_idx.tolist(),
                     "test_idx": te_idx.tolist(),
-                    "train_ids": patient_ids[tr_idx].tolist(),
-                    "val_ids": patient_ids[va_idx].tolist(),
-                    "test_ids": patient_ids[te_idx].tolist(),
-                    "mn_train_pixel": mn,
-                    "mx_train_pixel": mx
+                    "train_ids": ids_data[tr_idx].tolist(),
+                    "val_ids": ids_data[va_idx].tolist(),
+                    "test_ids": ids_data[te_idx].tolist(),
+                    "mn_train_pixel": float(mn),
+                    "mx_train_pixel": float(mx),
                 }, f)
+
             # normaliza
             X_tr = normalize(X_tr, mn, mx)
             X_val= normalize(X_val,    mn, mx)
@@ -493,7 +510,7 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                                                     n_aug=n_aug, seed=seed, dataset='uff')
                     
                 with open("modelos/random_seed.txt", "a") as f:
-                    f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}\n")
+                    f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape} | Saudaveis: {X_tr[y_tr==0].shape[0]} | Doentes: {X_tr[y_tr==1].shape[0]} \n")
             
 
             if resize:
@@ -1441,7 +1458,7 @@ def prep_test_data(raw_root, angle, split_json,
 
     exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", angle)
     
-    X, y, patient_ids, filenames = load_raw_images(
+    X, y, patient_ids, filenames, ids_data = load_raw_images(
             os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
     
     
@@ -3009,22 +3026,18 @@ if __name__ == "__main__":
     
     SEMENTE = 13388
 
-    for i in range(5):
-        comparar_modelos_por_id_com_consistencia(
-                exp1_base=f"Resultados_corrigidos_12_10_25/CAM_results",
-                exp1_modelo=f"Vgg_AUG_CV_BlackPadding_13_09_25_F{i}",
-                exp2_base=f"Resultados_balanceamento_marcadores_29/10/CAM_results",
-                exp2_modelo=f"Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10_F{i}",
-                output_dir=f"relatorio_normal_VS_balanceamentoMarcadores/F{i}",
-            )
-        comparar_modelos_por_id_com_consistencia(
-            exp1_base=f"Resultados_corrigidos_12_10_25/CAM_results",
-            exp1_modelo=f"Vgg_AUG_CV_BlackPadding_13_09_25_F{i}",
-            exp2_base=f"Resultados_balanceamento_marcadores_teste_orig_29/10/CAM_results",
-            exp2_modelo=f"Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10_F{i}",
-            output_dir=f"relatorio_normal_VS_balanceamentoMarcadores_orig_test/F{i}",
-        )
-
+    # # train_model_cv(Vgg_16,
+    # #                raw_root="filtered_raw_dataset",
+    # #                angle="Frontal",
+    # #                k=5,                 
+    # #                resize_to=224,
+    # #                n_aug=2,             
+    # #                batch=8,
+    # #                seed= SEMENTE,
+    # #                message="Vgg_AUG_CV_Presença_Marcadores_balanceadas_Corrigido_06_11_test_type_0",
+    # #                resize_method="BlackPadding",
+    # #                test_type=0)
+    
     # train_model_cv(Vgg_16,
     #                raw_root="filtered_raw_dataset",
     #                angle="Frontal",
@@ -3033,121 +3046,11 @@ if __name__ == "__main__":
     #                n_aug=2,             
     #                batch=8,
     #                seed= SEMENTE,
-    #                message="Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10",
-    #                resize_method="BlackPadding")
+    #                message="Vgg_AUG_CV_Presença_Marcadores_balanceadas_Corrigido_06_11_test_type_1",
+    #                resize_method="BlackPadding",
+    #                test_type=1)
 
-    # MODEL_DIRS = {
-    # "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
-    # "resnet": "modelos/ResNet34"
-    # }
 
-    # CONF_BASE  = "Resultados_balanceamento_marcadores_teste_orig_29/10"     # pasta-raiz onde deseja guardar as figuras
-    # CLASSES    = ("Healthy", "Sick")    # rótulos das classes
-    # RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
-    # ANGLE      = "Frontal"              # visão utilizada nos treinos
-
-    # exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
-    # X, y , patient_ids, filenames = load_raw_images(
-    #     f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
-    # # --------------------------------------------------
-    # # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
-    # # --------------------------------------------------
-    # experiments = [
-
-    #     {
-    #         "resize_method": "BlackPadding",
-    #         "message": "Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10",
-    #         "segment": "none",
-    #         "segmenter_path": "",
-    #     }
-        
-    # ]
-
-    # # --------------------------------------------------
-    # # --- LOOP PRINCIPAL -------------------------------
-    # # --------------------------------------------------
-    # for exp in experiments:
-
-    #     rsz           = exp["resize_method"]
-    #     msg           = exp["message"]
-    #     segment       = exp["segment"]
-    #     segmenter_path= exp["segmenter_path"]
-
-    #     # Identifica qual backbone para escolher a pasta correta
-    #     backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
-    #     model_dir    = MODEL_DIRS[backbone_key]
-
-    #     # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
-    #     out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
-    #     out_dir_cm.mkdir(parents=True, exist_ok=True)
-
-    #     for i in range(5):                                   # k-fold = 5
-    #         # ---- Caminhos de entrada ---------------------
-    #         model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-    #         split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
-
-    #         # ---- Nome para salvar arquivos/figura --------
-    #         cm_message = f"{msg}_F{i}"
-
-    #         MARCADORES = 1
-
-    #         # ---- Avaliação -------------------------------
-    #         y_pred = evaluate_model_cm(
-    #             model_path   = model_path_cm,
-    #             output_path  = str(out_dir_cm),
-    #             split_json   = split_path_cm,
-    #             raw_root     = RAW_ROOT,
-    #             message      = cm_message,
-    #             angle        = ANGLE,
-    #             classes      = CLASSES,
-    #             rgb          = False,
-    #             resize_method= rsz,
-    #             resize       = True,
-    #             resize_to    = 224,
-    #             segmenter= segment,
-    #             seg_model_path = segmenter_path,
-    #             marcadores = MARCADORES
-    #         )
-
-    #         split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
-
-    #         X_test, y_test, ids_test = ppeprocessEigenCam(
-    #             X, y, patient_ids,
-    #             split_json_hm,
-    #             segment=segment,
-    #             segmenter_path=segmenter_path,
-    #             resize_method= rsz,  # ou "BlackPadding", "GrayPadding"
-    #             marcadores = MARCADORES
-    #         )
-
-    #         hits = y_pred == y_test 
-    #         miss = y_pred != y_test
-
-    #         # ---------- EigenCAM ----------
-    #         model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
-    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
-    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-    #         run_eigencam(
-    #             imgs       = X_test[hits],
-    #             labels     = y_test[hits],
-    #             ids        = ids_test[hits],
-    #             model_path = model_path_hm,
-    #             out_dir    = out_dir_hm,
-    #         )
-
-    #         out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
-    #         Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
-
-    #         run_eigencam(
-    #             imgs       = X_test[miss],
-    #             labels     = y_test[miss],
-    #             ids        = ids_test[miss],
-    #             model_path = model_path_hm,
-    #             out_dir    = out_dir_hm,
-    #         )
-
-    #         print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
 
 
     

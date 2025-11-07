@@ -31,9 +31,20 @@ def preprocess(image, max, min):
     image = (image - min) / (max - min)
     return image
 
-def extract_id(filename):
+
+_pattern_id = re.compile(r'^(\d+)_.*_(\d{4}-\d{2}-\d{2})')
+
+def extract_id_data(filename):
+
+    m = _pattern_id.match(filename)
+    if not m:
+        raise ValueError(f"Nome inesperado: {filename}")
+    
+    id = int(m.group(1))
+    data = m.group(2)
+    id_data = f"{id}_{data}"
     # Extrair o ID a partir do nome do arquivo
-    return filename.split('_')[0]
+    return id, data, id_data
 
 """
 Função para converter os arquivos de texto em arrays numpy
@@ -73,7 +84,8 @@ def to_array(directory, exclude = False, exclude_set = None):
           imagem = np.loadtxt(path, delimiter=delimiter)
           imagens.append(imagem)
           labels.append(0)
-          ids.append(extract_id(arquivo))
+          _id, _data, _id_data = extract_id_data(arquivo)
+          ids.append(_id)
         except ValueError as e:
           print(e)
           print(arquivo)
@@ -97,7 +109,8 @@ def to_array(directory, exclude = False, exclude_set = None):
           imagem = np.loadtxt(path, delimiter=delimiter)
           imagens.append(imagem)
           labels.append(1)
-          ids.append(extract_id(arquivo))
+          _id, _data, _id_data = extract_id_data(arquivo)
+          ids.append(_id)
         except ValueError as e:
           print(e)
           print(arquivo)
@@ -861,7 +874,6 @@ def masks_pair_to_polygons(breast_dir, marker_dir, output_dir,
 
 
 #Listar os nomes das imagens que não quero usar para treinar o modelo de classificação
-
 def listar_imgs_nao_usadas(directory, angulo):
     angulos = {
         "Frontal": "1",
@@ -1205,9 +1217,14 @@ def filter_dataset_by_id(src_dir: str, dst_dir: str, ids_to_remove):
             shutil.copy2(src_path, dst_path)
 
 
+
+"""
+Carrega o dataaset bruto a partir do caminho fornecido. Exclui os ids do exclude_set e retorna
+o conjunto de imagens(em numpy), labels, ids dos pacientes, nomes dos arquivos data do exame e uma string com id e data do exame.
+"""
 def load_raw_images(angle_dir, exclude=False, exclude_set=None):
     
-    imgs, labels, ids = [], [], []
+    imgs, labels, ids, ids_data = [], [], [], []
     nomes = []
 
     for label_name, label_val in [('healthy', 0), ('sick', 1)]:
@@ -1236,14 +1253,16 @@ def load_raw_images(angle_dir, exclude=False, exclude_set=None):
                 
                 imgs.append(arr)
                 labels.append(label_val)
-                ids.append(extract_id(file))  # sua função
+                _id, _data, _id_data = extract_id_data(file)
+                ids.append(_id)  
+                ids_data.append(_id_data)
                 nomes.append(file)
 
             except Exception as e:
                 print(f"Erro ao processar {fpath}: {e}")
                 continue
 
-    return np.array(imgs), np.array(labels), np.array(ids, dtype= int), nomes
+    return np.array(imgs), np.array(labels), np.array(ids, dtype= int), nomes, np.array(ids_data)
 
 def load_raw_images_ufpe(angle_dir, exclude=False, exclude_set=None):
     
@@ -1287,7 +1306,7 @@ def load_raw_images_ufpe(angle_dir, exclude=False, exclude_set=None):
 
 from sklearn.model_selection import StratifiedGroupKFold, GroupShuffleSplit
 
-def make_tvt_splits(imgs, labels, ids, k=5, val_size=0.25, seed=42):
+def make_tvt_splits(imgs, labels, ids, k, val_size, seed):
     
     sgkf = StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=seed)
 
@@ -1833,7 +1852,7 @@ def verificar_splits_marker_aware(tr_idx, va_idx, te_idx, n_sem, fold):
 
 def balance_marker_within_train(X: np.ndarray,
                                 marker_flags: np.ndarray,
-                                ids: np.ndarray,
+                                ids_data: np.ndarray,
                                 train_idx: np.ndarray,
                                 rec_paths_map: dict,
                                 keep_orig_markerless: set,
@@ -1851,8 +1870,8 @@ def balance_marker_within_train(X: np.ndarray,
 
     # --- 2) elegíveis à troca (têm versão limpa disponível) -------------
     swap_candidates = [i for i in idx_with
-                       if (ids[i] not in keep_orig_markerless)  # não são “sem” nativos
-                       and (ids[i] in rec_paths_map)]            # existe Photoshop
+                       if (ids_data[i] not in keep_orig_markerless)  # não são “sem” nativos
+                       and (ids_data[i] in rec_paths_map)]            # existe Photoshop
 
     swaps_needed = min(swaps_needed, len(swap_candidates))
     chosen       = rng.sample(swap_candidates, swaps_needed)
@@ -1862,7 +1881,7 @@ def balance_marker_within_train(X: np.ndarray,
     flags_bal  = marker_flags.copy()
 
     for i in chosen:
-        clean_path   = rec_paths_map[ids[i]]
+        clean_path   = rec_paths_map[ids_data[i]]
         with open(clean_path, 'r') as f:
                     delim = ';' if ';' in f.readline() else ' '
                     f.seek(0)
