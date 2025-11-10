@@ -3072,7 +3072,7 @@ if __name__ == "__main__":
     "resnet": "modelos/ResNet34"
     }
 
-    CONF_BASE  = "Resultados_balanceamento_marcadores_teste_06_11"     # pasta-raiz onde deseja guardar as figuras
+    CONF_BASE  = "Resultados_balanceamento_marcadores_teste_orig_06_11_2"     # pasta-raiz onde deseja guardar as figuras
     CLASSES    = ("Healthy", "Sick")    # rótulos das classes
     RAW_ROOT   = "filtered_raw_dataset" # pasta com os exames originais
     ANGLE      = "Frontal"              # visão utilizada nos treinos
@@ -3089,7 +3089,7 @@ if __name__ == "__main__":
     
         {
             "resize_method": "BlackPadding",
-            "message": "Vgg_AUG_CV_Presença_Marcadores_balanceadas_Corrigido_06_11_test_type_1",
+            "message": "Vgg_AUG_CV_Presença_Marcadores_balanceadas_Corrigido_06_11_test_type_0_2.0",
             "segment": "none",
             "segmenter_path": "",
         },
@@ -3122,7 +3122,7 @@ if __name__ == "__main__":
             # ---- Nome para salvar arquivos/figura --------
             cm_message = f"{msg}_F{i}"
 
-            MARCADORES = 2
+            MARCADORES = 1
 
             # ---- Avaliação -------------------------------
             y_pred = evaluate_model_cm(
