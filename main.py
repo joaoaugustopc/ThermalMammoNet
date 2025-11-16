@@ -415,14 +415,16 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
 
     print(f"Saudavéis: {np.sum(y==0)}, Doentes: {np.sum(y==1)}")
 
-    marker_flags = np.array([has_marker_in_original(i) for i in ids_data])
+    
+    ## Código utilizado para o experimento de balancear as imagens com e sem marcadores no conjunto de treinamento
+    # marker_flags = np.array([has_marker_in_original(i) for i in ids_data])
 
-    rec_paths_map = {}
-    for label in ['healthy', 'sick']:
-        dir_rec = os.path.join('recovered_data', angle, label)
-        for f in os.listdir(dir_rec):
-            _id, _data, _id_data = extract_id_data(f)
-            rec_paths_map[_id_data] = os.path.join(dir_rec, f)
+    # rec_paths_map = {}
+    # for label in ['healthy', 'sick']:
+    #     dir_rec = os.path.join('recovered_data', angle, label)
+    #     for f in os.listdir(dir_rec):
+    #         _id, _data, _id_data = extract_id_data(f)
+    #         rec_paths_map[_id_data] = os.path.join(dir_rec, f)
     
     with open("modelos/random_seed.txt", "a") as f:
         f.write(f"{message}\n"
@@ -434,42 +436,48 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
         
         def run_fold():
         
-            X_bal, marker_flags_bal = balance_marker_within_train(
-                                        X = X,
-                                        marker_flags= marker_flags,
-                                        ids_data = ids_data,
-                                        train_idx= tr_idx,
-                                        rec_paths_map= rec_paths_map,
-                                        keep_orig_markerless= ORIG_WITHOUTMARKS_IDS,
-                                        target_ratio= 0.5,
-                                        seed = seed
-                                    )
+            ## Código utilizado para o experimento de balancear as imagens com e sem marcadores no conjunto de treinamento
+            # X_bal, marker_flags_bal = balance_marker_within_train(
+            #                             X = X,
+            #                             marker_flags= marker_flags,
+            #                             ids_data = ids_data,
+            #                             train_idx= tr_idx,
+            #                             rec_paths_map= rec_paths_map,
+            #                             keep_orig_markerless= ORIG_WITHOUTMARKS_IDS,
+            #                             target_ratio= 0.5,
+            #                             seed = seed
+            #                         )
             
 
-            # ------ prepara dados -----------
-            X_tr, y_tr = X_bal[tr_idx], y[tr_idx]
-            if test_type == 0: #Garante que o teste é feito nos mesmo condições que foi utilizada para avaliar
-                X_val,    y_val = X[va_idx], y[va_idx]
-                X_test,   y_test= X[te_idx], y[te_idx]
-            else:
-                X_rec = X.copy()
+            # # ------ prepara dados -----------
+            # X_tr, y_tr = X_bal[tr_idx], y[tr_idx]
+            # if test_type == 0: #Garante que o teste é feito nos mesmo condições que foi utilizada para avaliar
+            #     X_val,    y_val = X[va_idx], y[va_idx]
+            #     X_test,   y_test= X[te_idx], y[te_idx]
+            # else:
+            #     X_rec = X.copy()
 
-                for i in va_idx:
-                    path = rec_paths_map[ids_data[i]]
-                    with open(path, 'r') as f:
-                            delim = ';' if ';' in f.readline() else ' '
-                            f.seek(0)
-                    X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
+            #     for i in va_idx:
+            #         path = rec_paths_map[ids_data[i]]
+            #         with open(path, 'r') as f:
+            #                 delim = ';' if ';' in f.readline() else ' '
+            #                 f.seek(0)
+            #         X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
 
-                for i in te_idx:
-                    path = rec_paths_map[ids_data[i]]
-                    with open(path, 'r') as f:
-                            delim = ';' if ';' in f.readline() else ' '
-                            f.seek(0)
-                    X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
+            #     for i in te_idx:
+            #         path = rec_paths_map[ids_data[i]]
+            #         with open(path, 'r') as f:
+            #                 delim = ';' if ';' in f.readline() else ' '
+            #                 f.seek(0)
+            #         X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
 
-                    X_val, y_val = X_rec[va_idx],  y[va_idx]
-                    X_test, y_test = X_rec[te_idx], y[te_idx]
+            #         X_val, y_val = X_rec[va_idx],  y[va_idx]
+            #         X_test, y_test = X_rec[te_idx], y[te_idx]
+
+            X_tr, y_tr = X[tr_idx], y[tr_idx]
+            X_val,    y_val = X[va_idx], y[va_idx]
+
+            X_test,   y_test= X[te_idx], y[te_idx]
 
             print(f"Shape de treinamento fold {fold} antes do aumento de dados: {X_tr.shape}")
             print(f"Shape de validação fold {fold}: {X_val.shape}")
@@ -1353,47 +1361,49 @@ def ppeprocessEigenCam(X, y, ids_data, splits_path, resize_method = "BlackPaddin
                     "ids_data": teste_c_ids.tolist()
                 }, f)
 
-    if marcadores != 0:
-        marker_flags = np.array([has_marker_in_original(i) for i in ids_data])
+    ## Código utilizado para o experimento de balancear as imagens com e sem marcadores no conjunto de treinamento
 
-        rec_paths_map = {}
-        for label in ['healthy', 'sick']:
-            dir_rec = os.path.join('recovered_data', "Frontal", label)
-            for f in os.listdir(dir_rec):
-                _id, _data, _id_data = extract_id_data(f)
-                rec_paths_map[_id_data] = os.path.join(dir_rec, f)
+    # if marcadores != 0:
+    #     marker_flags = np.array([has_marker_in_original(i) for i in ids_data])
 
-        X_bal, marker_flags_bal = balance_marker_within_train(
-                                        X = X,
-                                        marker_flags= marker_flags,
-                                        ids_data = ids_data,
-                                        train_idx= train_idx,
-                                        rec_paths_map= rec_paths_map,
-                                        keep_orig_markerless= ORIG_WITHOUTMARKS_IDS,
-                                        target_ratio= 0.5,
-                                        seed = seed
-                                    )
+    #     rec_paths_map = {}
+    #     for label in ['healthy', 'sick']:
+    #         dir_rec = os.path.join('recovered_data', "Frontal", label)
+    #         for f in os.listdir(dir_rec):
+    #             _id, _data, _id_data = extract_id_data(f)
+    #             rec_paths_map[_id_data] = os.path.join(dir_rec, f)
+
+    #     X_bal, marker_flags_bal = balance_marker_within_train(
+    #                                     X = X,
+    #                                     marker_flags= marker_flags,
+    #                                     ids_data = ids_data,
+    #                                     train_idx= train_idx,
+    #                                     rec_paths_map= rec_paths_map,
+    #                                     keep_orig_markerless= ORIG_WITHOUTMARKS_IDS,
+    #                                     target_ratio= 0.5,
+    #                                     seed = seed
+    #                                 )
         
-        if marcadores == 1:
-            X_train, X_test = X_bal[train_idx], X[test_idx]
-        else:
-            X_rec = X.copy()
-            for i in test_idx:
-                path = rec_paths_map[ids_data[i]]
-                with open(path, 'r') as f:
-                        delim = ';' if ';' in f.readline() else ' '
-                        f.seek(0)
-                X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
+    #     if marcadores == 1:
+    #         X_train, X_test = X_bal[train_idx], X[test_idx]
+    #     else:
+    #         X_rec = X.copy()
+    #         for i in test_idx:
+    #             path = rec_paths_map[ids_data[i]]
+    #             with open(path, 'r') as f:
+    #                     delim = ';' if ';' in f.readline() else ' '
+    #                     f.seek(0)
+    #             X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
 
-            X_train, X_test = X_bal[train_idx], X_rec[test_idx]
-    else:
-        X_train, X_test = X[train_idx], X[test_idx]
+    #         X_train, X_test = X_bal[train_idx], X_rec[test_idx]
+    # else:
+    #     X_train, X_test = X[train_idx], X[test_idx]
 
-    # X_test = X[test_idx]
+    X_test = X[test_idx]
     y_test = y[test_idx]
     ids_test = ids_data[test_idx]
 
-    # X_train = X[train_idx]
+    X_train = X[train_idx]
     y_train = y[train_idx]
 
     X_val = X[val_idx]
@@ -1481,42 +1491,44 @@ def prep_test_data(raw_root, angle, split_json,
                 }, f)
 
 
-    if marcadores != 0:
-        marker_flags = np.array([has_marker_in_original(i) for i in ids_data])
+    ## Código utilizado para o experimento de balancear as imagens com e sem marcadores no conjunto de treinamento
 
-        rec_paths_map = {}
-        for label in ['healthy', 'sick']:
-            dir_rec = os.path.join('recovered_data', angle, label)
-            for f in os.listdir(dir_rec):
-                _id, _data, _id_data = extract_id_data(f)
-                rec_paths_map[_id_data] = os.path.join(dir_rec, f)
+    # if marcadores != 0:
+    #     marker_flags = np.array([has_marker_in_original(i) for i in ids_data])
 
-        X_bal, marker_flags_bal = balance_marker_within_train(
-                                        X = X,
-                                        marker_flags= marker_flags,
-                                        ids_data= ids_data,
-                                        train_idx= tr_idx,
-                                        rec_paths_map= rec_paths_map,
-                                        keep_orig_markerless= ORIG_WITHOUTMARKS_IDS,
-                                        target_ratio= 0.5,
-                                        seed = seed
-                                    )
-        if marcadores == 1: 
-            X_tr, X_test = X_bal[tr_idx], X[te_idx]
-        else:       
-            X_rec = X.copy()
-            for i in te_idx:
-                path = rec_paths_map[ids_data[i]]
-                with open(path, 'r') as f:
-                        delim = ';' if ';' in f.readline() else ' '
-                        f.seek(0)
-                X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
+    #     rec_paths_map = {}
+    #     for label in ['healthy', 'sick']:
+    #         dir_rec = os.path.join('recovered_data', angle, label)
+    #         for f in os.listdir(dir_rec):
+    #             _id, _data, _id_data = extract_id_data(f)
+    #             rec_paths_map[_id_data] = os.path.join(dir_rec, f)
 
-            X_tr, X_test = X_bal[tr_idx], X_rec[te_idx]
-    else:
-        X_tr, X_test = X[tr_idx], X[te_idx]
+    #     X_bal, marker_flags_bal = balance_marker_within_train(
+    #                                     X = X,
+    #                                     marker_flags= marker_flags,
+    #                                     ids_data= ids_data,
+    #                                     train_idx= tr_idx,
+    #                                     rec_paths_map= rec_paths_map,
+    #                                     keep_orig_markerless= ORIG_WITHOUTMARKS_IDS,
+    #                                     target_ratio= 0.5,
+    #                                     seed = seed
+    #                                 )
+    #     if marcadores == 1: 
+    #         X_tr, X_test = X_bal[tr_idx], X[te_idx]
+    #     else:       
+    #         X_rec = X.copy()
+    #         for i in te_idx:
+    #             path = rec_paths_map[ids_data[i]]
+    #             with open(path, 'r') as f:
+    #                     delim = ';' if ';' in f.readline() else ' '
+    #                     f.seek(0)
+    #             X_rec[i] =  np.loadtxt(path, delimiter=delim, dtype=np.float32)
+
+    #         X_tr, X_test = X_bal[tr_idx], X_rec[te_idx]
+    # else:
+    #     X_tr, X_test = X[tr_idx], X[te_idx]
         
-
+    X_tr, X_test = X[tr_idx], X[te_idx]
     y_test = y[te_idx]
 
     mn_aux, mx_aux = X_tr.min(), X_tr.max()
@@ -3043,21 +3055,10 @@ if __name__ == "__main__":
     
     SEMENTE = 13388
 
-    for i in range(5):
-        comparar_modelos_por_id_com_consistencia(
-                exp1_base=f"Resultados_corrigidos_12_10_25/CAM_results",
-                exp1_modelo=f"Vgg_AUG_CV_BlackPadding_13_09_25_F{i}",
-                exp2_base=f"Resultados_balanceamento_marcadores_29/10/CAM_results",
-                exp2_modelo=f"Vgg_AUG_CV_Presença_Marcadores_balanceadas_29_10_F{i}",
-                output_dir=f"relatorio_normal_VS_balanceamentoMarcadores/F{i}",
-            )
-        comparar_modelos_por_id_com_consistencia(
-            exp1_base=f"Resultados_corrigidos_12_10_25/CAM_results",
-            exp1_modelo=f"Vgg_AUG_CV_BlackPadding_13_09_25_F{i}",
-            exp2_base=f"Resultados_balanceamento_marcadores_teste_orig_06_11/CAM_results",
-            exp2_modelo=f"Vgg_AUG_CV_Presença_Marcadores_balanceadas_Corrigido_06_11_test_type_0_F{i}",
-            output_dir=f"relatorio_normal_VS_balanceamentoMarcadores_orig_test/F{i}",
-        )
+    delete_folder("processed_images(pad 28x28px)_txt")
+    recuperar_img("processed_images(pad 28x28px)/healthy", "processed_images(pad 28x28px)_txt/Frontal/healthy")
+    recuperar_img("processed_images(pad 28x28px)/sick", "processed_images(pad 28x28px)_txt/Frontal/sick")
+
 
 
 

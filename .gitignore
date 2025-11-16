@@ -210,3 +210,5 @@ temperatura_recuperada.txt
 yolov8n-cls.pt
 relatorio_normal_VS_balanceamentoMarcadores/
 relatorio_normal_VS_balanceamentoMarcadores_orig_test/ 
+processed_images(pad 28x28px)/
+processed_images(pad 28x28px)_txt/Frontal/

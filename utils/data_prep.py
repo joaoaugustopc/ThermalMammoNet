@@ -1240,16 +1240,6 @@ def load_raw_images(angle_dir, exclude=False, exclude_set=None):
                     delim = ';' if ';' in f.readline() else ' '
                     f.seek(0)
                 arr = np.loadtxt(fpath, delimiter=delim, dtype=np.float32)
-
-                
-                """
-                arr = arr[..., None]
-
-                # Redimensionamento com padding bicúbico
-                arr_resized = tf.image.resize_with_pad(
-                    arr, resize_to, resize_to, method='bicubic'
-                ).numpy().squeeze()
-                """
                 
                 imgs.append(arr)
                 labels.append(label_val)
