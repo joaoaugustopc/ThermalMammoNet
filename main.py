@@ -2040,6 +2040,10 @@ def recuperar_img(input_folder, output_folder):
         path = os.path.join(input_folder, fname)
         editada = cv2.imread(path, cv2.IMREAD_UNCHANGED)
 
+        if editada.dtype == np.uint8:
+            gray_8 = cv2.cvtColor(editada, cv2.COLOR_BGR2GRAY)   # 0–255
+            editada = (gray_8.astype(np.uint16) * 257)
+
         if editada is None:
             print(f"Aviso: não foi possível ler {fname}. Pulando.")
             continue
@@ -3055,7 +3059,178 @@ if __name__ == "__main__":
     
     SEMENTE = 13388
 
+    ##### TODO: Testes para entender o problema
+    # input_folder = "processed_images(pad 28x28px)/healthy"
 
+    # for fname in os.listdir(input_folder):
+    #     if not fname.lower().endswith(".png"):
+    #         continue
+
+    #     path = os.path.join(input_folder, fname)
+    #     editada = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    #     gray_8 = cv2.cvtColor(editada, cv2.COLOR_BGR2GRAY)   # 0–255
+    #     gray_16 = (gray_8.astype(np.uint16) * 257)
+
+    #     print(gray_16.shape)
+    #     print(f"{gray_16.max()}| {gray_16.min()}")
+
+
+
+
+
+    ##### TODO: Corrigindo Dataset Tags Fixadas. uint8(3 canais) -> uint16 (1 canal)
+    # recuperar_img("processed_images(pad 28x28px)/healthy", "processed_images(pad 28x28px)_teste_txt/Frontal/healthy")
+    # recuperar_img("processed_images(pad 28x28px)/sick", "processed_images(pad 28x28px)_teste_txt/Frontal/sick")
+
+
+
+    ##### TODO: Verificando as temperaturas maximas e minimas e comparando com o dataset original
+    # exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", "Frontal")
+
+    # X, y, patient_ids, filenames, ids_data = load_raw_images(   
+    #         os.path.join("processed_images(pad 28x28px)_teste_txt", "Frontal"), exclude=True, exclude_set=exclude_set)
+    
+    # X_1, y_1, patient_ids_1, filenames_1, ids_data_1 = load_raw_images(   
+    #         os.path.join("filtered_raw_dataset", "Frontal"), exclude=True, exclude_set=exclude_set)
+
+    # diff_max = 0
+    # diff_min = 0
+
+    # maior_diff_max = 0
+    # maior_diff_min = 0
+
+    # aux = 0
+    # for img, id in zip(X, ids_data):
+    #     diff_max = diff_max + abs(img.max() - X_1[ids_data_1==id].max())
+    #     diff_min = diff_min + abs(img.min() - X_1[ids_data_1==id].min())
+    #     aux +=1
+    #     maior_diff_max = max(maior_diff_max, abs(img.max() - X_1[ids_data_1==id].max()))
+    #     maior_diff_min = max(maior_diff_min, abs(img.min() - X_1[ids_data_1==id].min()))
+    #     print(f"Atual:{img.max()}|{img.min()}\nOriginal:{X_1[ids_data_1==id].max()}|{X_1[ids_data_1==id].min()}")
+
+    # media_diff_max = diff_max/aux
+    # media_diff_min = diff_min/aux
+
+    # print(f"Media max: {media_diff_max} | Media min: {media_diff_min}") # Media max: 6.561279296875e-07 | Media min: 0.002845481872558594
+    # print(f"Maior diff max: {maior_diff_max} | Maior diff min: {maior_diff_min}") # Maior diff max: 3.814697265625e-06 | Maior diff min: 0.5509796142578125
+
+
+
+    #### TODO: Pegando a diferença media de temperaturas entre os dois datasets
+
+    # def load_matrix_txt(txt_path: Path) -> np.ndarray:
+    #     try:
+    #         with open(txt_path, 'r') as f:
+    #                 delim = ';' if ';' in f.readline() else ' '
+    #                 f.seek(0)
+    #         return np.loadtxt(txt_path, delimiter=delim ,dtype=float)
+    #     except Exception as e:
+    #         raise RuntimeError(f"Falha ao ler {txt_path}: {e}")
+
+    # def save_matrix_txt(txt_path: Path, mat: np.ndarray, decimals: int = 2):
+    #     # Gera um formato como "%.2f" automaticamente
+    #     fmt = f"%.{decimals}f"
+    #     # Garante diretório
+    #     txt_path.parent.mkdir(parents=True, exist_ok=True)
+    #     # newline='\n' para consistência
+    #     np.savetxt(txt_path, mat, fmt=fmt, newline="\n")
+
+    # def round_values_in_file(src: Path, dst: Path, decimals: int = 2):
+    #     mat = load_matrix_txt(src)
+    #     rounded = np.around(mat, decimals=decimals)
+    #     save_matrix_txt(dst, rounded, decimals=decimals)
+
+    # def round_dataset(recovered_root: Path, out_root: Path, glob_pattern: str = "**/*.txt", decimals: int = 2) -> int:
+    #     files = list(recovered_root.glob(glob_pattern))
+    #     count = 0
+    #     for src in files:
+    #         rel = src.relative_to(recovered_root)
+    #         dst = out_root / rel
+    #         try:
+    #             round_values_in_file(src, dst, decimals=decimals)
+    #             count += 1
+    #         except Exception as e:
+    #             print(f"[WARN] Não foi possível arredondar {src}: {e}", file=sys.stderr)
+    #     return count
+    
+    # def compute_image_diffs(raw_file: Path, rec_file: Path):
+    #     raw = load_matrix_txt(raw_file)
+    #     rec = load_matrix_txt(rec_file)
+    #     if raw.shape != rec.shape:
+    #         raise ValueError(f"Shapes diferentes: {raw_file} {raw.shape} vs {rec_file} {rec.shape}")
+    #     diff = rec - raw
+    #     mean_abs = float(np.mean(np.abs(diff)))
+    #     mean_signed = float(np.mean(diff))
+    #     rows, cols = raw.shape
+    #     return mean_abs, mean_signed, rows, cols
+
+    # def compare_datasets(raw_root: Path, recovered_rounded_root: Path, glob_pattern: str = "**/*.txt", report_csv: Path | None = None):
+    #     raw_files = list(raw_root.glob(glob_pattern))
+    #     matched = 0
+    #     skipped = 0
+    #     rows = []
+    #     total_abs = 0.0
+    #     total_signed = 0.0
+
+    #     for raw_file in raw_files:
+    #         rel = raw_file.relative_to(raw_root)
+    #         rec_file = recovered_rounded_root / rel
+    #         if not rec_file.exists():
+    #             print(f"[WARN] Sem par em recovered para {rel}, pulando.", file=sys.stderr)
+    #             skipped += 1
+    #             continue
+    #         try:
+    #             mean_abs, mean_signed, r, c = compute_image_diffs(raw_file, rec_file)
+    #             rows.append({
+    #                 "rel_path": str(rel).replace('\\','/'),
+    #                 "rows": r,
+    #                 "cols": c,
+    #                 "mean_abs_diff": f"{mean_abs:.6f}",
+    #                 "mean_signed_diff": f"{mean_signed:.6f}",
+    #             })
+    #             total_abs += mean_abs
+    #             total_signed += mean_signed
+    #             matched += 1
+    #         except Exception as e:
+    #             print(f"[WARN] Erro comparando {rel}: {e}", file=sys.stderr)
+    #             skipped += 1
+
+    #     overall_abs = (total_abs / matched) if matched > 0 else float("nan")
+    #     overall_signed = (total_signed / matched) if matched > 0 else float("nan")
+
+    #     # Escreve CSV se pedido
+    #     if report_csv is not None:
+    #         report_csv.parent.mkdir(parents=True, exist_ok=True)
+    #         with open(report_csv, "w", newline="", encoding="utf-8") as f:
+    #             writer = csv.DictWriter(f, fieldnames=["rel_path", "rows", "cols", "mean_abs_diff", "mean_signed_diff"])
+    #             writer.writeheader()
+    #             writer.writerows(rows)
+    #             # linha de resumo
+    #             writer.writerow({
+    #                 "rel_path": "__OVERALL__",
+    #                 "rows": "",
+    #                 "cols": "",
+    #                 "mean_abs_diff": f"{overall_abs:.6f}",
+    #                 "mean_signed_diff": f"{overall_signed:.6f}",
+    #             })
+
+    #     # Também imprime um pequeno resumo
+    #     print(f"\nImagens comparadas: {matched} (ignoradas: {skipped})")
+    #     print(f"Média global |diff|: {overall_abs:.6f}")
+    #     print(f"Média global diff (assinado): {overall_signed:.6f}")
+        
+        
+    # # n = round_dataset(Path("processed_images(pad 28x28px)_teste_txt"), "processed_images(pad 28x28px)_teste_txt_rounded", glob_pattern="**/*.txt", decimals=2)
+    # # print(f"Arquivos arredondados/salvos: {n}")
+        
+    # compare_datasets(Path("filtered_raw_dataset"), Path("processed_images(pad 28x28px)_teste_txt_rounded"), glob_pattern="**/*.txt", report_csv=Path("diferencas_datasets_tags_fixas.csv"))
+
+
+
+
+
+    
+    
     # train_model_cv(Vgg_16,
     #                raw_root="processed_images(pad 28x28px)_txt",
     #                angle="Frontal",
@@ -3182,20 +3357,6 @@ if __name__ == "__main__":
     #         print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
 
 
-    ##### TODO: Testes para entender o problema
-    # input_folder = "processed_images(pad 28x28px)/healthy"
-
-    # for fname in os.listdir(input_folder):
-    #     if not fname.lower().endswith(".png"):
-    #         continue
-
-    #     path = os.path.join(input_folder, fname)
-    #     editada = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-    #     gray_8 = cv2.cvtColor(editada, cv2.COLOR_BGR2GRAY)   # 0–255
-    #     gray_16 = (gray_8.astype(np.uint16) * 257)
-
-    #     print(gray_16.shape)
-    #     print(f"{gray_16.max()}| {gray_16.min()}")
 
 
 
