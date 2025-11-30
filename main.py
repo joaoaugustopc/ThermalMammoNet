@@ -3059,8 +3059,114 @@ if __name__ == "__main__":
     
     SEMENTE = 13388
 
-    recuperar_img("processed_images_padmovido/healthy", "processed_images_padmovido_txt/Frontal/healthy")
-    recuperar_img("processed_images_padmovido/sick", "processed_images_padmovido_txt/Frontal/sick")
+    def load_matrix_txt(txt_path: Path) -> np.ndarray:
+        try:
+            with open(txt_path, 'r') as f:
+                    delim = ';' if ';' in f.readline() else ' '
+                    f.seek(0)
+            return np.loadtxt(txt_path, delimiter=delim ,dtype=float)
+        except Exception as e:
+            raise RuntimeError(f"Falha ao ler {txt_path}: {e}")
+
+    def save_matrix_txt(txt_path: Path, mat: np.ndarray, decimals: int = 2):
+        # Gera um formato como "%.2f" automaticamente
+        fmt = f"%.{decimals}f"
+        # Garante diretório
+        txt_path.parent.mkdir(parents=True, exist_ok=True)
+        # newline='\n' para consistência
+        np.savetxt(txt_path, mat, fmt=fmt, newline="\n")
+
+    def round_values_in_file(src: Path, dst: Path, decimals: int = 2):
+        mat = load_matrix_txt(src)
+        rounded = np.around(mat, decimals=decimals)
+        save_matrix_txt(dst, rounded, decimals=decimals)
+
+    def round_dataset(recovered_root: Path, out_root: Path, glob_pattern: str = "**/*.txt", decimals: int = 2) -> int:
+        files = list(recovered_root.glob(glob_pattern))
+        count = 0
+        for src in files:
+            rel = src.relative_to(recovered_root)
+            dst = out_root / rel
+            try:
+                round_values_in_file(src, dst, decimals=decimals)
+                count += 1
+            except Exception as e:
+                print(f"[WARN] Não foi possível arredondar {src}: {e}", file=sys.stderr)
+        return count
+    
+    def compute_image_diffs(raw_file: Path, rec_file: Path):
+        raw = load_matrix_txt(raw_file)
+        rec = load_matrix_txt(rec_file)
+        if raw.shape != rec.shape:
+            raise ValueError(f"Shapes diferentes: {raw_file} {raw.shape} vs {rec_file} {rec.shape}")
+        diff = rec - raw
+        mean_abs = float(np.mean(np.abs(diff)))
+        mean_signed = float(np.mean(diff))
+        rows, cols = raw.shape
+        return mean_abs, mean_signed, rows, cols
+
+    def compare_datasets(raw_root: Path, recovered_rounded_root: Path, glob_pattern: str = "**/*.txt", report_csv: Path | None = None):
+        raw_files = list(raw_root.glob(glob_pattern))
+        matched = 0
+        skipped = 0
+        rows = []
+        total_abs = 0.0
+        total_signed = 0.0
+
+        for raw_file in raw_files:
+            rel = raw_file.relative_to(raw_root)
+            rec_file = recovered_rounded_root / rel
+            if not rec_file.exists():
+                print(f"[WARN] Sem par em recovered para {rel}, pulando.", file=sys.stderr)
+                skipped += 1
+                continue
+            try:
+                mean_abs, mean_signed, r, c = compute_image_diffs(raw_file, rec_file)
+                rows.append({
+                    "rel_path": str(rel).replace('\\','/'),
+                    "rows": r,
+                    "cols": c,
+                    "mean_abs_diff": f"{mean_abs:.6f}",
+                    "mean_signed_diff": f"{mean_signed:.6f}",
+                })
+                total_abs += mean_abs
+                total_signed += mean_signed
+                matched += 1
+            except Exception as e:
+                print(f"[WARN] Erro comparando {rel}: {e}", file=sys.stderr)
+                skipped += 1
+
+        overall_abs = (total_abs / matched) if matched > 0 else float("nan")
+        overall_signed = (total_signed / matched) if matched > 0 else float("nan")
+
+        # Escreve CSV se pedido
+        if report_csv is not None:
+            report_csv.parent.mkdir(parents=True, exist_ok=True)
+            with open(report_csv, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=["rel_path", "rows", "cols", "mean_abs_diff", "mean_signed_diff"])
+                writer.writeheader()
+                writer.writerows(rows)
+                # linha de resumo
+                writer.writerow({
+                    "rel_path": "__OVERALL__",
+                    "rows": "",
+                    "cols": "",
+                    "mean_abs_diff": f"{overall_abs:.6f}",
+                    "mean_signed_diff": f"{overall_signed:.6f}",
+                })
+
+        # Também imprime um pequeno resumo
+        print(f"\nImagens comparadas: {matched} (ignoradas: {skipped})")
+        print(f"Média global |diff|: {overall_abs:.6f}")
+        print(f"Média global diff (assinado): {overall_signed:.6f}")
+        
+        
+        
+    n = round_dataset(Path("processed_images_padmovido_txt"), "processed_images_padmovido_txt_rounded", glob_pattern="**/*.txt", decimals=2)
+    print(f"Arquivos arredondados/salvos: {n}")
+
+    compare_datasets(Path("filtered_raw_dataset"), Path("processed_images_padmovido_txt_rounded"), glob_pattern="**/*.txt", report_csv=Path("diferencas_datasets_tags_movidas.csv"))
+
 
 
 
