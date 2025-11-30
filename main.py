@@ -2860,7 +2860,9 @@ def comparar_modelos_por_id_com_consistencia(
     exp1_base, exp1_modelo,
     exp2_base, exp2_modelo,
     mensagem="mensagem_comparacao:",
-    output_dir="Comparacao"
+    output_dir="Comparacao",
+    salvar_mapas = False,
+    dir_mapas = None
 ):
     """
     Lógica solicitada:
@@ -2922,19 +2924,6 @@ def comparar_modelos_por_id_com_consistencia(
 
         return por_id, totais_arquivos
 
-    # Coleta dos dois experimentos
-    exp1_por_id, exp1_totais = coletar_por_experimento(exp1_base, exp1_modelo)
-    exp2_por_id, exp2_totais = coletar_por_experimento(exp2_base, exp2_modelo)
-
-    # Arquivo de relatório
-    ensure_dir(output_dir)
-    relatorio_path = os.path.join(output_dir, "relatorio_comparacao.txt")
-    with open(relatorio_path, "w", encoding="utf-8") as f:
-        if mensagem == "mensagem_comparacao:":
-            f.write(f"Comparando o modelo {exp1_modelo} com {exp2_modelo}\n")
-        else:
-            f.write(mensagem.strip() + "\n")
-
     # Função para decidir consistência de um ID dentro de UM experimento
     def rotular_consistencia(entry: dict):
         """
@@ -2959,6 +2948,59 @@ def comparar_modelos_por_id_com_consistencia(
         if ca > 0:
             return "CONSISTENTE", "Acertos", {"Acertos": ca, "Erros": ce}, total
         return "CONSISTENTE", "Erros", {"Acertos": ca, "Erros": ce}, total
+
+    if dir_mapas is None:
+        dir_mapas = os.path.join(output_dir, "mapas_calor")
+    
+    def copiar_mapas_id(
+        classe: str,
+        categoria: str,  # "Erro_Acerto", "Acerto_Erro", "Manteve_Acerto", "Manteve_Erro"
+        _id: str,
+        e1_entry: dict,
+        e2_entry: dict,
+        g1: str,
+        g2: str,
+    ):
+        """
+        Copia os arquivos de exp1 e exp2 para a pasta:
+          <dir_mapas>/<classe>/<categoria>/exp1/
+          <dir_mapas>/<classe>/<categoria>/exp2/
+        Só usa os arquivos do grupo consistente g1/g2.
+        """
+        # Pastas destino
+        dest_exp1 = os.path.join(dir_mapas, classe, categoria, "exp1")
+        dest_exp2 = os.path.join(dir_mapas, classe, categoria, "exp2")
+        ensure_dir(dest_exp1)
+        ensure_dir(dest_exp2)
+
+        # Exp1
+        for fname in e1_entry[g1]:
+            src = os.path.join(exp1_base, g1, exp1_modelo, classe, fname)
+            if os.path.exists(src):
+                # Para evitar colisões entre IDs iguais de classes diferentes, já estamos
+                # separando por /classe/, então o nome pode ser mantido.
+                shutil.copy2(src, os.path.join(dest_exp1, fname))
+
+        # Exp2
+        for fname in e2_entry[g2]:
+            src = os.path.join(exp2_base, g2, exp2_modelo, classe, fname)
+            if os.path.exists(src):
+                shutil.copy2(src, os.path.join(dest_exp2, fname))
+    
+
+    # Coleta dos dois experimentos
+    exp1_por_id, exp1_totais = coletar_por_experimento(exp1_base, exp1_modelo)
+    exp2_por_id, exp2_totais = coletar_por_experimento(exp2_base, exp2_modelo)
+
+    # Arquivo de relatório
+    ensure_dir(output_dir)
+    relatorio_path = os.path.join(output_dir, "relatorio_comparacao.txt")
+    with open(relatorio_path, "w", encoding="utf-8") as f:
+        if mensagem == "mensagem_comparacao:":
+            f.write(f"Comparando o modelo {exp1_modelo} com {exp2_modelo}\n")
+        else:
+            f.write(mensagem.strip() + "\n")
+
 
     # Loop por classe para montar o relatório
     with open(relatorio_path, "a", encoding="utf-8") as report:
@@ -3009,15 +3051,32 @@ def comparar_modelos_por_id_com_consistencia(
                     revisao_manual.append((_id, detalhe_exp1, detalhe_exp2))
                     continue
 
+                categoria = None
+
                 # Aqui ambos CONSISTENTES -> comparar grupos
                 if g1 == "Erros" and g2 == "Acertos":
                     melhorou.append(_id)
+                    categoria = "Erro_Acerto"
                 elif g1 == "Acertos" and g2 == "Erros":
                     piorou.append(_id)
+                    categoria = "Acerto_Erro"
                 elif g1 == "Acertos" and g2 == "Acertos":
                     manteve_ac.append(_id)
+                    categoria = "Manteve_Acerto"
                 elif g1 == "Erros" and g2 == "Erros":
                     manteve_er.append(_id)
+                    categoria = "Manteve_Erro"
+
+                if salvar_mapas and categoria is not None:
+                    copiar_mapas_id(
+                        classe=classe,
+                        categoria=categoria,
+                        _id = _id,
+                        e1_entry= e1_entry,
+                        e2_entry= e2_entry,
+                        g1 = g1,
+                        g2 = g2
+                    )
 
             # ---- Relatório: resultados de comparação (apenas IDs consistentes) ----
             report.write("\n---------------------------- Comparação (apenas IDs CONSISTENTES em ambos) ----------------------------\n")
@@ -3059,16 +3118,135 @@ if __name__ == "__main__":
     
     SEMENTE = 13388
 
-    train_model_cv(Vgg_16,
-                   raw_root="processed_images_padmovido_txt",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="Vgg_AUG_CV_marcadores_movidos_fixados_30_11",
-                   resize_method="BlackPadding")
+    MODEL_DIRS = {
+    "vgg":    "modelos/Vgg_16",     # pasta onde salvou os .h5 do VGG-16
+    "resnet": "modelos/ResNet34"
+    }
+
+    CONF_BASE  = "Resultados_tags_movidas_fixas_30_11"     # pasta-raiz onde deseja guardar as figuras
+    CLASSES    = ("Healthy", "Sick")    # rótulos das classes
+    RAW_ROOT   = "processed_images_padmovido_txt" # pasta com os exames originais
+    ANGLE      = "Frontal"              # visão utilizada nos treinos
+
+    exclude_set = listar_imgs_nao_usadas("Termografias_Dataset_Segmentação/images", ANGLE)
+
+    X, y , patient_ids, filenames, ids_data = load_raw_images(
+        f"{RAW_ROOT}/Frontal", exclude=True, exclude_set=exclude_set)
+    # --------------------------------------------------
+    # --- LISTA COMPLETA DE EXPERIMENTOS ---------------
+    # --------------------------------------------------
+    experiments = [
+        
+    
+        {
+            "resize_method": "BlackPadding",
+            "message": "Vgg_AUG_CV_marcadores_movidos_fixados_30_11",
+            "segment": "none",
+            "segmenter_path": "",
+        },
+    
+    ]
+
+    # --------------------------------------------------
+    # --- LOOP PRINCIPAL -------------------------------
+    # --------------------------------------------------
+    for exp in experiments:
+
+        rsz           = exp["resize_method"]
+        msg           = exp["message"]
+        segment       = exp["segment"]
+        segmenter_path= exp["segmenter_path"]
+
+        # Identifica qual backbone para escolher a pasta correta
+        backbone_key = "resnet" if msg.upper().startswith("RESNET") else "vgg"
+        model_dir    = MODEL_DIRS[backbone_key]
+
+        # Extrai o sufixo final (BlackPadding, Distorcido, GrayPadding)
+        out_dir_cm = Path(CONF_BASE) / "Confusion_Matrix"
+        out_dir_cm.mkdir(parents=True, exist_ok=True)
+
+        for i in range(5):                                   # k-fold = 5
+            # ---- Caminhos de entrada ---------------------
+            model_path_cm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+            split_path_cm = f"splits/{msg}_Frontal_F{i}.json"
+
+            # ---- Nome para salvar arquivos/figura --------
+            cm_message = f"{msg}_F{i}"
+
+
+            # ---- Avaliação -------------------------------
+            y_pred = evaluate_model_cm(
+                model_path   = model_path_cm,
+                output_path  = str(out_dir_cm),
+                split_json   = split_path_cm,
+                raw_root     = RAW_ROOT,
+                message      = cm_message,
+                angle        = ANGLE,
+                classes      = CLASSES,
+                rgb          = False,
+                resize_method= rsz,
+                resize       = True,
+                resize_to    = 224,
+                segmenter= segment,
+                seg_model_path = segmenter_path,
+                fold= i
+            )
+
+            split_json_hm = f"splits/{msg}_Frontal_F{i}.json"
+
+            X_test, y_test, ids_test = ppeprocessEigenCam(
+                X, y, ids_data,
+                split_json_hm,
+                segment=segment,
+                segmenter_path=segmenter_path,
+                resize_method= rsz,  # ou "BlackPadding", "GrayPadding"
+                fold = i
+            )
+
+            hits = y_pred == y_test 
+            miss = y_pred != y_test
+
+            # ---------- EigenCAM ----------
+            model_path_hm = f"{model_dir}/{msg}_Frontal_F{i}.h5"
+            out_dir_hm    = f"{CONF_BASE}/CAM_results/Acertos/{msg}_F{i}"
+            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+
+            run_eigencam(
+                imgs       = X_test[hits],
+                labels     = y_test[hits],
+                ids        = ids_test[hits],
+                model_path = model_path_hm,
+                out_dir    = out_dir_hm,
+            )
+
+            out_dir_hm    = f"{CONF_BASE}/CAM_results/Erros/{msg}_F{i}"
+            Path(out_dir_hm).mkdir(parents=True, exist_ok=True)
+
+            run_eigencam(
+                imgs       = X_test[miss],
+                labels     = y_test[miss],
+                ids        = ids_test[miss],
+                model_path = model_path_hm,
+                out_dir    = out_dir_hm,
+            )
+
+            print(f"[OK] {msg} | fold {i} → {out_dir_hm}")
+
+
+
+    for i in range(5):
+        comparar_modelos_por_id_com_consistencia(
+                exp1_base=f"Resultados_corrigidos_12_10_25/CAM_results",
+                exp1_modelo=f"Vgg_AUG_CV_BlackPadding_13_09_25_F{i}",
+                exp2_base=f"Resultados_tags_movidas_fixas_30_11/CAM_results",
+                exp2_modelo=f"Vgg_AUG_CV_marcadores_movidos_fixados_30_11_F{i}",
+                output_dir=f"relatorio_tags_movidas_fixas/F{i}",
+                salvar_mapas= True
+            )
+
+    
+
+    
 
 
 
