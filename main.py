@@ -3114,44 +3114,133 @@ def comparar_modelos_por_id_com_consistencia(
     print(f"Relatório: {relatorio_path}")
     print(f"Pasta de saída: {output_dir}")
 
+
+import argparse
+
+def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--raw_root", required=True)
+    parser.add_argument("--angle", default="Frontal")
+    parser.add_argument("--k", type=int, default=5)
+    parser.add_argument("--resize_to", type=int, default=224)
+    parser.add_argument("--n_aug", type=int, default=2)
+    parser.add_argument("--batch", type=int, default=8)
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--message", required=True)
+    parser.add_argument("--resize_method", default="BlackPadding")
+    parser.add_argument("--segment", default=None)
+
+    args = parser.parse_args()
+
+    if args.seed is None:
+        VALUE_SEED = int(time.time()*1000) % 15000
+        random.seed(VALUE_SEED)
+        SEMENTE = random.randint(0,1500000)
+    else:
+        SEMENTE = args.seed
+
+    if args.segment != None:
+        train_model_cv(Vgg_16,
+                    raw_root=args.raw_root,
+                    angle=args.angle,
+                    k=args.k,                 
+                    resize_to=args.resize_to,
+                    n_aug=args.n_aug,             
+                    batch=args.batch,
+                    seed= SEMENTE,
+                    message=args.message,
+                    resize_method=args.resize_method)
+        
+    elif args.segment == "unet":
+        imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks_Black_Padding("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks", True, True, 224)
+
+        model = unet_model()
+
+        model.summary()
+
+        earlystop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.01, patience=50, verbose=1, mode='auto')
+
+        checkpoint = tf.keras.callbacks.ModelCheckpoint(f"modelos/unet/{args.message}.h5", monitor='val_loss', verbose=1, save_best_only=True, 
+                                                                save_weights_only=False, mode='auto')
+
+        history = model.fit(imgs_train, masks_train, epochs = 500, validation_data= (imgs_valid, masks_valid), callbacks= [checkpoint, earlystop], batch_size = 8, verbose = 1, shuffle = True)
+
+        # Gráfico de perda de treinamento
+        plt.figure(figsize=(10, 6))
+        plt.plot(history.history['loss'], label='Training Loss')
+        plt.title(f'Training Loss Convergence for unet - Frontal')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(f"unet_loss_convergence_{args.message}.png")
+        plt.close()
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(history.history['val_loss'], label='Validation Loss')
+        plt.title(f'Validation Loss Convergence for unet - Frontal')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(f"unet_val_loss_convergence_{args.message}.png")
+        plt.close()
+
+
+
+
+
 if __name__ == "__main__":
-    
-    SEMENTE = 13388
+    main()
 
-    train_model_cv(Vgg_16,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= SEMENTE,
-                   message="Vgg_AUG_CV_retreinando_modelo_original_30_11",
-                   resize_method="BlackPadding")
+    # SEMENTE = 13388
 
-    
-    
+    # VALUE_SEED = int(time.time()*1000) % 15000
+    # random.seed(VALUE_SEED)
 
-    
+    # with open("modelos/random_seed.txt", "a") as f:
+    #     f.write(f"SEMENTE GERAL: {VALUE_SEED}\n")
 
 
 
+    # for i in range(6):
+    #     semente = random.randint(0,1500000)
 
+    #     train_model_cv(Vgg_16,
+    #                raw_root="filtered_raw_dataset",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= semente,
+    #                message=f"Vgg_AUG_CV_DatasetOriginal_t{i}",
+    #                resize_method="BlackPadding")
 
-
-
-
-    
-
-
-    
-
-
-
+    #     clear_memory()
 
     
+    # VALUE_SEED = int(time.time()*1000) % 15000
+    # random.seed(VALUE_SEED)
 
-    
+    # with open("modelos/random_seed.txt", "a") as f:
+    #     f.write(f"SEMENTE GERAL: {VALUE_SEED}\n")
 
-    
-    
+
+
+    # for i in range(6):
+    #     semente = random.randint(0,1500000)
+
+    #     train_model_cv(Vgg_16,
+    #                raw_root="processed_images(pad 28x28px)_teste_txt",
+    #                angle="Frontal",
+    #                k=5,                 
+    #                resize_to=224,
+    #                n_aug=2,             
+    #                batch=8,
+    #                seed= semente,
+    #                message=f"Vgg_AUG_CV_DatasetTagFixedTam_t{i}",
+    #                resize_method="BlackPadding")
+
+    #     clear_memory()
