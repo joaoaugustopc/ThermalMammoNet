@@ -2006,7 +2006,7 @@ def transform_temp_img(input_folder, output_folder):
             norm = ((temperatura - temp_min) / (temp_max - temp_min) * 65535).astype(np.uint16)
 
             out_name = os.path.splitext(fname)[0] + ".png"
-            # cv2.imwrite(os.path.join(output_folder, out_name), norm)
+            cv2.imwrite(os.path.join(output_folder, out_name), norm)
 
     # salvar os limites em JSON
     with open(os.path.join(output_folder, "limites.json"), "w") as f:
@@ -3188,7 +3188,13 @@ def main():
         plt.close()
 
 
-def get_imgs_lim_seg_data(input_folder, output_folder, message =None):
+def get_imgs_lim_seg_data(input_folder):
+    """
+    Função utilizada para obter e salvar os limites das imagens do dataset de segmentação para que seja possível transformar
+    as imagens para escala temperatura em .txt.
+    
+    :param input_folder: Pasta com as imagens.
+    """
 
     padrao_chave = re.compile(r"^T0*(\d+)\.\d+\.\d+\.[A-Z]\.(\d{4}-\d{2}-\d{2})\.\d{2}\.png$", re.IGNORECASE)
 
@@ -3219,7 +3225,7 @@ def get_imgs_lim_seg_data(input_folder, output_folder, message =None):
         else:
             print(f"NÃO encontrou {key}")
 
-    path = os.path.join(output_folder, "limites.json")
+    path = os.path.join(input_folder, "limites.json")
 
     with open(path, "w") as f:
         json.dump(limitesdump, f, indent= 4)
@@ -3228,8 +3234,9 @@ def get_imgs_lim_seg_data(input_folder, output_folder, message =None):
 
 
 if __name__ == "__main__":
-    # main()
+    main()
 
-    recuperar_img("Termografias_Dataset_Segmentação_Marcadores/images", "Teste_Dataset_Segmentação_txt/images")
+    # recuperar_img("Termografias_Dataset_Segmentação_Marcadores/images", "Teste_Dataset_Segmentação_txt/images")
 
-    # get_imgs_lim_seg_data("Termografias_Dataset_Segmentação_Marcadores/images", "Termografias_Dataset_Segmentação_Marcadores/images")
+    # # Termografias_Dataset_Segmentação_Marcadores : Dataset em .png obtidos através da função transform_temp_img
+    # _imgs_lim_seg_data("Termografias_Dataset_Segmentação_Marcadores/images")
