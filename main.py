@@ -2006,7 +2006,7 @@ def transform_temp_img(input_folder, output_folder):
             norm = ((temperatura - temp_min) / (temp_max - temp_min) * 65535).astype(np.uint16)
 
             out_name = os.path.splitext(fname)[0] + ".png"
-            cv2.imwrite(os.path.join(output_folder, out_name), norm)
+            # cv2.imwrite(os.path.join(output_folder, out_name), norm)
 
     # salvar os limites em JSON
     with open(os.path.join(output_folder, "limites.json"), "w") as f:
@@ -3188,59 +3188,48 @@ def main():
         plt.close()
 
 
+def get_imgs_lim_seg_data(input_folder, output_folder, message =None):
+
+    padrao_chave = re.compile(r"^T0*(\d+)\.\d+\.\d+\.[A-Z]\.(\d{4}-\d{2}-\d{2})\.\d{2}\.png$", re.IGNORECASE)
+
+    limitesdump = {}
+    for file in os.listdir(input_folder):
+        m = padrao_chave.match(file)
+
+        if m:
+            _id = m.group(1)
+            _data = m.group(2)
+
+        with open("limites_raw/Frontal/healthy/limites.json", "r") as f:
+            limites = json.load(f)
+        with open("limites_raw/Frontal/sick/limites.json", "r") as f:
+            limites2 = json.load(f)
+
+        key = f"{_id}_img_Static-Frontal_{_data}.txt"
+
+
+        if limites.get(key) != None:
+            print(f"LIMITES1: {limites[key]['min']} | {limites[key]['max']}")
+            name = file.replace(".png", ".txt")
+            limitesdump[name] = {"min": limites[key]['min'], "max": limites[key]['max'] }
+        elif limites2.get(key) != None:
+            print(f"LIMITES2: {limites2[key]['min']} | {limites2[key]['max']}")
+            name = file.replace(".png", ".txt")
+            limitesdump[name] = {"min": limites2[key]['min'], "max": limites2[key]['max'] }
+        else:
+            print(f"NÃO encontrou {key}")
+
+    path = os.path.join(output_folder, "limites.json")
+
+    with open(path, "w") as f:
+        json.dump(limitesdump, f, indent= 4)
+
 
 
 
 if __name__ == "__main__":
-    main()
+    # main()
 
-    # SEMENTE = 13388
+    recuperar_img("Termografias_Dataset_Segmentação_Marcadores/images", "Teste_Dataset_Segmentação_txt/images")
 
-    # VALUE_SEED = int(time.time()*1000) % 15000
-    # random.seed(VALUE_SEED)
-
-    # with open("modelos/random_seed.txt", "a") as f:
-    #     f.write(f"SEMENTE GERAL: {VALUE_SEED}\n")
-
-
-
-    # for i in range(6):
-    #     semente = random.randint(0,1500000)
-
-    #     train_model_cv(Vgg_16,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= semente,
-    #                message=f"Vgg_AUG_CV_DatasetOriginal_t{i}",
-    #                resize_method="BlackPadding")
-
-    #     clear_memory()
-
-    
-    # VALUE_SEED = int(time.time()*1000) % 15000
-    # random.seed(VALUE_SEED)
-
-    # with open("modelos/random_seed.txt", "a") as f:
-    #     f.write(f"SEMENTE GERAL: {VALUE_SEED}\n")
-
-
-
-    # for i in range(6):
-    #     semente = random.randint(0,1500000)
-
-    #     train_model_cv(Vgg_16,
-    #                raw_root="processed_images(pad 28x28px)_teste_txt",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= semente,
-    #                message=f"Vgg_AUG_CV_DatasetTagFixedTam_t{i}",
-    #                resize_method="BlackPadding")
-
-    #     clear_memory()
+    # get_imgs_lim_seg_data("Termografias_Dataset_Segmentação_Marcadores/images", "Termografias_Dataset_Segmentação_Marcadores/images")
