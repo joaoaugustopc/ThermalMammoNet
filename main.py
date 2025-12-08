@@ -3130,6 +3130,8 @@ def main():
     parser.add_argument("--message", required=True)
     parser.add_argument("--resize_method", default="BlackPadding")
     parser.add_argument("--segment", default=None)
+    parser.add_argument("--segmenter_model", default="none")
+    parser.add_argument("--seg_model_path", default="")
 
     args = parser.parse_args()
 
@@ -3140,7 +3142,7 @@ def main():
     else:
         SEMENTE = args.seed
 
-    if args.segment != None:
+    if args.segment == None:
         train_model_cv(Vgg_16,
                     raw_root=args.raw_root,
                     angle=args.angle,
@@ -3150,10 +3152,13 @@ def main():
                     batch=args.batch,
                     seed= SEMENTE,
                     message=args.message,
-                    resize_method=args.resize_method)
+                    resize_method=args.resize_method,
+                    segmenter= args.segmenter_model,
+                    seg_model_path=args.seg_model_path)
         
     elif args.segment == "unet":
-        imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks_Black_Padding("Frontal", "Termografias_Dataset_Segmentação/images", "Termografias_Dataset_Segmentação/masks", True, True, 224)
+        
+        imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks_Black_Padding("Frontal", "Termografias_Dataset_Segmentação_Frontal_txt_rounded/images", "Termografias_Dataset_Segmentação/masks", True, True, 224)
 
         model = unet_model()
 
@@ -3186,6 +3191,8 @@ def main():
         plt.grid(True)
         plt.savefig(f"unet_val_loss_convergence_{args.message}.png")
         plt.close()
+
+    
 
 
 def get_imgs_lim_seg_data(input_folder):
@@ -3235,6 +3242,7 @@ def get_imgs_lim_seg_data(input_folder):
 
 if __name__ == "__main__":
     main()
+
 
     # recuperar_img("Termografias_Dataset_Segmentação_Marcadores/images", "Teste_Dataset_Segmentação_txt/images")
 

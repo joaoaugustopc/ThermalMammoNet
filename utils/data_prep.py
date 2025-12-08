@@ -1567,8 +1567,33 @@ def load_imgs_masks_Black_Padding(angulo, img_path, mask_path, augment=False, re
     """
     data_imgs, data_masks = filtrar_imgs_masks(angulo, img_path, mask_path)
 
-    imagens = [np.array(Image.open(img).convert('L')) / 255.0 for img in data_imgs]
-    mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
+    # imagens = [np.array(Image.open(img).convert('L')) / 255.0 for img in data_imgs]
+    #mascaras = [np.array(Image.open(mask).convert('L')) / 255.0 for mask in data_masks]
+
+    imagens = []
+    mascaras = []
+
+    for img, mask in zip(data_imgs, data_masks):
+        try:
+            with open(img, 'r') as f:
+                delim = ';' if ';' in f.readline() else ' '
+                f.seek(0)
+            arr = np.loadtxt(img, delimiter=delim, dtype=np.float32)
+
+            arrMask = np.array(Image.open(mask).convert('L')) / 255.0
+            
+            imagens.append(arr)
+            mascaras.append(arrMask)
+    
+        except Exception as e:
+            print(f"Erro ao processar {img}: {e}")
+            continue
+
+    imagens, mascaras = np.array(imagens), np.array(mascaras)
+
+    mn, mx = imagens.min(), imagens.max()
+
+    imagens = normalize(imagens, mn, mx)
 
     if resize:
 
@@ -1581,8 +1606,8 @@ def load_imgs_masks_Black_Padding(angulo, img_path, mask_path, augment=False, re
         imagens = tf_letterbox_black(imagens, target, mode="bilinear")
         mascaras = tf_letterbox_black(mascaras, target, mode="nearest")
 
-        imagens = np.squeeze(imagens, axis=-1)
-        mascaras = np.squeeze(mascaras, axis=-1)
+        imagens = tf.clip_by_value(imagens, 0, 1).numpy().squeeze(axis=-1)
+        mascaras = tf.clip_by_value(mascaras, 0, 1).numpy().squeeze(axis=-1)
 
     
 
