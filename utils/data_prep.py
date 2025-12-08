@@ -1217,6 +1217,20 @@ def filter_dataset_by_id(src_dir: str, dst_dir: str, ids_to_remove):
             shutil.copy2(src_path, dst_path)
 
 
+def load_temp_matrix(txt_path: Path) -> np.ndarray:
+    """
+    Lê o arquivo .txt e devolve uma matriz de temperaturas (float).
+    Detecta automaticamente se o separador é ';' ou ' '.
+    """
+
+    with open(txt_path, 'r') as f:
+        delim = ';' if ';' in f.readline() else ' '
+        f.seek(0)
+    temp = np.loadtxt(txt_path, delimiter=delim, dtype= np.float32)
+
+    return temp
+
+
 
 """
 Carrega o dataaset bruto a partir do caminho fornecido. Exclui os ids do exclude_set e retorna
@@ -1236,10 +1250,8 @@ def load_raw_images(angle_dir, exclude=False, exclude_set=None):
             fpath = os.path.join(angle_dir, label_name, file)
 
             try:
-                with open(fpath, 'r') as f:
-                    delim = ';' if ';' in f.readline() else ' '
-                    f.seek(0)
-                arr = np.loadtxt(fpath, delimiter=delim, dtype=np.float32)
+                
+                arr = load_temp_matrix(fpath)
                 
                 imgs.append(arr)
                 labels.append(label_val)
@@ -1267,10 +1279,7 @@ def load_raw_images_ufpe(angle_dir, exclude=False, exclude_set=None):
             fpath = os.path.join(angle_dir, label_name, file)
 
             try:
-                with open(fpath, 'r') as f:
-                    delim = ';' if ';' in f.readline() else ' '
-                    f.seek(0)
-                arr = np.loadtxt(fpath, delimiter=delim, dtype=np.float32)
+                arr = load_temp_matrix(fpath)
 
                 # Extrai o número do nome do arquivo e define o label
                 match = re.search(r'_T(\d+)_(\d+)', file) or re.search(r'_T(\d+) (\(\d+\))', file)
@@ -1575,10 +1584,7 @@ def load_imgs_masks_Black_Padding(angulo, img_path, mask_path, augment=False, re
 
     for img, mask in zip(data_imgs, data_masks):
         try:
-            with open(img, 'r') as f:
-                delim = ';' if ';' in f.readline() else ' '
-                f.seek(0)
-            arr = np.loadtxt(img, delimiter=delim, dtype=np.float32)
+            arr = load_temp_matrix(img)
 
             arrMask = np.array(Image.open(mask).convert('L')) / 255.0
             
@@ -1897,10 +1903,7 @@ def balance_marker_within_train(X: np.ndarray,
 
     for i in chosen:
         clean_path   = rec_paths_map[ids_data[i]]
-        with open(clean_path, 'r') as f:
-                    delim = ';' if ';' in f.readline() else ' '
-                    f.seek(0)
-        X_bal[i]     = np.loadtxt(clean_path, delimiter=delim, dtype=np.float32)
+        X_bal[i]     = load_temp_matrix(clean_path)
         flags_bal[i] = False                                # agora é “sem”
 
     # --- 4) log rápido ---------------------------------------------------

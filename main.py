@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes, make_tvt_splits_marker_aware, verificar_splits_marker_aware, balance_marker_within_train, extract_id_data
+from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes, make_tvt_splits_marker_aware, verificar_splits_marker_aware, balance_marker_within_train, load_temp_matrix, extract_id_data
 from utils.files_manipulation import move_files_within_folder, create_folder, move_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model, unet_model_retangular
@@ -1987,7 +1987,7 @@ import cv2
 import os
 import json
 
-def transform_temp_img(input_folder, output_folder):
+def transform_temp_img_png16(input_folder, output_folder):
     os.makedirs(output_folder, exist_ok=True)
     limites = {}
 
@@ -1995,10 +1995,7 @@ def transform_temp_img(input_folder, output_folder):
         if fname.endswith(".txt"):
             path = os.path.join(input_folder, fname)
 
-            with open(path, 'r') as f:
-                delim = ';' if ';' in f.readline() else ' '
-                f.seek(0)
-            temperatura = np.loadtxt(path, delimiter= delim)
+            temperatura = load_temp_matrix(path)
 
             temp_min, temp_max = float(temperatura.min()), float(temperatura.max())
             limites[fname] = {"min": temp_min, "max": temp_max}
@@ -2068,6 +2065,115 @@ def recuperar_img(input_folder, output_folder):
         out_name = os.path.splitext(fname)[0] + ".txt"
         np.savetxt(os.path.join(output_folder, out_name), recuperada, fmt="%.6f")
         print(f"Arquivo recuperado: {out_name}")
+
+
+def transform_dataset_to_img_int8(
+        input_root= "filtered_raw_dataset/Frontal",
+        output_root= "filtered_raw_dataset_jpg/Frontal",
+        ext="jpg",
+        three_channels=True
+):
+    
+    input_root = Path(input_root)
+    output_root = Path(output_root)
+    output_root.mkdir(parents = True, exist_ok=True)
+
+    limites = {}
+
+    # classes = ["healthy", "sick"]
+
+    # for cls in classes:
+    # in_dir = input_root / cls
+    # out_dir = output_root / cls
+    in_dir = input_root
+    out_dir = output_root 
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for txt_path in sorted(in_dir.glob("*.txt")):
+        temp = load_temp_matrix(txt_path)
+
+        t_min = float(temp.min())
+        t_max = float(temp.max())
+
+        # Evita divisão por zero se todos os valores forem iguais
+        if abs(t_max - t_min) < 1e-12:
+            # Neste caso, tudo vira 0 e registra mesmo assim
+            norm = np.zeros_like(temp, dtype=np.float32)
+        else:
+            norm = (temp - t_min) / (t_max - t_min)
+
+        # 2) Converte para 0–255 -> uint8
+        img_8bit = (norm * 255.0).clip(0, 255).astype(np.uint8)
+
+        # Converte para 3 canais se for usar na YOLO (BGR)
+        if three_channels:
+            img_to_save = cv2.cvtColor(img_8bit, cv2.COLOR_GRAY2BGR)
+        else:
+            img_to_save = img_8bit
+
+        out_name = txt_path.stem + f".{ext}"
+        out_path = out_dir / out_name
+
+        if ext.lower() in ["jpg", "jpeg"]:
+            cv2.imwrite(str(out_path), img_to_save,
+                        [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        else:
+            cv2.imwrite(str(out_path), img_to_save)
+
+        rel_key = f"{txt_path.stem}"
+        limites[rel_key] = {"min": t_min, "max": t_max}
+
+        print(f"Convertido: {txt_path} -> {out_path}, "
+                f"min={t_min:.2f}, max={t_max:.2f}")
+
+    limites_path = output_root / "limites.json"
+    with open(limites_path, "w") as f:
+        json.dump(limites, f, indent=2)
+
+    print(f"\nLimites salvos em: {limites_path}")
+
+def restore_temperature_from_img(
+    img_path,
+    limites_json="filtered_raw_dataset_jpg/Frontal/limites.json",
+    output_root="filtered_raw_dataset_jpg/Frontal",
+) -> np.ndarray:
+    """
+    Dada uma imagem gerada pelo script de conversão e o JSON de limites,
+    reconstrói (aproximadamente) a matriz de temperatura.
+
+    Retorna um np.ndarray com floats (temperaturas).
+    """
+    img_path = Path(img_path)
+    output_root = Path(output_root)
+
+    # Caminho relativo da imagem em relação à raiz de saída
+    # Ex: healthy/3_img_Static-Frontal_2012-10-08.png
+    rel = img_path.relative_to(output_root)
+    # Remove a extensão -> healthy/3_img_Static-Frontal_2012-10-08
+    key = str(rel.with_suffix(""))
+
+    # Carrega limites
+    with open(limites_json, "r") as f:
+        limites = json.load(f)
+
+    if key not in limites:
+        raise KeyError(f"Chave '{key}' não encontrada em limites.json")
+
+    t_min = float(limites[key]["min"])
+    t_max = float(limites[key]["max"])
+
+    # Lê a imagem em escala de cinza
+    img_gray = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+    if img_gray is None:
+        raise ValueError(f"Não foi possível ler a imagem: {img_path}")
+
+    # Normaliza de volta para [0,1]
+    norm = img_gray.astype(np.float32) / 255.0
+
+    # Reconstrói temperatura
+    temp_rec = norm * (t_max - t_min) + t_min
+
+    return temp_rec
 
 import os
 import json
@@ -3191,6 +3297,9 @@ def main():
         plt.grid(True)
         plt.savefig(f"unet_val_loss_convergence_{args.message}.png")
         plt.close()
+    # elif args.segment == "yolo":
+    
+    # elif args.segment == "yolo2":
 
     
 
@@ -3241,7 +3350,12 @@ def get_imgs_lim_seg_data(input_folder):
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+
+    transform_dataset_to_img_int8(input_root="Termografias_Dataset_Segmentação_Frontal_txt_rounded/images", 
+                                  output_root="Termografia_Dataset_Segmentação_Frontal_jpg/images")
+
+    rename_file("Termografia_Dataset_Segmentação_Frontal_jpg/images/limites.json", "Termografia_Dataset_Segmentação_Frontal_jpg/limites.json")
 
 
     # recuperar_img("Termografias_Dataset_Segmentação_Marcadores/images", "Teste_Dataset_Segmentação_txt/images")
