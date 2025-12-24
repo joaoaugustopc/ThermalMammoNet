@@ -1,0 +1,10 @@
+Fold 00  Acc=0.8431  Prec=0.7500  Rec=0.9000  F1=0.8182
+Tempo de treinamento=1445.40 s
+Fold 01  Acc=0.8980  Prec=1.0000  Rec=0.7059  F1=0.8276
+Tempo de treinamento=1634.74 s
+Fold 02  Acc=0.7843  Prec=0.7500  Rec=0.7143  F1=0.7317
+Tempo de treinamento=1612.53 s
+Fold 03  Acc=0.8600  Prec=0.8421  Rec=0.8000  F1=0.8205
+Tempo de treinamento=1332.69 s
+Fold 04  Acc=0.8571  Prec=0.8000  Rec=0.8421  F1=0.8205
+Tempo de treinamento=2021.16 s
