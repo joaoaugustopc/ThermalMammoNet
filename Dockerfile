@@ -17,6 +17,9 @@ RUN apt-get update && apt-get install -y \
     libtesseract-dev \
     libleptonica-dev \
     && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir tqdm
+RUN pip install "numpy<2"
+
 
 # Configura a variável de ambiente TESSDATA_PREFIX (opcional, mas boa prática)
 # O Tesseract procura os arquivos de idioma (treinamento) em TESSDATA_PREFIX/tessdata
