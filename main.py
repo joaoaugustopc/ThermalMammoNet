@@ -128,7 +128,7 @@ def segment_with_yolo( X_train, X_valid, X_test, model_path):
                 union_mask = np.zeros((H, W), dtype=np.uint8)
 
                 for m, c in zip(masks_np, classes):
-                    if c in (PEITO_ID, MARCADOR_ID):
+                    if c == MARCADOR_ID:
                         m_bin = (m > 0.5).astype(np.uint8)
                         # sempre redimensione máscaras com NEAREST
                         m_resized = cv2.resize(m_bin, (W, H), interpolation=cv2.INTER_NEAREST)
@@ -456,7 +456,7 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                 else:
                     raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
 
-                
+
             if isinstance(model, str):
                 if model == "yolo":
                     print("Modelo YOLO selecionado.")
@@ -3164,8 +3164,11 @@ def main():
                     seg_model_path=args.seg_model_path)
         
     elif args.segment == "unet":
+
+
         
-        imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks_Black_Padding("Frontal", "Termografias_Dataset_Segmentação_Frontal_txt_rounded/images", "Termografias_Dataset_Segmentação/masks", True, True, 224)
+        print("TREINANDO UNET")
+        imgs_train, imgs_valid, masks_train, masks_valid = load_imgs_masks_Black_Padding("Frontal", "Termografias_Dataset_Segmentação_Frontal_txt_rounded/images", "TagsMasks", True, True, 224) # A rede não está aprendendo no treinamento com as mascaras TagsMasks (feitos no photoshop)
 
         model = unet_model()
 
@@ -3263,158 +3266,54 @@ def get_imgs_lim_seg_data(input_folder):
 
 
 if __name__ == "__main__":
-   
-    BASE_DIR = "ResultadosTreinamento30Modelos"
-
-    # Regex para capturar métricas por linha
-    regex_metrics = re.compile(
-        r"Acc=([\d.]+)\s+Prec=([\d.]+)\s+Rec=([\d.]+)\s+F1=([\d.]+)"
-    )
-
-    def extrair_config(nome_arquivo):
-        """
-        Remove a parte '_tX_' para identificar a configuração.
-        Exemplo:
-        Entrada: Vgg_AUG_CV_DatasetTagFixedTam_t3_Frontal.txt
-        Saída:   Vgg_AUG_CV_DatasetTagFixedTam
-        """
-        partes = nome_arquivo.split("_t")
-        return partes[0]
-
-
-    # Dicionário para agrupar resultados por configuração
-    configs = {}
-
-    # Percorrer arquivos
-    for root, dirs, files in os.walk(BASE_DIR):
-        for fname in files:
-            if fname.endswith(".txt"):
-                caminho = os.path.join(root, fname)
-
-                config = extrair_config(fname)
-
-                # Garantir que existe lista para essa configuração
-                if config not in configs:
-                    configs[config] = {
-                        "accs": [], "precs": [], "recs": [], "f1s": []
-                    }
-
-                # Ler somente 5 primeiros folds
-                accs, precs, recs, f1s = [], [], [], []
-                with open(caminho, "r") as f:
-                    for linha in f:
-                        if len(accs) >= 5:
-                            break
-
-                        match = regex_metrics.search(linha)
-                        if match:
-                            acc, prec, rec, f1 = map(float, match.groups())
-                            accs.append(acc)
-                            precs.append(prec)
-                            recs.append(rec)
-                            f1s.append(f1)
-
-                # Adicionar nos resultados globais da configuração
-                configs[config]["accs"].extend(accs)
-                configs[config]["precs"].extend(precs)
-                configs[config]["recs"].extend(recs)
-                configs[config]["f1s"].extend(f1s)
-
-    
-
-    print(len(configs[config]["accs"]), len(configs[config]["f1s"]))
-
-
-    # Criar CSV final
-    output_csv = "resumo_configuracoes.csv"
-
-    with open(output_csv, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "Configuração",
-            "Acc_mean", "Acc_std",
-            "Prec_mean", "Prec_std",
-            "Rec_mean", "Rec_std",
-            "F1_mean", "F1_std",
-            "N_folds"
-        ])
-
-        for config, dados in configs.items():
-            accs = dados["accs"]
-            precs = dados["precs"]
-            recs = dados["recs"]
-            f1s = dados["f1s"]
-
-            writer.writerow([
-                config,
-                np.mean(accs), np.std(accs),
-                np.mean(precs), np.std(precs),
-                np.mean(recs), np.std(recs),
-                np.mean(f1s), np.std(f1s),
-                len(accs)
-            ])
-
-    print(f"Resumo salvo em: {output_csv}")
-
-
-
-
-
 
     # main()
-    ### Não funciona treinar o modelo YOLO usando scriptShell, ocorre erro de memória
+
+
+    ### A yolo também não consegue aprender com as mácaras feitas pelo photoshop. 
+    ### Além disso, na maquina nova, é necessario diminuir o número de workers no treinamento da yolo por causa de memória.
 
 #     resize_imgs_masks_dataset(
 #     img_dir="Termografia_Dataset_Segmentação_Frontal_jpg/images",
-#     mask_dir="Termografias_Dataset_Segmentação/masks",
-#     output_base="Termografias_Dataset_Segmentação_jpg_224",
+#     mask_dir="TagsMasks",
+#     output_base="Termografias_Dataset_Segmentação_TAGS_jpg_224",
 #     target=224,          
 #     resize_method="BlackPadding"
 # )
 
-#     yolo_data("Frontal", "Termografias_Dataset_Segmentação_jpg_224/images", "Termografias_Dataset_Segmentação_jpg_224/masks", "Yolo_dataset_8_12", True)
+#     yolo_data("Frontal", "Termografias_Dataset_Segmentação_TAGS_jpg_224/images", "Termografias_Dataset_Segmentação_TAGS_jpg_224/masks", "Yolo_dataset_24_12", True)
 
-    #Ultimo train38 Então: esse modelo vai ser salvo em train39
     # train_yolo_seg("n", 500, "dataset_yolo_8_12.yaml", seed=349324)
 
-    # train_model_cv(Vgg_16,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= 349324,
-    #                segmenter= "yolo",
-    #                message="testestestesteYOLO", seg_model_path="runs/segment/train39/weights/best.pt",
-    #                resize_method="BlackPadding")
 
 
     # resize_imgs_two_masks_dataset(
     #     img_dir="Termografia_Dataset_Segmentação_Frontal_jpg/images",
     #     mask_breast_dir="Termografias_Dataset_Segmentação/masks",
     #     mask_marker_dir = "Termografias_Dataset_Segmentação_Marcadores/masks",
-    #     output_base="Termografia_dataset_segmentação_two_classes",
+    #     output_base="Termografia_dataset_segmentação_two_classes_24_12",
     #     target=224,          # mesmo tamanho definido no YAML da YOLO,
     #     resize_method="BlackPadding"
     # )
 
 
-    # yolo_data_2_classes("Frontal", "Termografia_dataset_segmentação_two_classes/images", "Termografia_dataset_segmentação_two_classes/masks_breast", "Termografia_dataset_segmentação_two_classes/masks_marker", "dataset_two_classes_yolo_8_12", True)
+    # yolo_data_2_classes("Frontal", "Termografia_dataset_segmentação_two_classes_24_12/images", "Termografia_dataset_segmentação_two_classes_24_12/masks_breast", "Termografia_dataset_segmentação_two_classes_24_12/masks_marker", "dataset_two_classes_yolo_24_12", True)
 
-    # train36
     # train_yolo_seg("n", 500, "dataset_yolo_two_classes.yaml", seed=349324)
 
-    # train_model_cv(Vgg_16,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= 349324,
-    #                segmenter= "yolo",
-    #                message="testestestesteYOLO", seg_model_path="runs/segment/train40/weights/best.pt",
-    #                resize_method="BlackPadding")
+
+    #O modelo da yolo train 2 foi treinado na maquina antiga usando a abordagem two classes.
+    #A chamada abaixa foi para testar a segmentação do marcador selecionando apenas o ID_MARCADOR na função segment_with_yolo.
+    train_model_cv(Vgg_16,
+                   raw_root="filtered_raw_dataset",
+                   angle="Frontal",
+                   k=5,                 
+                   resize_to=224,
+                   n_aug=2,             
+                   batch=8,
+                   seed= 349324,
+                   segmenter= "yolo",
+                   message="testestestesteTAGYOLO", seg_model_path="train2/weights/best.pt",
+                   resize_method="BlackPadding")
 
 
