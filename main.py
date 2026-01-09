@@ -3280,22 +3280,39 @@ def get_imgs_lim_seg_data(input_folder):
 
 
 if __name__ == "__main__":
-
-    files = ["Frontal-mask/healthy/1_img_Static-Frontal_2012-10-08.png",
-"Frontal-mask/healthy/2_img_Static-Frontal_2012-10-08.png",
-"Frontal-mask/healthy/3_img_Static-Frontal_2012-10-08.png",
-"Frontal-mask/healthy/194_img_Static-Frontal_2013-10-02.png",
-"Frontal-mask/sick/202_img_Static-Frontal_2013-10-11.png",
-"Frontal-mask/sick/337_img_Static-Frontal_2020-01-20.png",
-"Frontal-mask/sick/338_img_Static-Frontal_2020-01-22.png",
-"Frontal-mask/sick/342_img_Static-Frontal_2020-01-22.png",
-"Frontal-mask/sick/365_img_Static-Frontal_2020-01-22.png",
-"Frontal-mask/sick/366_img_Static-Frontal_2020-01-22.png",
-"Frontal-mask/sick/366_img_Static-Frontal_2020-09-30.png",   
-"Frontal-mask/sick/373_img_Static-Frontal_2019-06-26.png",
-"Frontal-mask/sick/401_img_Static-Frontal_2019-10-23.png",
-"Frontal-mask/sick/422_img_Static-Frontal_2020-01-22.png"]
+#     files = ["Frontal-mask/healthy/1_img_Static-Frontal_2012-10-08.png",
+# "Frontal-mask/healthy/2_img_Static-Frontal_2012-10-08.png",
+# "Frontal-mask/healthy/3_img_Static-Frontal_2012-10-08.png",
+# "Frontal-mask/healthy/194_img_Static-Frontal_2013-10-02.png",
+# "Frontal-mask/sick/202_img_Static-Frontal_2013-10-11.png",
+# "Frontal-mask/sick/337_img_Static-Frontal_2020-01-20.png",
+# "Frontal-mask/sick/338_img_Static-Frontal_2020-01-22.png",
+# "Frontal-mask/sick/342_img_Static-Frontal_2020-01-22.png",
+# "Frontal-mask/sick/365_img_Static-Frontal_2020-01-22.png",
+# "Frontal-mask/sick/366_img_Static-Frontal_2020-01-22.png",
+# "Frontal-mask/sick/366_img_Static-Frontal_2020-09-30.png",   
+# "Frontal-mask/sick/373_img_Static-Frontal_2019-06-26.png",
+# "Frontal-mask/sick/401_img_Static-Frontal_2019-10-23.png",
+# "Frontal-mask/sick/422_img_Static-Frontal_2020-01-22.png"]
     
+#     for file in files:
+#         img = np.zeros((480,640))
+#         cv2.imwrite(file, img)
+
+    files = os.listdir("Frontal-mask/sick")
+
+
     for file in files:
-        img = np.zeros((480,640))
-        plt.imsave(file, img, cmap = "gray")
+        full_path = os.path.join("Frontal-mask/sick", file)
+        temp = cv2.imread(full_path, cv2.IMREAD_UNCHANGED)
+        if temp is None:
+            print(f"[ERRO] Não foi possível ler o arquivo: {file}")
+            continue # Pula para o próximo arquivo
+        temp = temp / 65535
+        mn = temp.min()
+        mx = temp.max()
+
+        if mn != 0 or mx != 1:
+            print(f"{file} : Min = {mn} | Max = {mx}")
+
+
