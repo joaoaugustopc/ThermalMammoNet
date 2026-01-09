@@ -1323,6 +1323,25 @@ def make_tvt_splits(imgs, labels, ids, k, val_size, seed):
         val_idx   = outer_train_val[val]
         yield train_idx, val_idx, test
 
+import itertools
+
+def make_tvt_split_single(imgs, labels, ids, k, val_size, seed, fold_id=0):
+    sgkf = StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=seed)
+
+    # pega somente o split do fold desejado
+    outer_train_val, test = next(itertools.islice(
+        sgkf.split(imgs, labels, groups=ids), fold_id, None
+    ))
+
+    gss = GroupShuffleSplit(n_splits=1, test_size=val_size, random_state=seed)
+    train, val = next(gss.split(imgs[outer_train_val],
+                                labels[outer_train_val],
+                                groups=ids[outer_train_val]))
+
+    train_idx = outer_train_val[train]
+    val_idx   = outer_train_val[val]
+    return train_idx, val_idx, test
+
 
 
 def augment_train_fold(x_train, y_train, n_aug=1, seed=42, dataset="uff"):
