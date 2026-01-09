@@ -251,3 +251,14 @@ yolo_teste_seg
 Yolo_dataset_24_12
 dataset_two_classes_yolo_24_12
 dataset_two_classes_yolo_24_12_2
+
+.gitignore
+dataset_two_classes_yolo_24_12
+TagsMasks
+Termografia_dataset_segmentação_two_classes_24_12
+Termografias_Dataset_Segmentação_TAGS_jpg_224
+teste_msk_tag
+train2
+Yolo_dataset_24_12
+yolo_teste_TAG
+yolo_teste_TAG_2
