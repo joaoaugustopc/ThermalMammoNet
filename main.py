@@ -3277,53 +3277,25 @@ def get_imgs_lim_seg_data(input_folder):
 
 if __name__ == "__main__":
 
-    main()
+    # main()
 
 
-    ### A yolo também não consegue aprender com as mácaras feitas pelo photoshop. 
-    ### Além disso, na maquina nova, é necessario diminuir o número de workers no treinamento da yolo por causa de memória.
+    # for i in range(6):
+    #     copy_file(f"history/Vgg_16/Vgg_AUG_CV_DatasetSegFixedTagTemp_t{i}_Frontal.txt", 
+    #                 f"ResultadosTreinamento30Modelos/Vgg16/" )
 
-#     resize_imgs_masks_dataset(
-#     img_dir="Termografia_Dataset_Segmentação_Frontal_jpg/images",
-#     mask_dir="TagsMasks",
-#     output_base="Termografias_Dataset_Segmentação_TAGS_jpg_224",
-#     target=224,          
-#     resize_method="BlackPadding"
-# )
+    ### Código para corrigir modelos que pararam no meio do meio caminho
+    # os.makedirs("ResultadosTreinamento30Modelos_Corrigido/Vgg16", exist_ok=True)
+    # files = os.listdir("ResultadosTreinamento30Modelos/Vgg16")
+    
+    # for file in files:
+    #     if file == "Vgg_AUG_CV_DatasetOriginal_t2_Frontal.txt" or file == "Vgg_AUG_CV_DatasetSemMarcador_t1_Frontal.txt":
+    #         continue
 
-#     yolo_data("Frontal", "Termografias_Dataset_Segmentação_TAGS_jpg_224/images", "Termografias_Dataset_Segmentação_TAGS_jpg_224/masks", "Yolo_dataset_24_12", True)
+    #     full_file_path = os.path.join("ResultadosTreinamento30Modelos/Vgg16", file)
 
-    # train_yolo_seg("n", 500, "dataset_yolo_8_12.yaml", seed=349324)
+    #     copy_file(full_file_path, "ResultadosTreinamento30Modelos_Corrigido/Vgg16/")
 
+    rename_file("Vgg_AUG_CV_DatasetOriginal_t2_Frontal.txt", "ResultadosTreinamento30Modelos_Corrigido/Vgg16/Vgg_AUG_CV_DatasetOriginal_t2_Frontal.txt")
 
-
-    # resize_imgs_two_masks_dataset(
-    #     img_dir="Termografia_Dataset_Segmentação_Frontal_jpg/images",
-    #     mask_breast_dir="Termografias_Dataset_Segmentação/masks",
-    #     mask_marker_dir = "Termografias_Dataset_Segmentação_Marcadores/masks",
-    #     output_base="Termografia_dataset_segmentação_two_classes_24_12",
-    #     target=224,          # mesmo tamanho definido no YAML da YOLO,
-    #     resize_method="BlackPadding"
-    # )
-
-
-    # yolo_data_2_classes("Frontal", "Termografia_dataset_segmentação_two_classes_24_12/images", "Termografia_dataset_segmentação_two_classes_24_12/masks_breast", "Termografia_dataset_segmentação_two_classes_24_12/masks_marker", "dataset_two_classes_yolo_24_12", True)
-
-    # train_yolo_seg("n", 500, "dataset_yolo_two_classes.yaml", seed=349324)
-
-
-    #O modelo da yolo train 2 foi treinado na maquina antiga usando a abordagem two classes.
-    #A chamada abaixa foi para testar a segmentação do marcador selecionando apenas o ID_MARCADOR na função segment_with_yolo.
-    # train_model_cv(Vgg_16,
-    #                raw_root="filtered_raw_dataset",
-    #                angle="Frontal",
-    #                k=5,                 
-    #                resize_to=224,
-    #                n_aug=2,             
-    #                batch=8,
-    #                seed= 853895,
-    #                segmenter= "yolo",
-    #                message="testestestesteTAGYOLO", seg_model_path="train2/weights/best.pt",
-    #                resize_method="BlackPadding")
-
-
+    rename_file("Vgg_AUG_CV_DatasetSemMarcador_t1_Frontal.txt", "ResultadosTreinamento30Modelos_Corrigido/Vgg16/Vgg_AUG_CV_DatasetSemMarcador_t1_Frontal.txt")
