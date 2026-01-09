@@ -232,3 +232,22 @@ testeSEGyolo
 Termografias_Dataset_Segmentação_jpg_224/
 dataset_two_classes_yolo_8_12/
 Termografia_dataset_segmentação_two_classes/
+
+
+TagsMasks
+teste_msk_tag
+
+#Pastas criadas para teste dos modelos de segmentação dos marcadores com mascaras do photoshop. Não deu certo. Entao foi adotada a estrategia 2 classes com a yolo. Fez o teste com as mascaras anteriores e com as do photoshop. também não funcionou com as do photoshop, mas com as mascaras antigas funcionou.
+#Mascaras antigas
+Termografia_dataset_segmentação_two_classes_24_12
+#mascaras novas
+Termografia_dataset_segmentação_two_classes_24_12_2
+Termografias_Dataset_Segmentação_TAGS_jpg_224
+yolo_teste_TAG
+
+#teste feito com o modelo 39 da yolo para verificar a segmentação das mamas
+yolo_teste_seg
+
+Yolo_dataset_24_12
+dataset_two_classes_yolo_24_12
+dataset_two_classes_yolo_24_12_2
