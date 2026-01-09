@@ -3277,95 +3277,104 @@ def get_imgs_lim_seg_data(input_folder):
 
 if __name__ == "__main__":
 
-    BASE_DIR = "ResultadosTreinamento30Modelos_Corrigido"
 
-    # Regex para capturar métricas por linha
-    regex_metrics = re.compile(
-        r"Acc=([\d.]+)\s+Prec=([\d.]+)\s+Rec=([\d.]+)\s+F1=([\d.]+)"
+    # Gerando os .csv com resultados indiciduais de cada um dos 30 treinamentos e médias agrupadas por semente.
+
+    from pathlib import Path
+    import re
+    import pandas as pd
+
+    BASE_DIR = Path("ResultadosTreinamento30Modelos_Corrigido")
+
+    # Ex.: Fold 00  Acc=0.7959  Prec=0.8571  Rec=0.6000  F1=0.7059
+    REGEX_FOLD = re.compile(
+        r"Fold\s*(\d+)\s+Acc=([\d.]+)\s+Prec=([\d.]+)\s+Rec=([\d.]+)\s+F1=([\d.]+)",
+        re.IGNORECASE,
     )
 
-    def extrair_config(nome_arquivo):
+    # Ex.: ..._t0_Frontal.txt  -> seed=0
+    REGEX_SEED = re.compile(r"_t(\d+)_", re.IGNORECASE)
+
+    def parse_config_and_seed(filename: str) -> tuple[str, int]:
         """
-        Remove a parte '_tX_' para identificar a configuração.
-        Exemplo:
-        Entrada: Vgg_AUG_CV_DatasetTagFixedTam_t3_Frontal.txt
-        Saída:   Vgg_AUG_CV_DatasetTagFixedTam
+        filename: Vgg_AUG_CV_DatasetSegFixedTagTemp_t0_Frontal.txt
+        retorna:
+        config: Vgg_AUG_CV_DatasetSegFixedTagTemp
+        seed: 0
         """
-        partes = nome_arquivo.split("_t")
-        return partes[0]
+        m = REGEX_SEED.search(filename)
+        if not m:
+            raise ValueError(f"Não achei padrão _tX_ no nome: {filename}")
+        seed = int(m.group(1))
 
+        # Remove: _tX_ + tudo depois disso (ex: _Frontal.txt)
+        config = filename.split(f"_t{seed}_")[0]
+        return config, seed
 
-    # Dicionário para agrupar resultados por configuração
-    configs = {}
+    rows = []
 
-    # Percorrer arquivos
-    for root, dirs, files in os.walk(BASE_DIR):
-        for fname in files:
-            if fname.endswith(".txt"):
-                caminho = os.path.join(root, fname)
+    for path in BASE_DIR.rglob("*.txt"):
+        fname = path.name
+        config, seed = parse_config_and_seed(fname)
 
-                config = extrair_config(fname)
+        with path.open("r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                m = REGEX_FOLD.search(line)
+                if not m:
+                    continue
 
-                # Garantir que existe lista para essa configuração
-                if config not in configs:
-                    configs[config] = {
-                        "accs": [], "precs": [], "recs": [], "f1s": []
-                    }
+                fold = int(m.group(1))
+                acc = float(m.group(2))
+                prec = float(m.group(3))
+                rec = float(m.group(4))
+                f1 = float(m.group(5))
 
-                # Ler somente 5 primeiros folds
-                accs, precs, recs, f1s = [], [], [], []
-                with open(caminho, "r") as f:
-                    for linha in f:
-                        if len(accs) > 5:
-                            print(f"+5 folds em: {caminho}")
-                            break
+                rows.append({
+                    "Configuração": config,
+                    "Seed": seed,
+                    "Fold": fold,
+                    "Acc": acc,
+                    "Prec": prec,
+                    "Rec": rec,
+                    "F1": f1,
+                    "Arquivo": str(path),
+                })
 
-                        match = regex_metrics.search(linha)
-                        if match:
-                            acc, prec, rec, f1 = map(float, match.groups())
-                            accs.append(acc)
-                            precs.append(prec)
-                            recs.append(rec)
-                            f1s.append(f1)
+    df_fold = pd.DataFrame(rows)
 
-                # Adicionar nos resultados globais da configuração
-                configs[config]["accs"].extend(accs)
-                configs[config]["precs"].extend(precs)
-                configs[config]["recs"].extend(recs)
-                configs[config]["f1s"].extend(f1s)
+    # Validações úteis
+    if df_fold.empty:
+        raise RuntimeError("df_fold ficou vazio. Verifique BASE_DIR e o regex das linhas.")
+    # garante que cada (config, seed) tem 5 folds
+    check = df_fold.groupby(["Configuração", "Seed"])["Fold"].nunique().reset_index(name="n_folds")
+    missing = check[check["n_folds"] != 5]
+    if not missing.empty:
+        print("Atenção: há config/seed sem 5 folds completos:")
+        print(missing)
 
-    
+    # Ordena bonitinho
+    df_fold = df_fold.sort_values(["Configuração", "Seed", "Fold"]).reset_index(drop=True)
 
-    print(len(configs[config]["accs"]), len(configs[config]["f1s"]))
+    # Agregado por seed (nível recomendado para teste estatístico)
+    df_seed = (
+        df_fold
+        .groupby(["Configuração", "Seed"], as_index=False)
+        .agg(
+            Acc_mean=("Acc", "mean"),
+            Prec_mean=("Prec", "mean"),
+            Rec_mean=("Rec", "mean"),
+            F1_mean=("F1", "mean"),
+            # opcional: variabilidade dentro da seed
+            F1_std=("F1", "std"),
+        )
+        .sort_values(["Configuração", "Seed"])
+        .reset_index(drop=True)
+    )
 
+    # Se quiser salvar:
+    df_fold.to_csv("resultados_por_fold.csv", index=False)
+    df_seed.to_csv("resultados_por_seed.csv", index=False)
 
-    # Criar CSV final
-    output_csv = "resumo_configuracoes_Corrigido.csv"
-
-    with open(output_csv, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "Configuração",
-            "Acc_mean", "Acc_std",
-            "Prec_mean", "Prec_std",
-            "Rec_mean", "Rec_std",
-            "F1_mean", "F1_std",
-            "N_folds"
-        ])
-
-        for config, dados in configs.items():
-            accs = dados["accs"]
-            precs = dados["precs"]
-            recs = dados["recs"]
-            f1s = dados["f1s"]
-
-            writer.writerow([
-                config,
-                np.mean(accs), np.std(accs),
-                np.mean(precs), np.std(precs),
-                np.mean(recs), np.std(recs),
-                np.mean(f1s), np.std(f1s),
-                len(accs)
-            ])
-
-    print(f"Resumo salvo em: {output_csv}")
+    print("OK!")
+    print("df_fold:", df_fold.shape, "-> resultados_por_fold.csv")
+    print("df_seed:", df_seed.shape, "-> resultados_por_seed.csv")
