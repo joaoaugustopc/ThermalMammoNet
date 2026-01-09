@@ -1898,7 +1898,7 @@ import cv2
 import os
 import json
 
-def transform_temp_img_png16(input_folder, output_folder):
+def transform_temp_img_png16(input_folder, output_folder, mn = None, mx = None):
     os.makedirs(output_folder, exist_ok=True)
     limites = {}
 
@@ -1908,10 +1908,14 @@ def transform_temp_img_png16(input_folder, output_folder):
 
             temperatura = load_temp_matrix(path)
 
-            temp_min, temp_max = float(temperatura.min()), float(temperatura.max())
-            limites[fname] = {"min": temp_min, "max": temp_max}
+            if mn == None and mx == None:
+                temp_min, temp_max = float(temperatura.min()), float(temperatura.max())
+                limites[fname] = {"min": temp_min, "max": temp_max}
+                norm = ((temperatura - temp_min) / (temp_max - temp_min) * 65535).astype(np.uint16)
+            else:
+                limites[fname] = {"min": mn, "max": mx}
+                norm = ((temperatura - mn) / (mx - mn) * 65535).astype(np.uint16)
 
-            norm = ((temperatura - temp_min) / (temp_max - temp_min) * 65535).astype(np.uint16)
 
             out_name = os.path.splitext(fname)[0] + ".png"
             cv2.imwrite(os.path.join(output_folder, out_name), norm)
@@ -3278,229 +3282,49 @@ def get_imgs_lim_seg_data(input_folder):
 if __name__ == "__main__":
 
 
-    # método que agrupa por semente N = 6 resultados independentes
+    # rename_file("temp normal-20260107T214822Z-3-001/temp normal/24_img_Static-Frontal_2012-10-17.png", "temp normal-20260107T214822Z-3-001/temp normal/42_img_Static-Frontal_2012-11-14.png")
 
-# import numpy as np
-    # import pandas as pd
-    # from scipy.stats import mannwhitneyu, permutation_test
-    # from statsmodels.stats.multitest import multipletests
-
-    # df_seed = pd.read_csv("resultados_por_seed.csv")
+    # recuperar_img("temp normal-20260107T214822Z-3-001/temp normal", "teste_temp_pad_temp")
 
 
-    # # =========================
-    # # CONFIGURAÇÕES
-    # # =========================
+    # X, y, patient_ids, filenames, ids_data = load_raw_images("filtered_raw_dataset/Frontal")
 
-    # BASELINE_CONFIG = "Vgg_AUG_CV_DatasetSegYolo"
-    # ALPHA = 0.05
-    # N_RESAMPLES = 20000   # permutação
+    # print(f"{X.min()} | {X.max()}")
 
 
-    # # =========================
-    # # PREPARAÇÃO DO DATAFRAME
-    # # =========================
+    # input_folder = "filtered_raw_dataset/Frontal/healthy"
 
-    # # Usaremos apenas a métrica F1 (prioridade)
-    # df_test = (
-    #     df_seed[["Configuração", "Seed", "F1_mean"]]
-    #     .rename(columns={"F1_mean": "F1"})
-    #     .copy()
-    # )
+    # min = 13214
+    # max = 0
 
-    # # Valores da baseline (1 por seed)
-    # baseline_vals = (
-    #     df_test[df_test["Configuração"] == BASELINE_CONFIG]
-    #     .sort_values("Seed")["F1"]
-    #     .to_numpy()
-    # )
+    # for fname in os.listdir(input_folder):
+    #     if fname.endswith(".txt"):
+    #         path = os.path.join(input_folder, fname)
+    #         temperatura = load_temp_matrix(path)
 
-    # if len(baseline_vals) < 2:
-    #     raise RuntimeError("Baseline possui poucos valores para teste estatístico.")
+    #         if temperatura.max() > max:
+    #             max = temperatura.max()
+            
+    #         if temperatura.min() < min:
+    #             min = temperatura.min()
 
 
-    # # =========================
-    # # FUNÇÕES AUXILIARES
-    # # =========================
-
-    # def cliffs_delta(x, y):
-    #     """
-    #     Cliff's delta = P(x > y) - P(x < y)
-    #     Intervalo [-1, 1]
-    #     """
-    #     x = np.asarray(x)
-    #     y = np.asarray(y)
-
-    #     gt = sum(np.sum(xi > y) for xi in x)
-    #     lt = sum(np.sum(xi < y) for xi in x)
-
-    #     return (gt - lt) / (len(x) * len(y))
+    # input_folder = "filtered_raw_dataset/Frontal/sick"
 
 
-    # def permutation_pvalue_diff_means(x, y, n_resamples=20000, seed=0):
-    #     """
-    #     Teste de permutação bicaudal para diferença de médias.
-    #     """
-    #     rng = np.random.default_rng(seed)
+    # for fname in os.listdir(input_folder):
+    #     if fname.endswith(".txt"):
+    #         path = os.path.join(input_folder, fname)
+    #         temperatura = load_temp_matrix(path)
 
-    #     res = permutation_test(
-    #         (np.asarray(x), np.asarray(y)),
-    #         statistic=lambda a, b: np.mean(a) - np.mean(b),
-    #         alternative="two-sided",
-    #         n_resamples=n_resamples,
-    #         random_state=rng
-    #     )
-    #     return float(res.pvalue)
+    #         if temperatura.max() > max:
+    #             max = temperatura.max()
+            
+    #         if temperatura.min() < min:
+    #             min = temperatura.min()
+
+    # print(f"{min} | {max}")
 
 
-    # # =========================
-    # # TESTES: BASELINE vs MODELOS
-    # # =========================
 
-    # results = []
-
-    # for cfg in sorted(df_test["Configuração"].unique()):
-    #     if cfg == BASELINE_CONFIG:
-    #         continue
-
-    #     vals = (
-    #         df_test[df_test["Configuração"] == cfg]
-    #         .sort_values("Seed")["F1"]
-    #         .to_numpy()
-    #     )
-
-    #     if len(vals) < 2:
-    #         continue
-
-    #     # Mann–Whitney U (não pareado, bicaudal)
-    #     _, mwu_p = mannwhitneyu(
-    #         baseline_vals,
-    #         vals,
-    #         alternative="two-sided"
-    #     )
-
-    #     # Teste de permutação
-    #     perm_p = permutation_pvalue_diff_means(
-    #         baseline_vals,
-    #         vals,
-    #         n_resamples=N_RESAMPLES
-    #     )
-
-    #     # Diferença de médias
-    #     delta_mean = np.mean(vals) - np.mean(baseline_vals)
-
-    #     # Tamanho de efeito
-    #     cd = cliffs_delta(vals, baseline_vals)
-
-    #     results.append({
-    #         "Configuração": cfg,
-    #         "F1_baseline_mean": np.mean(baseline_vals),
-    #         "F1_model_mean": np.mean(vals),
-    #         "Delta_F1_mean": delta_mean,
-    #         "Cliffs_delta": cd,
-    #         "MWU_p": mwu_p,
-    #         "Perm_p": perm_p,
-    #         "N_baseline": len(baseline_vals),
-    #         "N_model": len(vals),
-    #     })
-
-
-    # df_results = pd.DataFrame(results)
-
-    # if df_results.empty:
-    #     raise RuntimeError("Nenhuma configuração foi comparada.")
-
-
-    # # =========================
-    # # CORREÇÃO DE MÚLTIPLAS COMPARAÇÕES (HOLM)
-    # # =========================
-
-    # df_results["MWU_p_holm"] = multipletests(
-    #     df_results["MWU_p"],
-    #     alpha=ALPHA,
-    #     method="holm"
-    # )[1]
-
-    # df_results["Perm_p_holm"] = multipletests(
-    #     df_results["Perm_p"],
-    #     alpha=ALPHA,
-    #     method="holm"
-    # )[1]
-
-    # df_results["MWU_sig"] = df_results["MWU_p_holm"] < ALPHA
-    # df_results["Perm_sig"] = df_results["Perm_p_holm"] < ALPHA
-
-
-    # # =========================
-    # # ORGANIZAÇÃO FINAL
-    # # =========================
-
-    # df_results = df_results.sort_values(
-    #     by=["MWU_p_holm", "Perm_p_holm", "Delta_F1_mean"],
-    #     ascending=[True, True, False]
-    # ).reset_index(drop=True)
-
-    # # Se quiser salvar:
-    # df_results.to_csv("comparacao_vs_baseline_DatasetSegYolo.csv", index=False)
-
-    # print("OK — testes concluídos.")
-    # print(df_results.head(10))
-
-    ####################################################################################################
-
-    import numpy as np
-    from scipy.stats import permutation_test
-
-    def permutation_test_scipy(x, y):
-        res = permutation_test(
-            (x, y),
-            statistic=lambda x, y: x.mean() - y.mean(),
-            permutation_type="independent",
-            alternative="two-sided",
-            n_resamples=10000,
-            random_state=42
-            )
-
-        return res.statistic, res.pvalue
-    
-    import pandas as pd
-    from statsmodels.stats.multitest import multipletests
-
-    df = pd.read_csv("resultados_por_fold.csv")
-
-    COL_CONFIG = "Configuração"
-    COL_F1 = "F1"
-
-    baseline = "Vgg_AUG_CV_DatasetMarcadorMovidoFixo"
-    baseline_vals = df[df[COL_CONFIG] == baseline][COL_F1].values
-
-    results = []
-
-    for cfg in df[COL_CONFIG].unique():
-        if cfg == baseline:
-            continue
-
-        vals = df[df[COL_CONFIG] == cfg][COL_F1].values
-
-        diff, p = permutation_test_scipy(
-            baseline_vals,
-            vals
-        )
-
-        results.append({
-            "Configuração": cfg,
-            "Diferença média (baseline - cfg)": diff,
-            "p_valor": p
-        })
-
-    res_df = pd.DataFrame(results)
-
-    # Correção para múltiplos testes
-    res_df["p_corrigido"] = multipletests(
-        res_df["p_valor"],
-        method="holm"
-    )[1]
-
-    res_df["Significativo (α=0.05)"] = res_df["p_corrigido"] < 0.05
-
-    print(res_df.sort_values("p_corrigido"))
+    transform_temp_img_png16("filtered_raw_dataset/Frontal/sick","dataset_png16/Frontal/sick", 16.815420150756836, 37.16297912597656)
