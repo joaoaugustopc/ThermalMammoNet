@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir tqdm
 RUN pip install "numpy<2"
+RUN pip install --no-cache-dir scipy statsmodels
 
 
 # Configura a variável de ambiente TESSDATA_PREFIX (opcional, mas boa prática)
