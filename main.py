@@ -1979,7 +1979,7 @@ def recuperar_img(input_folder, output_folder):
 
         out_name = os.path.splitext(fname)[0] + ".txt"
         np.savetxt(os.path.join(output_folder, out_name), recuperada, fmt="%.6f")
-        print(f"Arquivo recuperado: {out_name}")
+        # print(f"Arquivo recuperado: {out_name}")
 
 
 def transform_dataset_to_img_int8(
@@ -3281,50 +3281,6 @@ def get_imgs_lim_seg_data(input_folder):
 
 if __name__ == "__main__":
 
-
-    # rename_file("temp normal-20260107T214822Z-3-001/temp normal/24_img_Static-Frontal_2012-10-17.png", "temp normal-20260107T214822Z-3-001/temp normal/42_img_Static-Frontal_2012-11-14.png")
-
-    # recuperar_img("temp normal-20260107T214822Z-3-001/temp normal", "teste_temp_pad_temp")
-
-
-    # X, y, patient_ids, filenames, ids_data = load_raw_images("filtered_raw_dataset/Frontal")
-
-    # print(f"{X.min()} | {X.max()}")
-
-
-    # input_folder = "filtered_raw_dataset/Frontal/healthy"
-
-    # min = 13214
-    # max = 0
-
-    # for fname in os.listdir(input_folder):
-    #     if fname.endswith(".txt"):
-    #         path = os.path.join(input_folder, fname)
-    #         temperatura = load_temp_matrix(path)
-
-    #         if temperatura.max() > max:
-    #             max = temperatura.max()
-            
-    #         if temperatura.min() < min:
-    #             min = temperatura.min()
-
-
-    # input_folder = "filtered_raw_dataset/Frontal/sick"
-
-
-    # for fname in os.listdir(input_folder):
-    #     if fname.endswith(".txt"):
-    #         path = os.path.join(input_folder, fname)
-    #         temperatura = load_temp_matrix(path)
-
-    #         if temperatura.max() > max:
-    #             max = temperatura.max()
-            
-    #         if temperatura.min() < min:
-    #             min = temperatura.min()
-
-    # print(f"{min} | {max}")
-
-
-
-    transform_temp_img_png16("filtered_raw_dataset/Frontal/sick","dataset_png16/Frontal/sick", 16.815420150756836, 37.16297912597656)
+    recuperar_img("Frontal-temp-fixa/healthy", "Frontal_temp_fixa_txt/healthy")
+    recuperar_img("Frontal-temp-fixa/sick", "Frontal_temp_fixa_txt/sick")
+    
