@@ -3278,103 +3278,229 @@ def get_imgs_lim_seg_data(input_folder):
 if __name__ == "__main__":
 
 
-    # Gerando os .csv com resultados indiciduais de cada um dos 30 treinamentos e médias agrupadas por semente.
+    # método que agrupa por semente N = 6 resultados independentes
 
-    from pathlib import Path
-    import re
+# import numpy as np
+    # import pandas as pd
+    # from scipy.stats import mannwhitneyu, permutation_test
+    # from statsmodels.stats.multitest import multipletests
+
+    # df_seed = pd.read_csv("resultados_por_seed.csv")
+
+
+    # # =========================
+    # # CONFIGURAÇÕES
+    # # =========================
+
+    # BASELINE_CONFIG = "Vgg_AUG_CV_DatasetSegYolo"
+    # ALPHA = 0.05
+    # N_RESAMPLES = 20000   # permutação
+
+
+    # # =========================
+    # # PREPARAÇÃO DO DATAFRAME
+    # # =========================
+
+    # # Usaremos apenas a métrica F1 (prioridade)
+    # df_test = (
+    #     df_seed[["Configuração", "Seed", "F1_mean"]]
+    #     .rename(columns={"F1_mean": "F1"})
+    #     .copy()
+    # )
+
+    # # Valores da baseline (1 por seed)
+    # baseline_vals = (
+    #     df_test[df_test["Configuração"] == BASELINE_CONFIG]
+    #     .sort_values("Seed")["F1"]
+    #     .to_numpy()
+    # )
+
+    # if len(baseline_vals) < 2:
+    #     raise RuntimeError("Baseline possui poucos valores para teste estatístico.")
+
+
+    # # =========================
+    # # FUNÇÕES AUXILIARES
+    # # =========================
+
+    # def cliffs_delta(x, y):
+    #     """
+    #     Cliff's delta = P(x > y) - P(x < y)
+    #     Intervalo [-1, 1]
+    #     """
+    #     x = np.asarray(x)
+    #     y = np.asarray(y)
+
+    #     gt = sum(np.sum(xi > y) for xi in x)
+    #     lt = sum(np.sum(xi < y) for xi in x)
+
+    #     return (gt - lt) / (len(x) * len(y))
+
+
+    # def permutation_pvalue_diff_means(x, y, n_resamples=20000, seed=0):
+    #     """
+    #     Teste de permutação bicaudal para diferença de médias.
+    #     """
+    #     rng = np.random.default_rng(seed)
+
+    #     res = permutation_test(
+    #         (np.asarray(x), np.asarray(y)),
+    #         statistic=lambda a, b: np.mean(a) - np.mean(b),
+    #         alternative="two-sided",
+    #         n_resamples=n_resamples,
+    #         random_state=rng
+    #     )
+    #     return float(res.pvalue)
+
+
+    # # =========================
+    # # TESTES: BASELINE vs MODELOS
+    # # =========================
+
+    # results = []
+
+    # for cfg in sorted(df_test["Configuração"].unique()):
+    #     if cfg == BASELINE_CONFIG:
+    #         continue
+
+    #     vals = (
+    #         df_test[df_test["Configuração"] == cfg]
+    #         .sort_values("Seed")["F1"]
+    #         .to_numpy()
+    #     )
+
+    #     if len(vals) < 2:
+    #         continue
+
+    #     # Mann–Whitney U (não pareado, bicaudal)
+    #     _, mwu_p = mannwhitneyu(
+    #         baseline_vals,
+    #         vals,
+    #         alternative="two-sided"
+    #     )
+
+    #     # Teste de permutação
+    #     perm_p = permutation_pvalue_diff_means(
+    #         baseline_vals,
+    #         vals,
+    #         n_resamples=N_RESAMPLES
+    #     )
+
+    #     # Diferença de médias
+    #     delta_mean = np.mean(vals) - np.mean(baseline_vals)
+
+    #     # Tamanho de efeito
+    #     cd = cliffs_delta(vals, baseline_vals)
+
+    #     results.append({
+    #         "Configuração": cfg,
+    #         "F1_baseline_mean": np.mean(baseline_vals),
+    #         "F1_model_mean": np.mean(vals),
+    #         "Delta_F1_mean": delta_mean,
+    #         "Cliffs_delta": cd,
+    #         "MWU_p": mwu_p,
+    #         "Perm_p": perm_p,
+    #         "N_baseline": len(baseline_vals),
+    #         "N_model": len(vals),
+    #     })
+
+
+    # df_results = pd.DataFrame(results)
+
+    # if df_results.empty:
+    #     raise RuntimeError("Nenhuma configuração foi comparada.")
+
+
+    # # =========================
+    # # CORREÇÃO DE MÚLTIPLAS COMPARAÇÕES (HOLM)
+    # # =========================
+
+    # df_results["MWU_p_holm"] = multipletests(
+    #     df_results["MWU_p"],
+    #     alpha=ALPHA,
+    #     method="holm"
+    # )[1]
+
+    # df_results["Perm_p_holm"] = multipletests(
+    #     df_results["Perm_p"],
+    #     alpha=ALPHA,
+    #     method="holm"
+    # )[1]
+
+    # df_results["MWU_sig"] = df_results["MWU_p_holm"] < ALPHA
+    # df_results["Perm_sig"] = df_results["Perm_p_holm"] < ALPHA
+
+
+    # # =========================
+    # # ORGANIZAÇÃO FINAL
+    # # =========================
+
+    # df_results = df_results.sort_values(
+    #     by=["MWU_p_holm", "Perm_p_holm", "Delta_F1_mean"],
+    #     ascending=[True, True, False]
+    # ).reset_index(drop=True)
+
+    # # Se quiser salvar:
+    # df_results.to_csv("comparacao_vs_baseline_DatasetSegYolo.csv", index=False)
+
+    # print("OK — testes concluídos.")
+    # print(df_results.head(10))
+
+    ####################################################################################################
+
+    import numpy as np
+    from scipy.stats import permutation_test
+
+    def permutation_test_scipy(x, y):
+        res = permutation_test(
+            (x, y),
+            statistic=lambda x, y: x.mean() - y.mean(),
+            permutation_type="independent",
+            alternative="two-sided",
+            n_resamples=10000,
+            random_state=42
+            )
+
+        return res.statistic, res.pvalue
+    
     import pandas as pd
+    from statsmodels.stats.multitest import multipletests
 
-    BASE_DIR = Path("ResultadosTreinamento30Modelos_Corrigido")
+    df = pd.read_csv("resultados_por_fold.csv")
 
-    # Ex.: Fold 00  Acc=0.7959  Prec=0.8571  Rec=0.6000  F1=0.7059
-    REGEX_FOLD = re.compile(
-        r"Fold\s*(\d+)\s+Acc=([\d.]+)\s+Prec=([\d.]+)\s+Rec=([\d.]+)\s+F1=([\d.]+)",
-        re.IGNORECASE,
-    )
+    COL_CONFIG = "Configuração"
+    COL_F1 = "F1"
 
-    # Ex.: ..._t0_Frontal.txt  -> seed=0
-    REGEX_SEED = re.compile(r"_t(\d+)_", re.IGNORECASE)
+    baseline = "Vgg_AUG_CV_DatasetMarcadorMovidoFixo"
+    baseline_vals = df[df[COL_CONFIG] == baseline][COL_F1].values
 
-    def parse_config_and_seed(filename: str) -> tuple[str, int]:
-        """
-        filename: Vgg_AUG_CV_DatasetSegFixedTagTemp_t0_Frontal.txt
-        retorna:
-        config: Vgg_AUG_CV_DatasetSegFixedTagTemp
-        seed: 0
-        """
-        m = REGEX_SEED.search(filename)
-        if not m:
-            raise ValueError(f"Não achei padrão _tX_ no nome: {filename}")
-        seed = int(m.group(1))
+    results = []
 
-        # Remove: _tX_ + tudo depois disso (ex: _Frontal.txt)
-        config = filename.split(f"_t{seed}_")[0]
-        return config, seed
+    for cfg in df[COL_CONFIG].unique():
+        if cfg == baseline:
+            continue
 
-    rows = []
+        vals = df[df[COL_CONFIG] == cfg][COL_F1].values
 
-    for path in BASE_DIR.rglob("*.txt"):
-        fname = path.name
-        config, seed = parse_config_and_seed(fname)
-
-        with path.open("r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                m = REGEX_FOLD.search(line)
-                if not m:
-                    continue
-
-                fold = int(m.group(1))
-                acc = float(m.group(2))
-                prec = float(m.group(3))
-                rec = float(m.group(4))
-                f1 = float(m.group(5))
-
-                rows.append({
-                    "Configuração": config,
-                    "Seed": seed,
-                    "Fold": fold,
-                    "Acc": acc,
-                    "Prec": prec,
-                    "Rec": rec,
-                    "F1": f1,
-                    "Arquivo": str(path),
-                })
-
-    df_fold = pd.DataFrame(rows)
-
-    # Validações úteis
-    if df_fold.empty:
-        raise RuntimeError("df_fold ficou vazio. Verifique BASE_DIR e o regex das linhas.")
-    # garante que cada (config, seed) tem 5 folds
-    check = df_fold.groupby(["Configuração", "Seed"])["Fold"].nunique().reset_index(name="n_folds")
-    missing = check[check["n_folds"] != 5]
-    if not missing.empty:
-        print("Atenção: há config/seed sem 5 folds completos:")
-        print(missing)
-
-    # Ordena bonitinho
-    df_fold = df_fold.sort_values(["Configuração", "Seed", "Fold"]).reset_index(drop=True)
-
-    # Agregado por seed (nível recomendado para teste estatístico)
-    df_seed = (
-        df_fold
-        .groupby(["Configuração", "Seed"], as_index=False)
-        .agg(
-            Acc_mean=("Acc", "mean"),
-            Prec_mean=("Prec", "mean"),
-            Rec_mean=("Rec", "mean"),
-            F1_mean=("F1", "mean"),
-            # opcional: variabilidade dentro da seed
-            F1_std=("F1", "std"),
+        diff, p = permutation_test_scipy(
+            baseline_vals,
+            vals
         )
-        .sort_values(["Configuração", "Seed"])
-        .reset_index(drop=True)
-    )
 
-    # Se quiser salvar:
-    df_fold.to_csv("resultados_por_fold.csv", index=False)
-    df_seed.to_csv("resultados_por_seed.csv", index=False)
+        results.append({
+            "Configuração": cfg,
+            "Diferença média (baseline - cfg)": diff,
+            "p_valor": p
+        })
 
-    print("OK!")
-    print("df_fold:", df_fold.shape, "-> resultados_por_fold.csv")
-    print("df_seed:", df_seed.shape, "-> resultados_por_seed.csv")
+    res_df = pd.DataFrame(results)
+
+    # Correção para múltiplos testes
+    res_df["p_corrigido"] = multipletests(
+        res_df["p_valor"],
+        method="holm"
+    )[1]
+
+    res_df["Significativo (α=0.05)"] = res_df["p_corrigido"] < 0.05
+
+    print(res_df.sort_values("p_corrigido"))
