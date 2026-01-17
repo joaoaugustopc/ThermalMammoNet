@@ -277,17 +277,17 @@ def save_numpy_data(images, labels, output_dir, position):
 
 
 # Funções lambda para cada transformação separada
-random_flip = lambda: keras.layers.RandomFlip("horizontal")
-random_rotation = lambda: keras.layers.RandomRotation(0.04, interpolation="bilinear")
-random_rotation_mask = lambda: keras.layers.RandomRotation(0.04, interpolation="nearest")
-random_zoom = lambda: keras.layers.RandomZoom(0.2, 0.2, interpolation="bilinear")
-random_zoom_mask = lambda: keras.layers.RandomZoom(0.2, 0.2, interpolation="nearest")
-random_brightness = lambda: keras.layers.RandomBrightness(factor=0.3, value_range=(0.0, 1.0))
-random_contrast = lambda: keras.layers.RandomContrast(factor=0.3)
+random_flip =  lambda s=None: keras.layers.RandomFlip("horizontal", seed = s)
+random_rotation =  lambda s=None: keras.layers.RandomRotation(0.04, interpolation="bilinear",seed=s)
+random_rotation_mask =  lambda s=None: keras.layers.RandomRotation(0.04, interpolation="nearest",seed=s)
+random_zoom =  lambda s=None: keras.layers.RandomZoom(0.2, 0.2, interpolation="bilinear",seed=s)
+random_zoom_mask =  lambda s=None: keras.layers.RandomZoom(0.2, 0.2, interpolation="nearest",seed=s)
+random_brightness =  lambda s=None: keras.layers.RandomBrightness(factor=0.3, value_range=(0.0, 1.0),seed=s)
+random_contrast =  lambda s=None: keras.layers.RandomContrast(factor=0.3,seed=s)
 
 # Função para aplicar as transformações individualmente
-def apply_transformation(image, transformation):
-    return transformation()(image).numpy()
+def apply_transformation(image, transformation, seed_value = None):
+    return transformation(seed_value)(image).numpy()
 
 """
     Params:
@@ -335,12 +335,12 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, seed =42,
                 
                 random.seed(seed)
                 
-                augmented_image = apply_transformation(image, transformation)
+                augmented_image = apply_transformation(image, transformation, seed)
                 
                 # Aleatoriamente decidir se vai aplicar random_flip
                 if random.random() > 0.5:  # 50% de chance de aplicar o flip
                     random.seed(seed)
-                    augmented_image = apply_transformation(augmented_image, random_flip)
+                    augmented_image = apply_transformation(augmented_image, random_flip, seed)
                 
 
                 all_images.append(augmented_image)
@@ -385,7 +385,102 @@ def apply_augmentation_and_expand(train, labels, num_augmented_copies, seed =42,
     print("Shape das imagens aumentadas:", all_images.shape)
     
     
-    return all_images, all_labels  
+    return all_images, all_labels
+
+def apply_augmentation_and_expand_with_masks(train_imgs, train_masks, labels, num_augmented_copies, seed =42, resize=False, target_size=0):
+
+    print("Aumentando o dataset com cópias aumentadas...")
+    print("Shape original das imagens:", train_imgs.shape)
+    print("Shape original das mascaras:", train_masks.shape)
+
+
+    #VALUE_SEED = int(time.time() * 1000) % 15000
+    #VALUE_SEED = 12274
+    random.seed(seed)
+
+    
+    train_imgs = np.expand_dims(train_imgs, axis=-1)
+    train_masks = np.expand_dims(train_masks, axis=-1)
+    
+    
+    # listas para armazenar as imagens e labels
+    all_images = []
+    all_masks = []
+    all_labels = []
+    
+    #adicionar as imagens e labels originais
+    for image, mask, label in zip(train_imgs, train_masks, labels):
+        all_images.append(image)
+        all_masks.append(mask)
+        all_labels.append(label)
+    
+    #transformations = [random_rotation, random_zoom, random_brightness, random_contrast]
+    transformations = [random_rotation, random_zoom, random_brightness]
+    transformations_mask = { 
+        random_rotation: random_rotation_mask,
+        random_zoom: random_zoom_mask,
+    }
+
+
+    #aplicar cada transformação separado
+    for _ in range(num_augmented_copies):
+        i = 0
+        for image, mask, label in zip(train_imgs, train_masks, labels):
+            for transformation in transformations:  # Aplicar cada transformação separadamente
+                
+                seed = random.randint(0, 10000)
+                
+                random.seed(seed)
+                
+                augmented_image = apply_transformation(image, transformation, seed)
+
+                if transformation != random_brightness:
+                    random.seed(seed)
+                    augmented_mask = apply_transformation(mask, transformations_mask[transformation], seed)
+                else:
+                    augmented_mask = mask
+                
+                # Aleatoriamente decidir se vai aplicar random_flip
+                if random.random() > 0.5:  # 50% de chance de aplicar o flip
+                    random.seed(seed)
+                    augmented_image = apply_transformation(augmented_image, random_flip, seed)
+                    random.seed(seed)
+                    augmented_mask = apply_transformation(augmented_mask, random_flip, seed)
+                
+
+                all_images.append(augmented_image)
+                all_masks.append(augmented_mask)
+                all_labels.append(label)
+    
+    #convertendo em np
+    all_images = np.array([img for img in all_images])
+    all_masks = np.array([mask for mask in all_masks])
+    all_labels = np.array(all_labels)
+    
+    #se passado como parametro
+    if resize:
+        all_images = tf.image.resize_with_pad(all_images, target_size, target_size, method="bilinear")
+        all_masks = tf.image.resize_with_pad(all_masks, target_size, target_size, method="nearest")
+    
+    
+    all_images = np.squeeze(all_images, axis=-1)
+    all_masks = np.squeeze(all_masks, axis=-1)
+
+    all_masks = (all_masks > 0.5).astype(np.uint8)
+        
+    print(all_images.shape)
+    print(all_masks.shape)
+    print(all_labels[all_labels == 1].shape)
+    print(all_labels[all_labels == 0].shape)
+    
+    #teste
+    #visualize_augmentation(all_images[:10], all_images[156:166], 10)
+
+    print("Shape das imagens aumentadas:", all_images.shape)
+    
+    assert len(all_images) == len(all_masks) == len(all_labels)
+    
+    return all_images, all_masks, all_labels  
 
 #ajustada para aumentar o sick da ufpe
 def apply_augmentation_and_expand_ufpe(train, labels, num_augmented_copies, seed=42, resize=False, target_size=0):
@@ -937,10 +1032,10 @@ def apply_augmentation_and_expand_seg(images, masks, num_augmented_copies, resiz
                 seed = random.randint(0, 10000)
                 
                 random.seed(seed)
-                aug_img = apply_transformation(img, transformation_img)
+                aug_img = apply_transformation(img, transformation_img,seed)
                 
                 random.seed(seed)
-                aug_mask = apply_transformation(mask, transformation_mask)
+                aug_mask = apply_transformation(mask, transformation_mask, seed)
                 
                 all_images.append(aug_img)
                 all_masks.append(aug_mask)
@@ -1266,6 +1361,41 @@ def load_raw_images(angle_dir, exclude=False, exclude_set=None):
 
     return np.array(imgs), np.array(labels), np.array(ids, dtype= int), nomes, np.array(ids_data)
 
+
+def load_raw_images_with_masks(img_angle_dir, mask_angle_dir, exclude=False, exclude_set=None):
+    
+    imgs, labels, ids, ids_data, masks = [], [], [], [], []
+    nomes = []
+
+    for label_name, label_val in [('healthy', 0), ('sick', 1)]:
+        for file in os.listdir(os.path.join(img_angle_dir, label_name)):
+            if exclude and file in exclude_set:
+                print(f"Excluindo {file} do diretório {img_angle_dir}/{label_name}")
+                continue
+
+            fpath_img = os.path.join(img_angle_dir, label_name, file)
+            fpath_mask = os.path.join(mask_angle_dir, label_name, file)
+
+
+            try:
+                
+                arr_img = load_temp_matrix(fpath_img)
+                arr_mask = load_temp_matrix(fpath_mask)
+
+                imgs.append(arr_img)
+                labels.append(label_val)
+                _id, _data, _id_data = extract_id_data(file)
+                ids.append(_id)  
+                ids_data.append(_id_data)
+                nomes.append(file)
+                masks.append(arr_mask)
+
+            except Exception as e:
+                print(f"Erro ao processar {fpath_img}: {e}")
+                continue
+
+    return np.array(imgs), np.array(labels), np.array(ids, dtype= int), nomes, np.array(ids_data), np.array(masks)
+
 def load_raw_images_ufpe(angle_dir, exclude=False, exclude_set=None):
     
     imgs, labels, ids = [], [], []
@@ -1358,12 +1488,17 @@ def augment_train_fold(x_train, y_train, n_aug=1, seed=42, dataset="uff"):
 
     return aug_imgs, aug_labels
 
+def augment_train_fold_with_masks(x_train_imgs, X_train_masks, y_train, n_aug=1, seed=42):
+    """
+    Recebe dados de treino de UM fold e concatena n_aug versões aumentadas.
+    """
+    aug_imgs, aug_masks, aug_labels = apply_augmentation_and_expand_with_masks(    
+                            x_train_imgs, X_train_masks, y_train, n_aug,seed, resize=False)
+
+    return aug_imgs, aug_masks, aug_labels
+
 def normalize(arr, min_v, max_v):
     return (arr - min_v) / (max_v - min_v + 1e-8)
-
-
-
-
 
 
 def tf_letterbox(images, target = 224, mode = 'bilinear'):
