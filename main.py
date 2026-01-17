@@ -3274,3 +3274,102 @@ def get_imgs_lim_seg_data(input_folder):
 
 if __name__ == "__main__":
     main()
+
+    # os.makedirs("Resultados30ModelosSeedsIndependentes/Vgg16", exist_ok=True)
+
+
+    # for i in range(30):
+    #     copy_file(f"history/Vgg_16/Vgg_AUG_CV_DatasetMarcadorMovidoFixo_09_01_t{i}_Frontal.txt", "Resultados30ModelosSeedsIndependentes/Vgg16" )
+
+    # BASE_DIR = "Resultados30ModelosSeedsIndependentes"
+
+    # # Regex para capturar métricas por linha
+    # regex_metrics = re.compile(
+    #     r"Acc=([\d.]+)\s+Prec=([\d.]+)\s+Rec=([\d.]+)\s+F1=([\d.]+)"
+    # )
+
+    # def extrair_config(nome_arquivo):
+    #     """
+    #     Remove a parte '_tX_' para identificar a configuração.
+    #     Exemplo:
+    #     Entrada: Vgg_AUG_CV_DatasetTagFixedTam_t3_Frontal.txt
+    #     Saída:   Vgg_AUG_CV_DatasetTagFixedTam
+    #     """
+    #     partes = nome_arquivo.split("_t")
+    #     return partes[0]
+
+
+    # # Dicionário para agrupar resultados por configuração
+    # configs = {}
+
+    # # Percorrer arquivos
+    # for root, dirs, files in os.walk(BASE_DIR):
+    #     for fname in files:
+    #         if fname.endswith(".txt"):
+    #             caminho = os.path.join(root, fname)
+
+    #             config = extrair_config(fname)
+
+    #             # Garantir que existe lista para essa configuração
+    #             if config not in configs:
+    #                 configs[config] = {
+    #                     "accs": [], "precs": [], "recs": [], "f1s": []
+    #                 }
+
+    #             # Ler somente 5 primeiros folds
+    #             accs, precs, recs, f1s = [], [], [], []
+    #             with open(caminho, "r") as f:
+    #                 for linha in f:
+    #                     if len(accs) > 5:
+    #                         print(f"+5 folds em: {caminho}")
+    #                         break
+
+    #                     match = regex_metrics.search(linha)
+    #                     if match:
+    #                         acc, prec, rec, f1 = map(float, match.groups())
+    #                         accs.append(acc)
+    #                         precs.append(prec)
+    #                         recs.append(rec)
+    #                         f1s.append(f1)
+
+    #             # Adicionar nos resultados globais da configuração
+    #             configs[config]["accs"].extend(accs)
+    #             configs[config]["precs"].extend(precs)
+    #             configs[config]["recs"].extend(recs)
+    #             configs[config]["f1s"].extend(f1s)
+
+    
+
+    # print(len(configs[config]["accs"]), len(configs[config]["f1s"]))
+
+
+    # # Criar CSV final
+    # output_csv = "resumo_configuracoes_seeds_independentes.csv"
+
+    # with open(output_csv, "w", newline="") as f:
+    #     writer = csv.writer(f)
+    #     writer.writerow([
+    #         "Configuração",
+    #         "Acc_mean", "Acc_std",
+    #         "Prec_mean", "Prec_std",
+    #         "Rec_mean", "Rec_std",
+    #         "F1_mean", "F1_std",
+    #         "N_folds"
+    #     ])
+
+    #     for config, dados in configs.items():
+    #         accs = dados["accs"]
+    #         precs = dados["precs"]
+    #         recs = dados["recs"]
+    #         f1s = dados["f1s"]
+
+    #         writer.writerow([
+    #             config,
+    #             np.mean(accs), np.std(accs),
+    #             np.mean(precs), np.std(precs),
+    #             np.mean(recs), np.std(recs),
+    #             np.mean(f1s), np.std(f1s),
+    #             len(accs)
+    #         ])
+
+    # print(f"Resumo salvo em: {output_csv}")
