@@ -1,0 +1,2 @@
+Fold 00  Acc=0.8980  Prec=0.8333  Rec=0.8824  F1=0.8571
+Tempo de treinamento=2392.03 s

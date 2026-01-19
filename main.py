@@ -488,212 +488,204 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             else:
                 raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
 
-        os.makedirs("yyyy_seg_tag_teste/", exist_ok=True)
-
-        i = 0
-                
-        for img in X_test:
-            plt.imsave(f"yyyy_seg_tag_teste/{i}.png", img, cmap="gray")
-            i = i + 1
-
-    #     if isinstance(model, str):
-    #         if model == "yolo":
-    #             print("Modelo YOLO selecionado.")
+        if isinstance(model, str):
+            if model == "yolo":
+                print("Modelo YOLO selecionado.")
             
-    #     else:
+        else:
             
-    #         if model.__name__ == "Vgg_16_pre_trained" or model.__name__ == "resnet50_pre_trained":
-    #             X_tr = (X_tr * 255).astype(np.uint8)
-    #             X_val = (X_val * 255).astype(np.uint8)
-    #             X_test = (X_test * 255).astype(np.uint8)
+            if model.__name__ == "Vgg_16_pre_trained" or model.__name__ == "resnet50_pre_trained":
+                X_tr = (X_tr * 255).astype(np.uint8)
+                X_val = (X_val * 255).astype(np.uint8)
+                X_test = (X_test * 255).astype(np.uint8)
                 
-    #             # A VGG16 precisa do pré-processamento do ImageNet
+                # A VGG16 precisa do pré-processamento do ImageNet
 
-    #             if channel_method == "MapaCalor":
+                if channel_method == "MapaCalor":
 
-    #                 imgs_tr = []
-    #                 imgs_val = []
-    #                 imgs_test = []
+                    imgs_tr = []
+                    imgs_val = []
+                    imgs_test = []
                     
-    #                 for img in X_tr:
-    #                     img = img.astype(np.uint8)
-    #                     img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-    #                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    #                     imgs_tr.append(img)
+                    for img in X_tr:
+                        img = img.astype(np.uint8)
+                        img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        imgs_tr.append(img)
 
-    #                 for img in X_val:
-    #                     img = img.astype(np.uint8)
-    #                     img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-    #                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    #                     imgs_val.append(img)
+                    for img in X_val:
+                        img = img.astype(np.uint8)
+                        img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        imgs_val.append(img)
 
-    #                 for img in X_test:
-    #                     img = img.astype(np.uint8)
-    #                     img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-    #                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    #                     imgs_test.append(img)
+                    for img in X_test:
+                        img = img.astype(np.uint8)
+                        img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        imgs_test.append(img)
 
-    #                 X_tr = np.array(imgs_tr)
-    #                 X_val = np.array(imgs_val)
-    #                 X_test = np.array(imgs_test)
+                    X_tr = np.array(imgs_tr)
+                    X_val = np.array(imgs_val)
+                    X_test = np.array(imgs_test)
 
-    #             else:
-    #                 print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
-    #                 X_tr = np.stack((X_tr,) * 3, axis=-1)
-    #                 X_val = np.stack((X_val,) * 3, axis=-1)
-    #                 X_test = np.stack((X_test,) * 3, axis=-1)
-    #                 print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
+                else:
+                    print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
+                    X_tr = np.stack((X_tr,) * 3, axis=-1)
+                    X_val = np.stack((X_val,) * 3, axis=-1)
+                    X_test = np.stack((X_test,) * 3, axis=-1)
+                    print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
 
                 
-    #             if model.__name__ == "Vgg_16_pre_trained":
-    #                 X_tr = vgg_preprocess_input(X_tr)
-    #                 X_val = vgg_preprocess_input(X_val)
-    #                 X_test = vgg_preprocess_input(X_test)
-    #             elif model.__name__ == "resnet50_pre_trained":
-    #                 X_tr = resnet_preprocess_input(X_tr)
-    #                 X_val = resnet_preprocess_input(X_val)
-    #                 X_test = resnet_preprocess_input(X_test)
+                if model.__name__ == "Vgg_16_pre_trained":
+                    X_tr = vgg_preprocess_input(X_tr)
+                    X_val = vgg_preprocess_input(X_val)
+                    X_test = vgg_preprocess_input(X_test)
+                elif model.__name__ == "resnet50_pre_trained":
+                    X_tr = resnet_preprocess_input(X_tr)
+                    X_val = resnet_preprocess_input(X_val)
+                    X_test = resnet_preprocess_input(X_test)
 
-    #     # # ----------- VERIFICAÇÃO DA FAIXA DE VALORES -----------
-    #     # print("\n--- Faixas de Valores após o Pré-processamento ---")
-    #     # print(f"Conjunto de Treino: min={X_tr.min():.4f}, max={X_tr.max():.4f}")
-    #     # print(f"Conjunto de Validação: min={X_val.min():.4f}, max={X_val.max():.4f}")
-    #     # print(f"Conjunto de Teste: min={X_test.min():.4f}, max={X_test.max():.4f}")
-    #     # print("---------------------------------------------------\n")
+        # # ----------- VERIFICAÇÃO DA FAIXA DE VALORES -----------
+        # print("\n--- Faixas de Valores após o Pré-processamento ---")
+        # print(f"Conjunto de Treino: min={X_tr.min():.4f}, max={X_tr.max():.4f}")
+        # print(f"Conjunto de Validação: min={X_val.min():.4f}, max={X_val.max():.4f}")
+        # print(f"Conjunto de Teste: min={X_test.min():.4f}, max={X_test.max():.4f}")
+        # print("---------------------------------------------------\n")
         
 
-    #     if model == "yolo":
-    #         save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
-    #         save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
-    #         save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
+        if model == "yolo":
+            save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
 
-    #         # print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
+            # print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
 
-    #         # Treinamento YOLO
-    #         model_f = YOLO('yolov8s-cls.pt')
-    #         start_time = time.time() 
+            # Treinamento YOLO
+            model_f = YOLO('yolov8s-cls.pt')
+            start_time = time.time() 
 
-    #         model_f.train(
-    #             data=f"dataset_fold_{fold+1}",
-    #             epochs=100,
-    #             patience=50,
-    #             batch=16,
-    #             #lr0=0.0005,
-    #             optimizer='AdamW',
-    #             #weight_decay=0.0005,
-    #             #hsv_h=0.1,
-    #             #hsv_s=0.2,
-    #             #flipud=0.3,
-    #             #mosaic=0.1,
-    #             #mixup=0.1,
-    #             workers=0,
-    #             pretrained=False,
-    #             amp=False,
-    #             deterministic=True,
-    #             seed=seed,
-    #             project="runs/classify",
-    #             name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
-    #         )
+            model_f.train(
+                data=f"dataset_fold_{fold+1}",
+                epochs=100,
+                patience=50,
+                batch=16,
+                #lr0=0.0005,
+                optimizer='AdamW',
+                #weight_decay=0.0005,
+                #hsv_h=0.1,
+                #hsv_s=0.2,
+                #flipud=0.3,
+                #mosaic=0.1,
+                #mixup=0.1,
+                workers=0,
+                pretrained=False,
+                amp=False,
+                deterministic=True,
+                seed=seed,
+                project="runs/classify",
+                name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
+            )
             
-    #         end_time = time.time()
+            end_time = time.time()
 
-    #         # Validação
-    #         metrics = model_f.val(
-    #             data=f"dataset_fold_{fold+1}",
-    #             project="runs/classify/val",
-    #             name=f"fold_{fold+1}_seed_{seed}",
-    #             save_json=True
-    #         )
+            # Validação
+            metrics = model_f.val(
+                data=f"dataset_fold_{fold+1}",
+                project="runs/classify/val",
+                name=f"fold_{fold+1}_seed_{seed}",
+                save_json=True
+            )
 
-    #         # Dados para salvar
-    #         results_to_save = {
-    #             'top1_accuracy': metrics.top1,
-    #             'top5_accuracy': metrics.top5,
-    #             'fitness': metrics.fitness,
-    #             'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
-    #             'all_metrics': metrics.results_dict,
-    #             'speed': metrics.speed
-    #         }
+            # Dados para salvar
+            results_to_save = {
+                'top1_accuracy': metrics.top1,
+                'top5_accuracy': metrics.top5,
+                'fitness': metrics.fitness,
+                'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
+                'all_metrics': metrics.results_dict,
+                'speed': metrics.speed
+            }
 
-    #         # Salvar em JSON
-    #         with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
-    #             json_module.dump(results_to_save, f, indent=4)
+            # Salvar em JSON
+            with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
+                json_module.dump(results_to_save, f, indent=4)
 
-    #         """
-    #         # Extraindo métricas
-    #         accuracy = metrics.results_dict['accuracy_top1']
-    #         precision = metrics.results_dict['precision']
-    #         recall = metrics.results_dict['recall']
-    #         f1 = metrics.results_dict['f1']
+            """
+            # Extraindo métricas
+            accuracy = metrics.results_dict['accuracy_top1']
+            precision = metrics.results_dict['precision']
+            recall = metrics.results_dict['recall']
+            f1 = metrics.results_dict['f1']
 
-    #         # Salvando no mesmo arquivo de log dos outros modelos
-    #         with open(log_txt, "a") as f:
-    #             f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
-    #             f.write(f"Accuracy: {accuracy:.4f}\n")
-    #             f.write(f"Precision: {precision:.4f}\n")
-    #             f.write(f"Recall: {recall:.4f}\n")
-    #             f.write(f"F1-Score: {f1:.4f}\n")
-    #             f.write("-"*50 + "\n")  # Separador visual
+            # Salvando no mesmo arquivo de log dos outros modelos
+            with open(log_txt, "a") as f:
+                f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
+                f.write(f"Accuracy: {accuracy:.4f}\n")
+                f.write(f"Precision: {precision:.4f}\n")
+                f.write(f"Recall: {recall:.4f}\n")
+                f.write(f"F1-Score: {f1:.4f}\n")
+                f.write("-"*50 + "\n")  # Separador visual
 
-    #         """
+            """
 
-    #     else:
+        else:
 
-    #         if model == Vgg_16 or model.__name__ == 'Vgg_16_pre_trained':
-    #             obj = model()
-    #             model_f = obj.model
-    #             print("VGG")
-    #         else:
-    #             model_f   = model()
-    #             print("ResNet")
+            if model == Vgg_16 or model.__name__ == 'Vgg_16_pre_trained':
+                obj = model()
+                model_f = obj.model
+                print("VGG")
+            else:
+                model_f   = model()
+                print("ResNet")
 
-    #         ckpt    = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
-    #         log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
-    #         os.makedirs(os.path.dirname(ckpt), exist_ok=True)
-    #         os.makedirs(os.path.dirname(log_txt), exist_ok=True)
+            ckpt    = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
+            log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
+            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
+            os.makedirs(os.path.dirname(log_txt), exist_ok=True)
 
 
-    #         start_time = time.time()
+            start_time = time.time()
             
-    #         history = model_f.fit(X_tr, y_tr,
-    #                     epochs=500,
-    #                     validation_data=(X_val, y_val),
-    #                     batch_size=batch,
-    #                     callbacks=[
-    #                         tf.keras.callbacks.EarlyStopping(
-    #                             monitor='val_loss', patience=50,
-    #                             min_delta=0.01, restore_best_weights=True),
-    #                         tf.keras.callbacks.ModelCheckpoint(
-    #                             ckpt, monitor='val_loss',
-    #                             save_best_only=True)
-    #                     ],
-    #                     verbose=2, shuffle=True)
+            history = model_f.fit(X_tr, y_tr,
+                        epochs=500,
+                        validation_data=(X_val, y_val),
+                        batch_size=batch,
+                        callbacks=[
+                            tf.keras.callbacks.EarlyStopping(
+                                monitor='val_loss', patience=50,
+                                min_delta=0.01, restore_best_weights=True),
+                            tf.keras.callbacks.ModelCheckpoint(
+                                ckpt, monitor='val_loss',
+                                save_best_only=True)
+                        ],
+                        verbose=2, shuffle=True)
             
-    #         end_time = time.time()
+            end_time = time.time()
 
-    #         best = tf.keras.models.load_model(ckpt, compile=False)
+            best = tf.keras.models.load_model(ckpt, compile=False)
 
-    #         # ---------- avaliação ----------
-    #         y_pred = (best.predict(X_test) > 0.5).astype(int).ravel()
+            # ---------- avaliação ----------
+            y_pred = (best.predict(X_test) > 0.5).astype(int).ravel()
 
-    #         acc = accuracy_score(y_test, y_pred)
-    #         prec, rec, f1, _ = precision_recall_fscore_support(
-    #                                 y_test, y_pred, average="binary",
-    #                                 zero_division=0)
+            acc = accuracy_score(y_test, y_pred)
+            prec, rec, f1, _ = precision_recall_fscore_support(
+                                    y_test, y_pred, average="binary",
+                                    zero_division=0)
 
-    #         # salva métrica fold‐a‐fold
-    #         with open(log_txt, "a") as f:
-    #             f.write(f"Fold {fold:02d}  "
-    #                     f"Acc={acc:.4f}  "
-    #                     f"Prec={prec:.4f}  "
-    #                     f"Rec={rec:.4f}  "
-    #                     f"F1={f1:.4f}\n"
-    #                     f"Tempo de treinamento={end_time - start_time:.2f} s\n")
+            # salva métrica fold‐a‐fold
+            with open(log_txt, "a") as f:
+                f.write(f"Fold {fold:02d}  "
+                        f"Acc={acc:.4f}  "
+                        f"Prec={prec:.4f}  "
+                        f"Rec={rec:.4f}  "
+                        f"F1={f1:.4f}\n"
+                        f"Tempo de treinamento={end_time - start_time:.2f} s\n")
                 
-    #         plot_convergence(history, model.__name__, angle, fold, message)
+            plot_convergence(history, model.__name__, angle, fold, message)
         
 
-    # clear_memory()
+    clear_memory()
     
     max_retries = 2
     
@@ -3307,66 +3299,116 @@ def get_imgs_lim_seg_data(input_folder):
 
 
 
+from normalidade_f1 import teste_normalidade
+
+
+
 
 if __name__ == "__main__":
+
     # main()
 
+    # for i in range(30):
+    #     copy_file(f"history/Vgg_16/Vgg_AUG_CV_DatasetSeg2classes_17_01_t{i}_Frontal.txt", "Resultados30ModelosSeedsIndependentes/Vgg16" )
 
-    delete_folder("yyyy_seg_tag_teste")
-    train_model_cv(Vgg_16,
-                   raw_root="filtered_raw_dataset",
-                   angle="Frontal",
-                   k=5,                 
-                   resize_to=224,
-                   n_aug=2,             
-                   batch=8,
-                   seed= 853895,
-                   segmenter= "yolo",
-                   message="testestestesteTAGMASK", seg_model_path="runs/segment/train39/weights/best.pt",
-                   resize_method="BlackPadding")
+    #     copy_file(f"history/Vgg_16/Vgg_AUG_CV_DatasetSegYolo_09_01_t{i}_Frontal.txt", "Resultados30ModelosSeedsIndependentes/Vgg16" )
 
-    # classe = "sick"
+    #     copy_file(f"history/Vgg_16/Vgg_AUG_CV_DatasetTagFixedTam_09_01_t{i}_Frontal.txt", "Resultados30ModelosSeedsIndependentes/Vgg16" )
 
-    # files = os.listdir(f"Frontal-mask/{classe}")
+    #     copy_file(f"Vgg_AUG_CV_DatasetOriginal_9_01_t{i}_Frontal.txt", "Resultados30ModelosSeedsIndependentes/Vgg16" )
 
-    # for file in files:
-    #     full_path = os.path.join(f"Frontal-mask/{classe}", file)
-    #     temp = cv2.imread(full_path, cv2.IMREAD_UNCHANGED)
-    #     if temp is None:
-    #         print(f"[ERRO] Não foi possível ler o arquivo: {file}")
-    #         continue # Pula para o próximo arquivo
-    #     temp = (temp > 0).astype(int)
-    #     mn = temp.min()
-    #     mx = temp.max()        
+    #     copy_file(f"Vgg_AUG_CV_DatasetSemMarcador_09_01_t{i}_Frontal.txt", "Resultados30ModelosSeedsIndependentes/Vgg16" )
 
-    #     if mn != 0 or mx != 1:
-    #         print(f"{file} : Min = {mn} | Max = {mx}")
+    BASE_DIR = "Resultados30ModelosSeedsIndependentes"
 
-    #     name = Path(file).with_suffix('.txt')
+    # Regex para capturar métricas por linha
+    regex_metrics = re.compile(
+        r"Acc=([\d.]+)\s+Prec=([\d.]+)\s+Rec=([\d.]+)\s+F1=([\d.]+)"
+    )
 
-    #     dest_dir = f"Frontal-mask-txt/{classe}"
-    #     os.makedirs(dest_dir, exist_ok=True)
-    #     full_path_dest = os.path.join(dest_dir, name)
-
-    #     np.savetxt(full_path_dest, temp)
+    def extrair_config(nome_arquivo):
+        """
+        Remove a parte '_tX_' para identificar a configuração.
+        Exemplo:
+        Entrada: Vgg_AUG_CV_DatasetTagFixedTam_t3_Frontal.txt
+        Saída:   Vgg_AUG_CV_DatasetTagFixedTam
+        """
+        partes = nome_arquivo.split("_t")
+        return partes[0]
 
 
-    # delete_folder("testeMaskTXT/")
+    # Dicionário para agrupar resultados por configuração
+    configs = {}
 
-    # files = os.listdir("Frontal-mask-txt/healthy")
+    # Percorrer arquivos
+    for root, dirs, files in os.walk(BASE_DIR):
+        for fname in files:
+            if fname.endswith(".txt"):
+                caminho = os.path.join(root, fname)
 
-    # os.makedirs("testeMaskTXT/", exist_ok=True)
+                config = extrair_config(fname)
 
-    # for file in files:
-    #     fpath = os.path.join("Frontal-mask-txt/healthy", file)
+                # Garantir que existe lista para essa configuração
+                if config not in configs:
+                    configs[config] = {
+                        "accs": [], "precs": [], "recs": [], "f1s": []
+                    }
 
-    #     name = Path(file).stem
+                # Ler somente 5 primeiros folds
+                accs, precs, recs, f1s = [], [], [], []
+                with open(caminho, "r") as f:
+                    for linha in f:
+                        if len(accs) > 5:
+                            print(f"+5 folds em: {caminho}")
+                            break
 
-    #     arr = load_temp_matrix(fpath)
+                        match = regex_metrics.search(linha)
+                        if match:
+                            acc, prec, rec, f1 = map(float, match.groups())
+                            accs.append(acc)
+                            precs.append(prec)
+                            recs.append(rec)
+                            f1s.append(f1)
 
-    #     plt.imsave(f"testeMaskTXT/{name}.png", arr, cmap = "gray")
+                # Adicionar nos resultados globais da configuração
+                configs[config]["accs"].extend(accs)
+                configs[config]["precs"].extend(precs)
+                configs[config]["recs"].extend(recs)
+                configs[config]["f1s"].extend(f1s)
 
-        
+    
 
- 
-        
+    print(len(configs[config]["accs"]), len(configs[config]["f1s"]))
+
+
+    # Criar CSV final
+    output_csv = "resumo_configuracoes_seeds_independentes_19_01.csv"
+
+    with open(output_csv, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "Configuração",
+            "Acc_mean", "Acc_std",
+            "Prec_mean", "Prec_std",
+            "Rec_mean", "Rec_std",
+            "F1_mean", "F1_std",
+            "N_folds"
+        ])
+
+        for config, dados in configs.items():
+            accs = dados["accs"]
+            precs = dados["precs"]
+            recs = dados["recs"]
+            f1s = dados["f1s"]
+
+            writer.writerow([
+                config,
+                np.mean(accs), np.std(accs),
+                np.mean(precs), np.std(precs),
+                np.mean(recs), np.std(recs),
+                np.mean(f1s), np.std(f1s),
+                len(accs)
+            ])
+
+    print(f"Resumo salvo em: {output_csv}")
+
