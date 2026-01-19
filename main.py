@@ -1,7 +1,7 @@
 import cv2
 from ultralytics import YOLO
 from include.imports import *
-from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes, make_tvt_splits_marker_aware, verificar_splits_marker_aware, balance_marker_within_train, load_temp_matrix, extract_id_data, make_tvt_split_single
+from utils.data_prep import load_imgs_masks, load_raw_images_ufpe, yolo_data, masks_to_polygons,load_imgs_masks_only, copy_images_excluding_patients, filter_dataset_by_id, load_raw_images,make_tvt_splits, augment_train_fold, normalize, tf_letterbox, listar_imgs_nao_usadas, load_imgs_masks_sem_padding,load_imgs_masks_recortado,tf_letterbox_Sem_padding, letterbox_center_crop, load_imgs_masks_Black_Padding, tf_letterbox_black,load_imgs_masks_distorcidas, apply_augmentation_and_expand_ufpe, yolo_data_2_classes, make_tvt_splits_marker_aware, verificar_splits_marker_aware, balance_marker_within_train, load_temp_matrix, extract_id_data, make_tvt_split_single, load_raw_images_with_masks, augment_train_fold_with_masks
 from utils.files_manipulation import move_files_within_folder, create_folder, move_folder
 from src.models.yolo_seg import train_yolo_seg
 from src.models.u_net import unet_model, unet_model_retangular
@@ -79,7 +79,7 @@ def unet_segmenter(data_train, data_valid, data_test, path_model):
     return segmented_images_train, segmented_images_valid, segmented_images_test
 
 
-def segment_with_yolo( X_train, X_valid, X_test, model_path):
+def segment_with_yolo( X_train, X_valid, X_test, M_train, M_valid, M_test, model_path):
     """
     Segmenta X_train, X_valid e X_test usando YOLO-Seg.
     Retorna as imagens segmentadas nas mesmas ordens.
@@ -98,11 +98,11 @@ def segment_with_yolo( X_train, X_valid, X_test, model_path):
         return temp
     
     PEITO_ID = 0       
-    MARCADOR_ID = 1    
+    # MARCADOR_ID = 1    
 
-    def segment_batch(images, model):
+    def segment_batch(images, marker_masks, model):
         segmented = []
-        for img in images:
+        for img, m_marker in zip(images, marker_masks):
             original = img
             img_prepared = prepare_image(original)  # sua função
             H, W = img_prepared.shape[:2]
@@ -118,23 +118,37 @@ def segment_with_yolo( X_train, X_valid, X_test, model_path):
                 len(res.masks.data) > 0
             )
 
+            if m_marker.ndim == 3 and m_marker.shape[2] == 1:
+                m_marker = m_marker[..., 0]
+
+            marker_mask = (
+            (m_marker > 0.5).astype(np.uint8)
+            if m_marker.dtype != np.uint8
+            else (m_marker > 0).astype(np.uint8)
+            )
+
+            marker_mask = cv2.resize(marker_mask, (W, H), interpolation=cv2.INTER_NEAREST)
+
+            
+            # Máscara final = união (OR) das instâncias de PEITO e MARCADOR
+            union_mask = np.zeros((H, W), dtype=np.uint8)
+
             if has_masks:
                 # (N_inst, h_m, w_m)
                 masks_np = res.masks.data.cpu().numpy()
                 # classes (N_inst,)
                 classes = res.boxes.cls.cpu().numpy().astype(int)
 
-                # Máscara final = união (OR) das instâncias de PEITO e MARCADOR
-                union_mask = np.zeros((H, W), dtype=np.uint8)
-
                 for m, c in zip(masks_np, classes):
-                    if c in (PEITO_ID, MARCADOR_ID):
+                    # if c in (PEITO_ID, MARCADOR_ID):
+                    if c == PEITO_ID:
                         m_bin = (m > 0.5).astype(np.uint8)
                         # sempre redimensione máscaras com NEAREST
                         m_resized = cv2.resize(m_bin, (W, H), interpolation=cv2.INTER_NEAREST)
                         union_mask |= m_resized
 
                 if union_mask.max() > 0:
+                    union_mask |= marker_mask   
                     mask_float = (union_mask > 0).astype(np.float32)
                     if original.ndim == 2:
                         segmented_img = original * mask_float
@@ -158,9 +172,9 @@ def segment_with_yolo( X_train, X_valid, X_test, model_path):
     model = YOLO(model_path)
 
     # Segmenta os três conjuntos
-    seg_train = segment_batch(X_train, model)
-    seg_valid = segment_batch(X_valid, model)
-    seg_test  = segment_batch(X_test, model)
+    seg_train = segment_batch(X_train, M_train, model)
+    seg_valid = segment_batch(X_valid, M_valid, model)
+    seg_test  = segment_batch(X_test, M_test, model)
 
 
     def squeeze_channel(x):
@@ -356,8 +370,8 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             os.path.join(raw_root, angle), exclude=False)
         print(f"Carregando imagens da UFPE: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
     else:
-        X, y, patient_ids, filenames, ids_data = load_raw_images(   
-            os.path.join(raw_root, angle), exclude=True, exclude_set=exclude_set)
+        X, y, patient_ids, filenames, ids_data, masks = load_raw_images_with_masks(   
+            os.path.join(raw_root, angle), "Frontal-mask-txt", exclude=True, exclude_set=exclude_set)
         
         print(f"Carregando imagens: {X.shape}, {y.shape}, {len(patient_ids)} pacientes")
 
@@ -378,10 +392,10 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
     def run_fold():
 
 
-        X_tr, y_tr = X[tr_idx], y[tr_idx]
-        X_val,    y_val = X[va_idx], y[va_idx]
+        X_tr, y_tr, masks_tr = X[tr_idx], y[tr_idx], masks[tr_idx]
+        X_val,    y_val, masks_val = X[va_idx], y[va_idx], masks[va_idx]
 
-        X_test,   y_test= X[te_idx], y[te_idx]
+        X_test,   y_test, masks_test = X[te_idx], y[te_idx], masks[te_idx]
 
         print(f"Shape de treinamento fold {fold} antes do aumento de dados: {X_tr.shape}")
         print(f"Shape de validação fold {fold}: {X_val.shape}")
@@ -418,11 +432,13 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                 X_tr, y_tr = augment_train_fold(X_tr, y_tr,         
                                                 n_aug=n_aug, seed=seed,dataset='ufpe')
             else:
-                X_tr, y_tr = augment_train_fold(X_tr, y_tr,         
-                                                n_aug=n_aug, seed=seed, dataset='uff')
+                X_tr, masks_tr, y_tr = augment_train_fold_with_masks(X_tr, masks_tr, y_tr,         
+                                                n_aug=n_aug, seed=seed)
                 
             with open("modelos/random_seed.txt", "a") as f:
                 f.write(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape} | Saudaveis: {X_tr[y_tr==0].shape[0]} | Doentes: {X_tr[y_tr==1].shape[0]} \n")
+
+        
         
 
         if resize:
@@ -430,6 +446,10 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             X_tr = np.expand_dims(X_tr, axis=-1)
             X_val= np.expand_dims(X_val, axis=-1)
             X_test= np.expand_dims(X_test, axis=-1)
+
+            masks_tr = np.expand_dims(masks_tr, axis=-1)
+            masks_val= np.expand_dims(masks_val, axis=-1)
+            masks_test= np.expand_dims(masks_test, axis=-1)
 
             if resize_method == "GrayPadding":
                 X_tr = tf_letterbox(X_tr, resize_to)
@@ -439,6 +459,11 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
                 X_tr = tf_letterbox_black(X_tr, resize_to)
                 X_val = tf_letterbox_black(X_val, resize_to)
                 X_test = tf_letterbox_black(X_test, resize_to)
+
+                masks_tr = tf_letterbox_black(masks_tr, resize_to, mode="nearest")
+                masks_val = tf_letterbox_black(masks_val, resize_to, mode="nearest")
+                masks_test = tf_letterbox_black(masks_test, resize_to, mode="nearest")
+
             elif resize_method == "Distorcido":
                 X_tr = tf.image.resize(X_tr, (224,224), method = "bilinear")
                 X_val = tf.image.resize(X_val, (224,224), method = "bilinear")
@@ -448,217 +473,216 @@ def train_model_cv(model, raw_root, message, angle="Frontal", k=5,
             X_val = tf.clip_by_value(X_val, 0, 1).numpy().squeeze(axis=-1)
             X_test = tf.clip_by_value(X_test, 0, 1).numpy().squeeze(axis=-1)
 
+            masks_tr = tf.clip_by_value(masks_tr, 0, 1).numpy().squeeze(axis=-1)
+            masks_val = tf.clip_by_value(masks_val, 0, 1).numpy().squeeze(axis=-1)
+            masks_test = tf.clip_by_value(masks_test, 0, 1).numpy().squeeze(axis=-1)
+
 
         if segmenter != "none":
             if segmenter == "unet":
                 X_tr, X_val, X_test = unet_segmenter(X_tr, X_val, X_test, seg_model_path)
                 print(f"Segmentação com UNet concluída.")   
             elif segmenter == "yolo":
-                X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, seg_model_path)
+                X_tr, X_val, X_test = segment_with_yolo(X_tr, X_val, X_test, masks_tr, masks_val, masks_test,seg_model_path)
                 print(f"Segmentação com YOLO concluída.")
             else:
                 raise ValueError("segmenter deve ser 'none', 'unet' ou 'yolo'")
 
-        os.makedirs(f"{message}/{seed}", exist_ok=True)
-                
-        for i, img in enumerate(X_tr):
-                plt.imsave(f"{message}/{seed}/{i}.png", img)
-
-        # if isinstance(model, str):
-        #     if model == "yolo":
-        #         print("Modelo YOLO selecionado.")
+        if isinstance(model, str):
+            if model == "yolo":
+                print("Modelo YOLO selecionado.")
             
-        # else:
+        else:
             
-        #     if model.__name__ == "Vgg_16_pre_trained" or model.__name__ == "resnet50_pre_trained":
-        #         X_tr = (X_tr * 255).astype(np.uint8)
-        #         X_val = (X_val * 255).astype(np.uint8)
-        #         X_test = (X_test * 255).astype(np.uint8)
+            if model.__name__ == "Vgg_16_pre_trained" or model.__name__ == "resnet50_pre_trained":
+                X_tr = (X_tr * 255).astype(np.uint8)
+                X_val = (X_val * 255).astype(np.uint8)
+                X_test = (X_test * 255).astype(np.uint8)
                 
-        #         # A VGG16 precisa do pré-processamento do ImageNet
+                # A VGG16 precisa do pré-processamento do ImageNet
 
-        #         if channel_method == "MapaCalor":
+                if channel_method == "MapaCalor":
 
-        #             imgs_tr = []
-        #             imgs_val = []
-        #             imgs_test = []
+                    imgs_tr = []
+                    imgs_val = []
+                    imgs_test = []
                     
-        #             for img in X_tr:
-        #                 img = img.astype(np.uint8)
-        #                 img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-        #                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        #                 imgs_tr.append(img)
+                    for img in X_tr:
+                        img = img.astype(np.uint8)
+                        img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        imgs_tr.append(img)
 
-        #             for img in X_val:
-        #                 img = img.astype(np.uint8)
-        #                 img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-        #                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        #                 imgs_val.append(img)
+                    for img in X_val:
+                        img = img.astype(np.uint8)
+                        img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        imgs_val.append(img)
 
-        #             for img in X_test:
-        #                 img = img.astype(np.uint8)
-        #                 img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-        #                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        #                 imgs_test.append(img)
+                    for img in X_test:
+                        img = img.astype(np.uint8)
+                        img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        imgs_test.append(img)
 
-        #             X_tr = np.array(imgs_tr)
-        #             X_val = np.array(imgs_val)
-        #             X_test = np.array(imgs_test)
+                    X_tr = np.array(imgs_tr)
+                    X_val = np.array(imgs_val)
+                    X_test = np.array(imgs_test)
 
-        #         else:
-        #             print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
-        #             X_tr = np.stack((X_tr,) * 3, axis=-1)
-        #             X_val = np.stack((X_val,) * 3, axis=-1)
-        #             X_test = np.stack((X_test,) * 3, axis=-1)
-        #             print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
+                else:
+                    print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
+                    X_tr = np.stack((X_tr,) * 3, axis=-1)
+                    X_val = np.stack((X_val,) * 3, axis=-1)
+                    X_test = np.stack((X_test,) * 3, axis=-1)
+                    print(f"Shape de treinamento fold {fold} após o aumento de dados: {X_tr.shape}")
 
                 
-        #         if model.__name__ == "Vgg_16_pre_trained":
-        #             X_tr = vgg_preprocess_input(X_tr)
-        #             X_val = vgg_preprocess_input(X_val)
-        #             X_test = vgg_preprocess_input(X_test)
-        #         elif model.__name__ == "resnet50_pre_trained":
-        #             X_tr = resnet_preprocess_input(X_tr)
-        #             X_val = resnet_preprocess_input(X_val)
-        #             X_test = resnet_preprocess_input(X_test)
+                if model.__name__ == "Vgg_16_pre_trained":
+                    X_tr = vgg_preprocess_input(X_tr)
+                    X_val = vgg_preprocess_input(X_val)
+                    X_test = vgg_preprocess_input(X_test)
+                elif model.__name__ == "resnet50_pre_trained":
+                    X_tr = resnet_preprocess_input(X_tr)
+                    X_val = resnet_preprocess_input(X_val)
+                    X_test = resnet_preprocess_input(X_test)
 
-        # # # ----------- VERIFICAÇÃO DA FAIXA DE VALORES -----------
-        # # print("\n--- Faixas de Valores após o Pré-processamento ---")
-        # # print(f"Conjunto de Treino: min={X_tr.min():.4f}, max={X_tr.max():.4f}")
-        # # print(f"Conjunto de Validação: min={X_val.min():.4f}, max={X_val.max():.4f}")
-        # # print(f"Conjunto de Teste: min={X_test.min():.4f}, max={X_test.max():.4f}")
-        # # print("---------------------------------------------------\n")
+        # # ----------- VERIFICAÇÃO DA FAIXA DE VALORES -----------
+        # print("\n--- Faixas de Valores após o Pré-processamento ---")
+        # print(f"Conjunto de Treino: min={X_tr.min():.4f}, max={X_tr.max():.4f}")
+        # print(f"Conjunto de Validação: min={X_val.min():.4f}, max={X_val.max():.4f}")
+        # print(f"Conjunto de Teste: min={X_test.min():.4f}, max={X_test.max():.4f}")
+        # print("---------------------------------------------------\n")
         
 
-        # if model == "yolo":
-        #     save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
-        #     save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
-        #     save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
+        if model == "yolo":
+            save_split_to_png(X_tr, y_tr, "train", root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_val, y_val, "val",   root=f"dataset_fold_{fold+1}")
+            save_split_to_png(X_test, y_test, "test", root=f"dataset_fold_{fold+1}")
 
-        #     # print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
+            # print(f"Treinando YOLOv8 para o fold {fold+1} com seed {seed}...")
 
-        #     # Treinamento YOLO
-        #     model_f = YOLO('yolov8s-cls.pt')
-        #     start_time = time.time() 
+            # Treinamento YOLO
+            model_f = YOLO('yolov8s-cls.pt')
+            start_time = time.time() 
 
-        #     model_f.train(
-        #         data=f"dataset_fold_{fold+1}",
-        #         epochs=100,
-        #         patience=50,
-        #         batch=16,
-        #         #lr0=0.0005,
-        #         optimizer='AdamW',
-        #         #weight_decay=0.0005,
-        #         #hsv_h=0.1,
-        #         #hsv_s=0.2,
-        #         #flipud=0.3,
-        #         #mosaic=0.1,
-        #         #mixup=0.1,
-        #         workers=0,
-        #         pretrained=False,
-        #         amp=False,
-        #         deterministic=True,
-        #         seed=seed,
-        #         project="runs/classify",
-        #         name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
-        #     )
+            model_f.train(
+                data=f"dataset_fold_{fold+1}",
+                epochs=100,
+                patience=50,
+                batch=16,
+                #lr0=0.0005,
+                optimizer='AdamW',
+                #weight_decay=0.0005,
+                #hsv_h=0.1,
+                #hsv_s=0.2,
+                #flipud=0.3,
+                #mosaic=0.1,
+                #mixup=0.1,
+                workers=0,
+                pretrained=False,
+                amp=False,
+                deterministic=True,
+                seed=seed,
+                project="runs/classify",
+                name=f"YOLOv8_cls_fold_{fold+1}_seed_{seed}"
+            )
             
-        #     end_time = time.time()
+            end_time = time.time()
 
-        #     # Validação
-        #     metrics = model_f.val(
-        #         data=f"dataset_fold_{fold+1}",
-        #         project="runs/classify/val",
-        #         name=f"fold_{fold+1}_seed_{seed}",
-        #         save_json=True
-        #     )
+            # Validação
+            metrics = model_f.val(
+                data=f"dataset_fold_{fold+1}",
+                project="runs/classify/val",
+                name=f"fold_{fold+1}_seed_{seed}",
+                save_json=True
+            )
 
-        #     # Dados para salvar
-        #     results_to_save = {
-        #         'top1_accuracy': metrics.top1,
-        #         'top5_accuracy': metrics.top5,
-        #         'fitness': metrics.fitness,
-        #         'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
-        #         'all_metrics': metrics.results_dict,
-        #         'speed': metrics.speed
-        #     }
+            # Dados para salvar
+            results_to_save = {
+                'top1_accuracy': metrics.top1,
+                'top5_accuracy': metrics.top5,
+                'fitness': metrics.fitness,
+                'training_time_formatted': f"{end_time - start_time:.2f} s",  # Formatado como string
+                'all_metrics': metrics.results_dict,
+                'speed': metrics.speed
+            }
 
-        #     # Salvar em JSON
-        #     with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
-        #         json_module.dump(results_to_save, f, indent=4)
+            # Salvar em JSON
+            with open(f'runs/classify/val/fold_{fold+1}_seed_{seed}/results_fold_{fold+1}_seed_{seed}.json', 'w') as f:
+                json_module.dump(results_to_save, f, indent=4)
 
-        #     """
-        #     # Extraindo métricas
-        #     accuracy = metrics.results_dict['accuracy_top1']
-        #     precision = metrics.results_dict['precision']
-        #     recall = metrics.results_dict['recall']
-        #     f1 = metrics.results_dict['f1']
+            """
+            # Extraindo métricas
+            accuracy = metrics.results_dict['accuracy_top1']
+            precision = metrics.results_dict['precision']
+            recall = metrics.results_dict['recall']
+            f1 = metrics.results_dict['f1']
 
-        #     # Salvando no mesmo arquivo de log dos outros modelos
-        #     with open(log_txt, "a") as f:
-        #         f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
-        #         f.write(f"Accuracy: {accuracy:.4f}\n")
-        #         f.write(f"Precision: {precision:.4f}\n")
-        #         f.write(f"Recall: {recall:.4f}\n")
-        #         f.write(f"F1-Score: {f1:.4f}\n")
-        #         f.write("-"*50 + "\n")  # Separador visual
+            # Salvando no mesmo arquivo de log dos outros modelos
+            with open(log_txt, "a") as f:
+                f.write(f"\nYOLO Validation - Fold {fold+1:02d}\n")
+                f.write(f"Accuracy: {accuracy:.4f}\n")
+                f.write(f"Precision: {precision:.4f}\n")
+                f.write(f"Recall: {recall:.4f}\n")
+                f.write(f"F1-Score: {f1:.4f}\n")
+                f.write("-"*50 + "\n")  # Separador visual
 
-        #     """
+            """
 
-        # else:
+        else:
 
-        #     if model == Vgg_16 or model.__name__ == 'Vgg_16_pre_trained':
-        #         obj = model()
-        #         model_f = obj.model
-        #         print("VGG")
-        #     else:
-        #         model_f   = model()
-        #         print("ResNet")
+            if model == Vgg_16 or model.__name__ == 'Vgg_16_pre_trained':
+                obj = model()
+                model_f = obj.model
+                print("VGG")
+            else:
+                model_f   = model()
+                print("ResNet")
 
-        #     ckpt    = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
-        #     log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
-        #     os.makedirs(os.path.dirname(ckpt), exist_ok=True)
-        #     os.makedirs(os.path.dirname(log_txt), exist_ok=True)
+            ckpt    = f"modelos/{model.__name__}/{message}_{angle}_F{fold}.h5"
+            log_txt = f"history/{model.__name__}/{message}_{angle}.txt"
+            os.makedirs(os.path.dirname(ckpt), exist_ok=True)
+            os.makedirs(os.path.dirname(log_txt), exist_ok=True)
 
 
-        #     start_time = time.time()
+            start_time = time.time()
             
-        #     history = model_f.fit(X_tr, y_tr,
-        #                 epochs=500,
-        #                 validation_data=(X_val, y_val),
-        #                 batch_size=batch,
-        #                 callbacks=[
-        #                     tf.keras.callbacks.EarlyStopping(
-        #                         monitor='val_loss', patience=50,
-        #                         min_delta=0.01, restore_best_weights=True),
-        #                     tf.keras.callbacks.ModelCheckpoint(
-        #                         ckpt, monitor='val_loss',
-        #                         save_best_only=True)
-        #                 ],
-        #                 verbose=2, shuffle=True)
+            history = model_f.fit(X_tr, y_tr,
+                        epochs=500,
+                        validation_data=(X_val, y_val),
+                        batch_size=batch,
+                        callbacks=[
+                            tf.keras.callbacks.EarlyStopping(
+                                monitor='val_loss', patience=50,
+                                min_delta=0.01, restore_best_weights=True),
+                            tf.keras.callbacks.ModelCheckpoint(
+                                ckpt, monitor='val_loss',
+                                save_best_only=True)
+                        ],
+                        verbose=2, shuffle=True)
             
-        #     end_time = time.time()
+            end_time = time.time()
 
-        #     best = tf.keras.models.load_model(ckpt, compile=False)
+            best = tf.keras.models.load_model(ckpt, compile=False)
 
-        #     # ---------- avaliação ----------
-        #     y_pred = (best.predict(X_test) > 0.5).astype(int).ravel()
+            # ---------- avaliação ----------
+            y_pred = (best.predict(X_test) > 0.5).astype(int).ravel()
 
-        #     acc = accuracy_score(y_test, y_pred)
-        #     prec, rec, f1, _ = precision_recall_fscore_support(
-        #                             y_test, y_pred, average="binary",
-        #                             zero_division=0)
+            acc = accuracy_score(y_test, y_pred)
+            prec, rec, f1, _ = precision_recall_fscore_support(
+                                    y_test, y_pred, average="binary",
+                                    zero_division=0)
 
-        #     # salva métrica fold‐a‐fold
-        #     with open(log_txt, "a") as f:
-        #         f.write(f"Fold {fold:02d}  "
-        #                 f"Acc={acc:.4f}  "
-        #                 f"Prec={prec:.4f}  "
-        #                 f"Rec={rec:.4f}  "
-        #                 f"F1={f1:.4f}\n"
-        #                 f"Tempo de treinamento={end_time - start_time:.2f} s\n")
+            # salva métrica fold‐a‐fold
+            with open(log_txt, "a") as f:
+                f.write(f"Fold {fold:02d}  "
+                        f"Acc={acc:.4f}  "
+                        f"Prec={prec:.4f}  "
+                        f"Rec={rec:.4f}  "
+                        f"F1={f1:.4f}\n"
+                        f"Tempo de treinamento={end_time - start_time:.2f} s\n")
                 
-        #     plot_convergence(history, model.__name__, angle, fold, message)
+            plot_convergence(history, model.__name__, angle, fold, message)
         
 
     clear_memory()
@@ -3275,19 +3299,329 @@ def get_imgs_lim_seg_data(input_folder):
 
 
 
+from normalidade_f1 import teste_normalidade
+
+
+
 
 if __name__ == "__main__":
+
     # main()
 
-    files = [
-        "Vgg_AUG_CV_DatasetFixedTagTemp_09_01t1_teste",
-"Vgg_AUG_CV_DatasetFixedTagTemp_09_01t1_teste",
-"Vgg_AUG_CV_DatasetFixedTagTemp_09_01t2_teste",
-"Vgg_AUG_CV_DatasetMarcadorMovidoFixo_09_01_t1_teste",
-"Vgg_AUG_CV_DatasetMarcadorMovidoFixo_09_01_t2_teste",
-"Vgg_AUG_CV_DatasetSegYolo_09_01_t1_teste",
-"Vgg_AUG_CV_DatasetSegYolo_09_01_t2_teste",
-    ]
+    # for i in range(30):
+    #     copy_file(f"history/Vgg_16/Vgg_AUG_CV_DatasetSeg2classes_17_01_t{i}_Frontal.txt", "Resultados30ModelosSeedsIndependentes/Vgg16" )
 
-    for file in files:
-        delete_folder(file)
+    #     copy_file(f"history/Vgg_16/Vgg_AUG_CV_DatasetSegYolo_09_01_t{i}_Frontal.txt", "Resultados30ModelosSeedsIndependentes/Vgg16" )
+
+    #     copy_file(f"history/Vgg_16/Vgg_AUG_CV_DatasetTagFixedTam_09_01_t{i}_Frontal.txt", "Resultados30ModelosSeedsIndependentes/Vgg16" )
+
+    #     copy_file(f"Vgg_AUG_CV_DatasetOriginal_9_01_t{i}_Frontal.txt", "Resultados30ModelosSeedsIndependentes/Vgg16" )
+
+    #     copy_file(f"Vgg_AUG_CV_DatasetSemMarcador_09_01_t{i}_Frontal.txt", "Resultados30ModelosSeedsIndependentes/Vgg16" )
+
+    # BASE_DIR = "Resultados30ModelosSeedsIndependentes"
+
+    # # Regex para capturar métricas por linha
+    # regex_metrics = re.compile(
+    #     r"Acc=([\d.]+)\s+Prec=([\d.]+)\s+Rec=([\d.]+)\s+F1=([\d.]+)"
+    # )
+
+    # def extrair_config(nome_arquivo):
+    #     """
+    #     Remove a parte '_tX_' para identificar a configuração.
+    #     Exemplo:
+    #     Entrada: Vgg_AUG_CV_DatasetTagFixedTam_t3_Frontal.txt
+    #     Saída:   Vgg_AUG_CV_DatasetTagFixedTam
+    #     """
+    #     partes = nome_arquivo.split("_t")
+    #     return partes[0]
+
+
+    # # Dicionário para agrupar resultados por configuração
+    # configs = {}
+
+    # # Percorrer arquivos
+    # for root, dirs, files in os.walk(BASE_DIR):
+    #     for fname in files:
+    #         if fname.endswith(".txt"):
+    #             caminho = os.path.join(root, fname)
+
+    #             config = extrair_config(fname)
+
+    #             # Garantir que existe lista para essa configuração
+    #             if config not in configs:
+    #                 configs[config] = {
+    #                     "accs": [], "precs": [], "recs": [], "f1s": []
+    #                 }
+
+    #             # Ler somente 5 primeiros folds
+    #             accs, precs, recs, f1s = [], [], [], []
+    #             with open(caminho, "r") as f:
+    #                 for linha in f:
+    #                     if len(accs) > 5:
+    #                         print(f"+5 folds em: {caminho}")
+    #                         break
+
+    #                     match = regex_metrics.search(linha)
+    #                     if match:
+    #                         acc, prec, rec, f1 = map(float, match.groups())
+    #                         accs.append(acc)
+    #                         precs.append(prec)
+    #                         recs.append(rec)
+    #                         f1s.append(f1)
+
+    #             # Adicionar nos resultados globais da configuração
+    #             configs[config]["accs"].extend(accs)
+    #             configs[config]["precs"].extend(precs)
+    #             configs[config]["recs"].extend(recs)
+    #             configs[config]["f1s"].extend(f1s)
+
+    
+
+    # print(len(configs[config]["accs"]), len(configs[config]["f1s"]))
+
+
+    # # Criar CSV final
+    # output_csv = "resumo_configuracoes_seeds_independentes_19_01.csv"
+
+    # with open(output_csv, "w", newline="") as f:
+    #     writer = csv.writer(f)
+    #     writer.writerow([
+    #         "Configuração",
+    #         "Acc_mean", "Acc_std",
+    #         "Prec_mean", "Prec_std",
+    #         "Rec_mean", "Rec_std",
+    #         "F1_mean", "F1_std",
+    #         "N_folds"
+    #     ])
+
+    #     for config, dados in configs.items():
+    #         accs = dados["accs"]
+    #         precs = dados["precs"]
+    #         recs = dados["recs"]
+    #         f1s = dados["f1s"]
+
+    #         writer.writerow([
+    #             config,
+    #             np.mean(accs), np.std(accs),
+    #             np.mean(precs), np.std(precs),
+    #             np.mean(recs), np.std(recs),
+    #             np.mean(f1s), np.std(f1s),
+    #             len(accs)
+    #         ])
+
+    # print(f"Resumo salvo em: {output_csv}")
+
+        # Gerando os .csv com resultados indiciduais de cada um dos 30 treinamentos e médias agrupadas por semente.
+
+    # from pathlib import Path
+    # import re
+    # import pandas as pd
+
+    # BASE_DIR = Path("Resultados30ModelosSeedsIndependentes")
+
+    # # Ex.: Fold 00  Acc=0.7959  Prec=0.8571  Rec=0.6000  F1=0.7059
+    # REGEX_FOLD = re.compile(
+    #     r"Fold\s*(\d+)\s+Acc=([\d.]+)\s+Prec=([\d.]+)\s+Rec=([\d.]+)\s+F1=([\d.]+)",
+    #     re.IGNORECASE,
+    # )
+
+    # # Ex.: ..._t0_Frontal.txt  -> seed=0
+    # REGEX_SEED = re.compile(r"_t(\d+)_", re.IGNORECASE)
+
+    # def parse_config_and_seed(filename: str) -> tuple[str, int]:
+    #     """
+    #     filename: Vgg_AUG_CV_DatasetSegFixedTagTemp_t0_Frontal.txt
+    #     retorna:
+    #     config: Vgg_AUG_CV_DatasetSegFixedTagTemp
+    #     seed: 0
+    #     """
+    #     m = REGEX_SEED.search(filename)
+    #     if not m:
+    #         raise ValueError(f"Não achei padrão _tX_ no nome: {filename}")
+    #     seed = int(m.group(1))
+
+    #     # Remove: _tX_ + tudo depois disso (ex: _Frontal.txt)
+    #     config = filename.split(f"_t{seed}_")[0]
+    #     return config, seed
+
+    # rows = []
+
+    # for path in BASE_DIR.rglob("*.txt"):
+    #     fname = path.name
+    #     config, seed = parse_config_and_seed(fname)
+
+    #     with path.open("r", encoding="utf-8", errors="ignore") as f:
+    #         for line in f:
+    #             m = REGEX_FOLD.search(line)
+    #             if not m:
+    #                 continue
+
+    #             fold = int(m.group(1))
+    #             acc = float(m.group(2))
+    #             prec = float(m.group(3))
+    #             rec = float(m.group(4))
+    #             f1 = float(m.group(5))
+
+    #             rows.append({
+    #                 "Configuração": config,
+    #                 "Seed": seed,
+    #                 "Fold": fold,
+    #                 "Acc": acc,
+    #                 "Prec": prec,
+    #                 "Rec": rec,
+    #                 "F1": f1,
+    #                 "Arquivo": str(path),
+    #             })
+
+    # df_fold = pd.DataFrame(rows)
+
+    # # Validações úteis
+    # if df_fold.empty:
+    #     raise RuntimeError("df_fold ficou vazio. Verifique BASE_DIR e o regex das linhas.")
+    # # garante que cada (config, seed) tem 5 folds
+    # check = df_fold.groupby(["Configuração", "Seed"])["Fold"].nunique().reset_index(name="n_folds")
+    # missing = check[check["n_folds"] != 5]
+    # if not missing.empty:
+    #     print("Atenção: há config/seed sem 5 folds completos:")
+    #     print(missing)
+
+    # # Ordena bonitinho
+    # df_fold = df_fold.sort_values(["Configuração", "Seed", "Fold"]).reset_index(drop=True)
+
+    # # Agregado por seed (nível recomendado para teste estatístico)
+    # df_seed = (
+    #     df_fold
+    #     .groupby(["Configuração", "Seed"], as_index=False)
+    #     .agg(
+    #         Acc_mean=("Acc", "mean"),
+    #         Prec_mean=("Prec", "mean"),
+    #         Rec_mean=("Rec", "mean"),
+    #         F1_mean=("F1", "mean"),
+    #         # opcional: variabilidade dentro da seed
+    #         F1_std=("F1", "std"),
+    #     )
+    #     .sort_values(["Configuração", "Seed"])
+    #     .reset_index(drop=True)
+    # )
+
+    # # Se quiser salvar:
+    # df_fold.to_csv("resultados_por_fold_19_01.csv", index=False)
+    # df_seed.to_csv("resultados_por_seed_19_01.csv", index=False)
+
+    # print("OK!")
+    # print("df_fold:", df_fold.shape, "-> resultados_por_fold.csv")
+    # print("df_seed:", df_seed.shape, "-> resultados_por_seed.csv")
+
+    # teste_normalidade("todosResultados.csv", "TesteNormalidade")
+
+    import numpy as np
+    import pandas as pd
+    from scipy import stats
+    from statsmodels.stats.multitest import multipletests
+
+    # ============================
+    # CONFIGURAÇÃO
+    # ============================
+    CSV_PATH = "todosResultados.csv"
+
+    BASELINE_NAME = "Vgg_AUG_CV_DatasetOriginal_9_01"  
+    # <<< ajuste aqui para o nome EXATO da configuração baseline >>>
+
+    ALPHA = 0.05
+
+    # ============================
+    # FUNÇÕES AUXILIARES
+    # ============================
+    def cohens_d(x, y):
+        """Cohen's d para duas amostras independentes"""
+        nx, ny = len(x), len(y)
+        sx, sy = np.var(x, ddof=1), np.var(y, ddof=1)
+        pooled_std = np.sqrt(((nx - 1)*sx + (ny - 1)*sy) / (nx + ny - 2))
+        return (np.mean(x) - np.mean(y)) / pooled_std
+
+
+    def detect_columns(df):
+        """Detecta coluna de configuração e F1"""
+        # configuração
+        cfg_col = next(c for c in df.columns if df[c].dtype == "object")
+
+        # F1
+        f1_col = next(c for c in df.columns if "f1" in c.lower())
+
+        return cfg_col, f1_col
+
+
+    # ============================
+    # PIPELINE PRINCIPAL
+    # ============================
+    df = pd.read_csv(CSV_PATH)
+    cfg_col, f1_col = detect_columns(df)
+
+    df[f1_col] = pd.to_numeric(df[f1_col], errors="coerce")
+    df = df.dropna(subset=[cfg_col, f1_col])
+
+    configs = sorted(df[cfg_col].unique())
+
+    if BASELINE_NAME not in configs:
+        raise ValueError(f"Baseline '{BASELINE_NAME}' não encontrada.")
+
+    baseline = df[df[cfg_col] == BASELINE_NAME][f1_col].values
+
+    results = []
+
+    for cfg in configs:
+        if cfg == BASELINE_NAME:
+            continue
+
+        other = df[df[cfg_col] == cfg][f1_col].values
+
+        # Welch t-test
+        t_stat, p_val = stats.ttest_ind(
+            baseline, other, equal_var=False
+        )
+
+        d = cohens_d(baseline, other)
+
+        results.append({
+            "baseline": BASELINE_NAME,
+            "config": cfg,
+            "mean_baseline": baseline.mean(),
+            "mean_config": other.mean(),
+            "diff_means": baseline.mean() - other.mean(),
+            "t_stat": t_stat,
+            "p_raw": p_val,
+            "cohens_d": d
+        })
+
+    res_df = pd.DataFrame(results)
+
+    # ============================
+    # CORREÇÃO DE MÚLTIPLAS COMPARAÇÕES
+    # ============================
+    reject, p_corr, _, _ = multipletests(
+        res_df["p_raw"], alpha=ALPHA, method="holm"
+    )
+
+    res_df["p_holm"] = p_corr
+    res_df["significant_0.05"] = reject
+
+    # ============================
+    # SALVAR RESULTADO FINAL
+    # ============================
+    res_df = res_df.sort_values("p_holm")
+    res_df.to_csv("teste_t_welch_resultados.csv", index=False)
+
+    print("\n=== RESULTADO FINAL (Welch t-test + Holm) ===\n")
+    print(res_df[[
+        "config",
+        "mean_baseline",
+        "mean_config",
+        "diff_means",
+        "p_raw",
+        "p_holm",
+        "significant_0.05",
+        "cohens_d"
+    ]].to_string(index=False))
+
+
