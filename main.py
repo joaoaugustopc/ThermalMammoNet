@@ -3319,96 +3319,309 @@ if __name__ == "__main__":
 
     #     copy_file(f"Vgg_AUG_CV_DatasetSemMarcador_09_01_t{i}_Frontal.txt", "Resultados30ModelosSeedsIndependentes/Vgg16" )
 
-    BASE_DIR = "Resultados30ModelosSeedsIndependentes"
+    # BASE_DIR = "Resultados30ModelosSeedsIndependentes"
 
-    # Regex para capturar métricas por linha
-    regex_metrics = re.compile(
-        r"Acc=([\d.]+)\s+Prec=([\d.]+)\s+Rec=([\d.]+)\s+F1=([\d.]+)"
-    )
+    # # Regex para capturar métricas por linha
+    # regex_metrics = re.compile(
+    #     r"Acc=([\d.]+)\s+Prec=([\d.]+)\s+Rec=([\d.]+)\s+F1=([\d.]+)"
+    # )
 
-    def extrair_config(nome_arquivo):
-        """
-        Remove a parte '_tX_' para identificar a configuração.
-        Exemplo:
-        Entrada: Vgg_AUG_CV_DatasetTagFixedTam_t3_Frontal.txt
-        Saída:   Vgg_AUG_CV_DatasetTagFixedTam
-        """
-        partes = nome_arquivo.split("_t")
-        return partes[0]
+    # def extrair_config(nome_arquivo):
+    #     """
+    #     Remove a parte '_tX_' para identificar a configuração.
+    #     Exemplo:
+    #     Entrada: Vgg_AUG_CV_DatasetTagFixedTam_t3_Frontal.txt
+    #     Saída:   Vgg_AUG_CV_DatasetTagFixedTam
+    #     """
+    #     partes = nome_arquivo.split("_t")
+    #     return partes[0]
 
 
-    # Dicionário para agrupar resultados por configuração
-    configs = {}
+    # # Dicionário para agrupar resultados por configuração
+    # configs = {}
 
-    # Percorrer arquivos
-    for root, dirs, files in os.walk(BASE_DIR):
-        for fname in files:
-            if fname.endswith(".txt"):
-                caminho = os.path.join(root, fname)
+    # # Percorrer arquivos
+    # for root, dirs, files in os.walk(BASE_DIR):
+    #     for fname in files:
+    #         if fname.endswith(".txt"):
+    #             caminho = os.path.join(root, fname)
 
-                config = extrair_config(fname)
+    #             config = extrair_config(fname)
 
-                # Garantir que existe lista para essa configuração
-                if config not in configs:
-                    configs[config] = {
-                        "accs": [], "precs": [], "recs": [], "f1s": []
-                    }
+    #             # Garantir que existe lista para essa configuração
+    #             if config not in configs:
+    #                 configs[config] = {
+    #                     "accs": [], "precs": [], "recs": [], "f1s": []
+    #                 }
 
-                # Ler somente 5 primeiros folds
-                accs, precs, recs, f1s = [], [], [], []
-                with open(caminho, "r") as f:
-                    for linha in f:
-                        if len(accs) > 5:
-                            print(f"+5 folds em: {caminho}")
-                            break
+    #             # Ler somente 5 primeiros folds
+    #             accs, precs, recs, f1s = [], [], [], []
+    #             with open(caminho, "r") as f:
+    #                 for linha in f:
+    #                     if len(accs) > 5:
+    #                         print(f"+5 folds em: {caminho}")
+    #                         break
 
-                        match = regex_metrics.search(linha)
-                        if match:
-                            acc, prec, rec, f1 = map(float, match.groups())
-                            accs.append(acc)
-                            precs.append(prec)
-                            recs.append(rec)
-                            f1s.append(f1)
+    #                     match = regex_metrics.search(linha)
+    #                     if match:
+    #                         acc, prec, rec, f1 = map(float, match.groups())
+    #                         accs.append(acc)
+    #                         precs.append(prec)
+    #                         recs.append(rec)
+    #                         f1s.append(f1)
 
-                # Adicionar nos resultados globais da configuração
-                configs[config]["accs"].extend(accs)
-                configs[config]["precs"].extend(precs)
-                configs[config]["recs"].extend(recs)
-                configs[config]["f1s"].extend(f1s)
+    #             # Adicionar nos resultados globais da configuração
+    #             configs[config]["accs"].extend(accs)
+    #             configs[config]["precs"].extend(precs)
+    #             configs[config]["recs"].extend(recs)
+    #             configs[config]["f1s"].extend(f1s)
 
     
 
-    print(len(configs[config]["accs"]), len(configs[config]["f1s"]))
+    # print(len(configs[config]["accs"]), len(configs[config]["f1s"]))
 
 
-    # Criar CSV final
-    output_csv = "resumo_configuracoes_seeds_independentes_19_01.csv"
+    # # Criar CSV final
+    # output_csv = "resumo_configuracoes_seeds_independentes_19_01.csv"
 
-    with open(output_csv, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "Configuração",
-            "Acc_mean", "Acc_std",
-            "Prec_mean", "Prec_std",
-            "Rec_mean", "Rec_std",
-            "F1_mean", "F1_std",
-            "N_folds"
-        ])
+    # with open(output_csv, "w", newline="") as f:
+    #     writer = csv.writer(f)
+    #     writer.writerow([
+    #         "Configuração",
+    #         "Acc_mean", "Acc_std",
+    #         "Prec_mean", "Prec_std",
+    #         "Rec_mean", "Rec_std",
+    #         "F1_mean", "F1_std",
+    #         "N_folds"
+    #     ])
 
-        for config, dados in configs.items():
-            accs = dados["accs"]
-            precs = dados["precs"]
-            recs = dados["recs"]
-            f1s = dados["f1s"]
+    #     for config, dados in configs.items():
+    #         accs = dados["accs"]
+    #         precs = dados["precs"]
+    #         recs = dados["recs"]
+    #         f1s = dados["f1s"]
 
-            writer.writerow([
-                config,
-                np.mean(accs), np.std(accs),
-                np.mean(precs), np.std(precs),
-                np.mean(recs), np.std(recs),
-                np.mean(f1s), np.std(f1s),
-                len(accs)
-            ])
+    #         writer.writerow([
+    #             config,
+    #             np.mean(accs), np.std(accs),
+    #             np.mean(precs), np.std(precs),
+    #             np.mean(recs), np.std(recs),
+    #             np.mean(f1s), np.std(f1s),
+    #             len(accs)
+    #         ])
 
-    print(f"Resumo salvo em: {output_csv}")
+    # print(f"Resumo salvo em: {output_csv}")
+
+        # Gerando os .csv com resultados indiciduais de cada um dos 30 treinamentos e médias agrupadas por semente.
+
+    # from pathlib import Path
+    # import re
+    # import pandas as pd
+
+    # BASE_DIR = Path("Resultados30ModelosSeedsIndependentes")
+
+    # # Ex.: Fold 00  Acc=0.7959  Prec=0.8571  Rec=0.6000  F1=0.7059
+    # REGEX_FOLD = re.compile(
+    #     r"Fold\s*(\d+)\s+Acc=([\d.]+)\s+Prec=([\d.]+)\s+Rec=([\d.]+)\s+F1=([\d.]+)",
+    #     re.IGNORECASE,
+    # )
+
+    # # Ex.: ..._t0_Frontal.txt  -> seed=0
+    # REGEX_SEED = re.compile(r"_t(\d+)_", re.IGNORECASE)
+
+    # def parse_config_and_seed(filename: str) -> tuple[str, int]:
+    #     """
+    #     filename: Vgg_AUG_CV_DatasetSegFixedTagTemp_t0_Frontal.txt
+    #     retorna:
+    #     config: Vgg_AUG_CV_DatasetSegFixedTagTemp
+    #     seed: 0
+    #     """
+    #     m = REGEX_SEED.search(filename)
+    #     if not m:
+    #         raise ValueError(f"Não achei padrão _tX_ no nome: {filename}")
+    #     seed = int(m.group(1))
+
+    #     # Remove: _tX_ + tudo depois disso (ex: _Frontal.txt)
+    #     config = filename.split(f"_t{seed}_")[0]
+    #     return config, seed
+
+    # rows = []
+
+    # for path in BASE_DIR.rglob("*.txt"):
+    #     fname = path.name
+    #     config, seed = parse_config_and_seed(fname)
+
+    #     with path.open("r", encoding="utf-8", errors="ignore") as f:
+    #         for line in f:
+    #             m = REGEX_FOLD.search(line)
+    #             if not m:
+    #                 continue
+
+    #             fold = int(m.group(1))
+    #             acc = float(m.group(2))
+    #             prec = float(m.group(3))
+    #             rec = float(m.group(4))
+    #             f1 = float(m.group(5))
+
+    #             rows.append({
+    #                 "Configuração": config,
+    #                 "Seed": seed,
+    #                 "Fold": fold,
+    #                 "Acc": acc,
+    #                 "Prec": prec,
+    #                 "Rec": rec,
+    #                 "F1": f1,
+    #                 "Arquivo": str(path),
+    #             })
+
+    # df_fold = pd.DataFrame(rows)
+
+    # # Validações úteis
+    # if df_fold.empty:
+    #     raise RuntimeError("df_fold ficou vazio. Verifique BASE_DIR e o regex das linhas.")
+    # # garante que cada (config, seed) tem 5 folds
+    # check = df_fold.groupby(["Configuração", "Seed"])["Fold"].nunique().reset_index(name="n_folds")
+    # missing = check[check["n_folds"] != 5]
+    # if not missing.empty:
+    #     print("Atenção: há config/seed sem 5 folds completos:")
+    #     print(missing)
+
+    # # Ordena bonitinho
+    # df_fold = df_fold.sort_values(["Configuração", "Seed", "Fold"]).reset_index(drop=True)
+
+    # # Agregado por seed (nível recomendado para teste estatístico)
+    # df_seed = (
+    #     df_fold
+    #     .groupby(["Configuração", "Seed"], as_index=False)
+    #     .agg(
+    #         Acc_mean=("Acc", "mean"),
+    #         Prec_mean=("Prec", "mean"),
+    #         Rec_mean=("Rec", "mean"),
+    #         F1_mean=("F1", "mean"),
+    #         # opcional: variabilidade dentro da seed
+    #         F1_std=("F1", "std"),
+    #     )
+    #     .sort_values(["Configuração", "Seed"])
+    #     .reset_index(drop=True)
+    # )
+
+    # # Se quiser salvar:
+    # df_fold.to_csv("resultados_por_fold_19_01.csv", index=False)
+    # df_seed.to_csv("resultados_por_seed_19_01.csv", index=False)
+
+    # print("OK!")
+    # print("df_fold:", df_fold.shape, "-> resultados_por_fold.csv")
+    # print("df_seed:", df_seed.shape, "-> resultados_por_seed.csv")
+
+    # teste_normalidade("todosResultados.csv", "TesteNormalidade")
+
+    import numpy as np
+    import pandas as pd
+    from scipy import stats
+    from statsmodels.stats.multitest import multipletests
+
+    # ============================
+    # CONFIGURAÇÃO
+    # ============================
+    CSV_PATH = "todosResultados.csv"
+
+    BASELINE_NAME = "Vgg_AUG_CV_DatasetOriginal_9_01"  
+    # <<< ajuste aqui para o nome EXATO da configuração baseline >>>
+
+    ALPHA = 0.05
+
+    # ============================
+    # FUNÇÕES AUXILIARES
+    # ============================
+    def cohens_d(x, y):
+        """Cohen's d para duas amostras independentes"""
+        nx, ny = len(x), len(y)
+        sx, sy = np.var(x, ddof=1), np.var(y, ddof=1)
+        pooled_std = np.sqrt(((nx - 1)*sx + (ny - 1)*sy) / (nx + ny - 2))
+        return (np.mean(x) - np.mean(y)) / pooled_std
+
+
+    def detect_columns(df):
+        """Detecta coluna de configuração e F1"""
+        # configuração
+        cfg_col = next(c for c in df.columns if df[c].dtype == "object")
+
+        # F1
+        f1_col = next(c for c in df.columns if "f1" in c.lower())
+
+        return cfg_col, f1_col
+
+
+    # ============================
+    # PIPELINE PRINCIPAL
+    # ============================
+    df = pd.read_csv(CSV_PATH)
+    cfg_col, f1_col = detect_columns(df)
+
+    df[f1_col] = pd.to_numeric(df[f1_col], errors="coerce")
+    df = df.dropna(subset=[cfg_col, f1_col])
+
+    configs = sorted(df[cfg_col].unique())
+
+    if BASELINE_NAME not in configs:
+        raise ValueError(f"Baseline '{BASELINE_NAME}' não encontrada.")
+
+    baseline = df[df[cfg_col] == BASELINE_NAME][f1_col].values
+
+    results = []
+
+    for cfg in configs:
+        if cfg == BASELINE_NAME:
+            continue
+
+        other = df[df[cfg_col] == cfg][f1_col].values
+
+        # Welch t-test
+        t_stat, p_val = stats.ttest_ind(
+            baseline, other, equal_var=False
+        )
+
+        d = cohens_d(baseline, other)
+
+        results.append({
+            "baseline": BASELINE_NAME,
+            "config": cfg,
+            "mean_baseline": baseline.mean(),
+            "mean_config": other.mean(),
+            "diff_means": baseline.mean() - other.mean(),
+            "t_stat": t_stat,
+            "p_raw": p_val,
+            "cohens_d": d
+        })
+
+    res_df = pd.DataFrame(results)
+
+    # ============================
+    # CORREÇÃO DE MÚLTIPLAS COMPARAÇÕES
+    # ============================
+    reject, p_corr, _, _ = multipletests(
+        res_df["p_raw"], alpha=ALPHA, method="holm"
+    )
+
+    res_df["p_holm"] = p_corr
+    res_df["significant_0.05"] = reject
+
+    # ============================
+    # SALVAR RESULTADO FINAL
+    # ============================
+    res_df = res_df.sort_values("p_holm")
+    res_df.to_csv("teste_t_welch_resultados.csv", index=False)
+
+    print("\n=== RESULTADO FINAL (Welch t-test + Holm) ===\n")
+    print(res_df[[
+        "config",
+        "mean_baseline",
+        "mean_config",
+        "diff_means",
+        "p_raw",
+        "p_holm",
+        "significant_0.05",
+        "cohens_d"
+    ]].to_string(index=False))
+
 
